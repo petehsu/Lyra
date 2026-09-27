@@ -340,6 +340,7 @@ pub(crate) async fn run_native_turn_async(
     turn_id: String,
     cancellation: CancellationToken,
 ) {
+    super::page_citations::show_attached_page_maps(&session_id, &turn_id).await;
     let model_result = match build_model_request_async(session_id.clone()).await {
         Ok(request) => run_model_loop_async(&session_id, &turn_id, request, &cancellation).await,
         Err(error) => Err(error),

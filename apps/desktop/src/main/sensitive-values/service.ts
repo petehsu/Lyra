@@ -19,13 +19,17 @@ import {
   type LyraSensitiveValueKind,
   type LyraSensitiveValueOwner
 } from "../../shared/sensitive-value";
+import type { LyraSensitiveStorageStatus } from "../../shared/sensitive-value";
 import type { LoginManagerIpcBridge } from "../login-manager";
+import { createSensitiveStorageAccess } from "./storage-access";
 
 type SensitiveValuesIpcBridgeParams = {
   readonly loginManager: LoginManagerIpcBridge;
+  readonly onStorageStatus?: (status: LyraSensitiveStorageStatus) => void;
 };
 
 export type SensitiveValuesIpcBridge = {
+  readonly readStatus: () => LyraSensitiveStorageStatus;
   readonly dispose: () => void;
   readonly store: (
     request: LyraSensitiveValueStoreRequest
@@ -86,20 +90,6 @@ const writeStore = (store: SensitiveValuesStore): void => {
   writeFileSync(SENSITIVE_VALUES_PATH, `${JSON.stringify(store, null, 2)}\n`);
 };
 
-const encryptValue = (value: string): string => {
-  if (!safeStorage.isEncryptionAvailable()) {
-    throw new Error("Electron safeStorage encryption is not available.");
-  }
-  return safeStorage.encryptString(value).toString("base64");
-};
-
-const decryptValue = (ciphertextBase64: string): string => {
-  if (!safeStorage.isEncryptionAvailable()) {
-    throw new Error("Electron safeStorage encryption is not available.");
-  }
-  return safeStorage.decryptString(Buffer.from(ciphertextBase64, "base64"));
-};
-
 const normalizeRevealRequest = (
   request: unknown
 ): LyraSensitiveValueRevealRequest => {
@@ -119,8 +109,12 @@ const normalizeRevealRequest = (
 };
 
 export const createSensitiveValuesIpcBridge = ({
-  loginManager
+  loginManager,
+  onStorageStatus
 }: SensitiveValuesIpcBridgeParams): SensitiveValuesIpcBridge => {
+  const { encrypt: encryptValue, decrypt: decryptValue, readStatus } =
+    createSensitiveStorageAccess(safeStorage, onStorageStatus);
+  ipcMain.handle(LYRA_CHANNELS.sensitiveValuesReadStatus, () => readStatus());
   const store = async (
     request: LyraSensitiveValueStoreRequest
   ): Promise<LyraSensitiveValueStoreResponse> => {
@@ -249,6 +243,10 @@ export const createSensitiveValuesIpcBridge = ({
     if (record === undefined) {
       throw new Error(`Sensitive value not found: ${ref.id}`);
     }
+    if (record.owner !== ref.owner || record.valueKind !== ref.valueKind
+      || !record.capabilities.some(capability => capability === "use" || capability === "fill")) {
+      throw new Error("Stored sensitive value is not authorized for this fill/use reference.");
+    }
     return decryptValue(record.ciphertextBase64);
   };
 
@@ -278,7 +276,9 @@ export const createSensitiveValuesIpcBridge = ({
       ipcMain.removeHandler(LYRA_CHANNELS.sensitiveValuesRevealToUser);
       ipcMain.removeHandler(LYRA_CHANNELS.sensitiveValuesStore);
       ipcMain.removeHandler(LYRA_CHANNELS.sensitiveValuesDelete);
+      ipcMain.removeHandler(LYRA_CHANNELS.sensitiveValuesReadStatus);
     },
+    readStatus,
     store,
     delete: deleteValue,
     revealToUser,

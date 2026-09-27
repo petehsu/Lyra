@@ -8,14 +8,14 @@ type ProductShowcaseProps = {
 export function ProductShowcase({ copy, sectionId }: ProductShowcaseProps) {
   return (
     <section id={sectionId} className="product-section">
-      <div className="product-intro drop-reveal">
+      <div className="product-intro">
         <h2>{copy.title}</h2>
         <p>{copy.body}</p>
       </div>
 
       <div className="product-details">
         {copy.items.map((item) => (
-          <article className="product-detail drop-reveal" key={item.title}>
+          <article className="product-detail" key={item.title}>
             <div className="detail-copy">
               <h3>{item.title}</h3>
               <p>{item.body}</p>

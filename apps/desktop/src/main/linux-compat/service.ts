@@ -753,7 +753,12 @@ const toAppliedEnv = (
   return result;
 };
 
-const VALUELESS_SWITCHES = new Set(["disable-gpu", "disable-gpu-compositing", "disable-gpu-sandbox"]);
+const VALUELESS_SWITCHES = new Set([
+  "disable-gpu",
+  "disable-gpu-compositing",
+  "disable-gpu-sandbox",
+  "enable-wayland-ime"
+]);
 
 const toAppliedSwitches = (
   backend: LinuxGraphicsBackend,
@@ -772,6 +777,7 @@ const toAppliedSwitches = (
     result["ozone-platform"] = backend;
     if (backend === "wayland") {
       enabledFeatures.unshift("UseOzonePlatform", "WaylandWindowDecorations");
+      result["enable-wayland-ime"] = "true";
     }
   }
   result["enable-features"] = enabledFeatures.join(",");

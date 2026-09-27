@@ -1,3 +1,4 @@
+import { compareSurface, surfaceControlFacts } from "./agent-surface-change";
 import { buildElementDiff, diffElementStates, elementStateFromCached } from "./agent-element-probe";
 import type {
   WorkbenchBrowserAgentElement,
@@ -27,20 +28,6 @@ const observationElementKey = (element: WorkbenchBrowserAgentElement): string =>
     ? element.targetRef
     : `${element.id}|${element.role}|${element.label}|${element.selectorPreview}`;
 
-const observationElementSnapshot = (element: WorkbenchBrowserAgentElement): string =>
-  [
-    element.role,
-    element.label,
-    element.selectorPreview,
-    element.bounds.x,
-    element.bounds.y,
-    element.bounds.width,
-    element.bounds.height,
-    element.disabled ? "1" : "0",
-    element.textSnippet ?? "",
-    element.editable === true ? "1" : "0"
-  ].join("|");
-
 export const buildObservationDiff = (
   priorElements: readonly WorkbenchBrowserAgentElement[],
   nextElements: readonly WorkbenchBrowserAgentElement[]
@@ -62,7 +49,7 @@ export const buildObservationDiff = (
       added.push(element);
       continue;
     }
-    if (observationElementSnapshot(prior) !== observationElementSnapshot(element)) {
+    if (surfaceControlFacts(prior) !== surfaceControlFacts(element)) {
       changed.push({
         targetRef: element.targetRef,
         changes: diffElementStates(elementStateFromCached(prior), elementStateFromCached(element))
@@ -80,7 +67,7 @@ export const verifyActionOutcome = (input: {
   readonly targetRef?: string;
   readonly priorUrl?: string;
   readonly priorElement?: WorkbenchBrowserAgentElementState;
-  readonly priorObservation?: Pick<WorkbenchBrowserAgentObservation, "elements" | "url">;
+  readonly priorObservation?: Pick<WorkbenchBrowserAgentObservation, "elements" | "url" | "pageNotes">;
   readonly observation: WorkbenchBrowserAgentObservation;
 }): ActionOutcomeVerification => {
   const signals: string[] = [];
@@ -137,6 +124,7 @@ export const verifyActionOutcome = (input: {
     const samePage = input.priorObservation.url === input.observation.url
       || input.priorObservation.url.length === 0;
     if (samePage) {
+      if (compareSurface(input.priorObservation, input.observation).contextChanged) signals.push("page_context_changed");
       const observationDiff = buildObservationDiff(
         input.priorObservation.elements,
         input.observation.elements
@@ -162,7 +150,7 @@ export const verifyActionOutcome = (input: {
   }
 
   return {
-    verified: signals.includes("page_url_changed") || signals.includes("target_element_absent"),
+    verified: signals.includes("page_url_changed") || signals.includes("page_context_changed") || signals.includes("target_element_absent"),
     signals
   };
 };

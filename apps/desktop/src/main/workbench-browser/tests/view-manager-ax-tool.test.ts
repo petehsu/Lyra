@@ -2,7 +2,6 @@ import { describe, expect, test, vi } from "vitest";
 
 import { createBrowserAxController } from "../view-manager-runtime/ax-controller";
 import { createBrowserAxSnapshotStore } from "../view-manager-runtime/ax-snapshot-store";
-import { createBrowserActCache } from "../view-manager-runtime/ax-act-cache";
 import type {
   WorkbenchBrowserAgentModeInfo,
   WorkbenchBrowserOsAxAdapter,
@@ -54,6 +53,7 @@ const createDeps = (options: {
   readonly frameGraphOverride?: BrowserAgentSemanticFrameGraph;
   readonly assertSharedControlCanContinue?: ReturnType<typeof vi.fn>;
   readonly osAxAdapter?: WorkbenchBrowserOsAxAdapter;
+  readonly liveNode?: boolean;
 }) => {
   const sendAgentInputEvent = options.sendAgentInputEvent ?? vi.fn();
   const assertSharedControlCanContinue = options.assertSharedControlCanContinue ?? vi.fn();
@@ -72,7 +72,19 @@ const createDeps = (options: {
 
   const session = {
     tabId: "browser-tab-1",
-    sendCommand: vi.fn(options.sendCommand),
+    sendCommand: vi.fn(async (method: string, params?: Record<string, unknown>, sessionId?: string) => {
+      const result = await options.sendCommand(method, params, sessionId);
+      if (Object.keys(result).length > 0 || options.liveNode === false) return result;
+      if (method === "DOM.resolveNode") return { object: { objectId: "live-node" } };
+      if (method === "Runtime.callFunctionOn" && String(params?.functionDeclaration).includes("store.set(token")) return {result:{value:true}};
+      if (method === "Runtime.callFunctionOn" && String(params?.functionDeclaration).includes("entry.dispose()")) {
+        return { result: { value: {accepted:true,activated:true,blocked:false} } };
+      }
+      if (method === "Runtime.callFunctionOn") return { result: { value: {
+        bounds: { x: 698, y: 296, width: 360, height: 36 }, point: { x: 878, y: 314 }
+      } } };
+      return result;
+    }),
     subscribe: () => () => undefined,
     focus: vi.fn(),
     close: vi.fn(async () => undefined)
@@ -80,7 +92,6 @@ const createDeps = (options: {
 
   let epoch = 0;
   const axSnapshotStore = createBrowserAxSnapshotStore();
-  const axActCache = createBrowserActCache();
   const controller = createBrowserAxController({
     openDebuggerSessionForTarget: vi.fn(async () => session),
     resolveBrowserAgentTarget: vi.fn(async () => target),
@@ -91,10 +102,9 @@ const createDeps = (options: {
     buildSemanticFrameGraph: vi.fn(async () => options.frameGraphOverride ?? frameGraph),
     nextMapEpoch: () => (epoch += 1),
     axSnapshotStore,
-    axActCache,
     ...(options.osAxAdapter === undefined ? {} : { osAxAdapter: options.osAxAdapter })
   });
-  return { controller, session, sendAgentInputEvent, assertSharedControlCanContinue, axSnapshotStore, axActCache };
+  return { controller, session, sendAgentInputEvent, assertSharedControlCanContinue, axSnapshotStore };
 };
 
 const googleButtonTree = {
@@ -364,7 +374,7 @@ describe("browser_ax act", () => {
       sendCommand: async (method) => {
         if (method === "Accessibility.getFullAXTree") return plainTree;
         if (method === "DOM.getBoxModel") return boxModel;
-        // DOM.resolveNode returns no object => Tier 1 fails, Tier 2 pointer click runs.
+        // The shared CDP fixture resolves the node and returns live hit-test bounds.
         return {};
       }
     });
@@ -514,7 +524,7 @@ describe("browser_ax act", () => {
     expect(result.method).toBe("cdpInput");
     expect(result.x).toBe(878);
     expect(result.y).toBe(314);
-    expect(methods).not.toContain("DOM.resolveNode");
+    expect(methods).toContain("DOM.resolveNode");
     const downEvent = sendAgentInputEvent.mock.calls.find((call) => call[1]?.type === "mouseDown");
     expect(downEvent?.[1]).toMatchObject({ x: 878, y: 314 });
   });
@@ -544,10 +554,11 @@ describe("browser_ax act", () => {
     expect(result.nextRecommendedAction).toBe("browser_ax.query");
   });
 
-  test("an authorized OAuth provider node without bounds refuses DOM click fallback", async () => {
+  test("an unresolved OAuth node refuses stale coordinates and DOM click fallback", async () => {
     const sendAgentInputEvent = vi.fn();
     const methods: string[] = [];
     const { controller } = createDeps({
+      liveNode: false,
       sendAgentInputEvent,
       sendCommand: async (method) => {
         methods.push(method);
@@ -568,9 +579,9 @@ describe("browser_ax act", () => {
     });
 
     expect(result.ok).toBe(false);
-    expect(result.error?.kind).toBe("trustedAxInputUnavailable");
-    expect(result.nextRecommendedAction).toBe("lyra_lumen.see");
-    expect(methods).not.toContain("DOM.resolveNode");
+    expect(result.error?.kind).toBe("staleAxRef");
+    expect(result.nextRecommendedAction).toBe("browser_ax.map");
+    expect(methods).toContain("DOM.resolveNode");
     expect(sendAgentInputEvent).not.toHaveBeenCalled();
   });
 

@@ -13,3 +13,23 @@ html[data-lyra-promo-studio="true"] #app {
 
 /* The recording surface is the real Lyra renderer. Studio-only controls will
    live outside #app so they never alter product geometry or exported frames. */
+
+html[data-lyra-promo-studio="true"] .lyra-titlebar-traffic-spacer {
+  position: relative;
+}
+
+html[data-lyra-promo-studio="true"] .lyra-titlebar-traffic-spacer::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 5px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #ff5f57;
+  box-shadow:
+    18px 0 0 #febc2e,
+    36px 0 0 #28c840;
+  transform: translateY(-50%);
+  pointer-events: none;
+}

@@ -1,3 +1,4 @@
+import { configureBrowserSensitiveBoundary } from "../sensitive-values/browser-boundary";
 import { desktopCapturer, screen, type BrowserWindow } from "electron";
 
 import type { LyraRuntimeClient } from "../runtime-client";
@@ -15,7 +16,7 @@ import { createSoftwareCapabilityHost } from "./software-capability-host";
 import { createTerminalToolHost } from "./terminal-tool-host";
 import { createHostPersonaContextHandlers } from "./host-persona-context";
 import { createWorkbenchObservationAdapter } from "./workbench-observation-adapter";
-import { pickDesktopCaptureSource } from "./desktop-capture";
+import { pickDesktopCaptureSource, waylandSession } from "./desktop-capture";
 import type { WorkbenchStateIpcBridge } from "../workbench-state/service";
 import { isLyraSensitiveValueRef, type LyraSensitiveValueRef } from "../../shared/sensitive-value";
 import type {
@@ -37,6 +38,7 @@ export type AgentIpcBridge = {
 export const createAgentIpcBridge = ({
   runtimeClient,
   storageRoot,
+  loginManagerStorageRoot,
   terminalBridge,
   getWindow,
   getBrowserBridge,
@@ -48,6 +50,7 @@ export const createAgentIpcBridge = ({
 }: {
   readonly runtimeClient: LyraRuntimeClient;
   readonly storageRoot: string;
+  readonly loginManagerStorageRoot?: string;
   readonly terminalBridge: TerminalIpcBridge;
   readonly getWindow: () => BrowserWindow | null;
   readonly getBrowserBridge: () => WorkbenchBrowserIpcBridge | null;
@@ -96,10 +99,13 @@ export const createAgentIpcBridge = ({
     getWorkbenchObservationService
   });
 
+  if (storeSensitiveValue) configureBrowserSensitiveBoundary(storeSensitiveValue);
+
   const lumenToolHost = createLumenToolHost({
     getBrowserBridge,
     tabResolver,
     storageRoot,
+    ...(loginManagerStorageRoot === undefined ? {} : { loginManagerStorageRoot }),
     ...(resolveSensitiveValueForFill === undefined
       ? {}
       : { resolveSensitiveValueForFill })
@@ -138,15 +144,24 @@ export const createAgentIpcBridge = ({
             ? lyraWindow.getTitle()
             : null;
         const types = scope === "screen" ? (["screen"] as const) : (["window"] as const);
-        let sources = await desktopCapturer.getSources({
-          types: [...types],
-          thumbnailSize
-        });
-        if (scope !== "screen" && sources.length === 0) {
+        let sources: Awaited<ReturnType<typeof desktopCapturer.getSources>> = [];
+        if (waylandSession() === false) try {
           sources = await desktopCapturer.getSources({
-            types: ["screen"],
+            types: [...types],
             thumbnailSize
           });
+        } catch {
+          sources = [];
+        }
+        if (waylandSession() === false && scope !== "screen" && sources.length === 0) {
+          try {
+            sources = await desktopCapturer.getSources({
+              types: ["screen"],
+              thumbnailSize
+            });
+          } catch {
+            sources = [];
+          }
         }
         const source = pickDesktopCaptureSource(sources, scope, preferredTitle);
         if (source === undefined || source.thumbnail.isEmpty()) {

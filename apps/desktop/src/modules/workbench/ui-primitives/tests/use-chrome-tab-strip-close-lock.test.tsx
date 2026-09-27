@@ -12,13 +12,21 @@ const closeEvent = (width: number): ReactMouseEvent<HTMLElement> =>
   ({
     currentTarget: {
       closest: () => ({
-        getBoundingClientRect: () => ({ width })
+        dataset: { lyraTabWidth: String(width) }
       })
     }
   }) as unknown as ReactMouseEvent<HTMLElement>;
 
+const flushQueuedCloses = async (): Promise<void> => {
+  await act(async () => {
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0);
+    });
+  });
+};
+
 describe("chrome tab strip close-lock", () => {
-  test("freezes the closed tab width until cleared", () => {
+  test("freezes the closed tab width until cleared", async () => {
     const onCloseTab = vi.fn();
     const { result } = renderHook(() =>
       useChromeTabStripCloseLock({ tabCount: 3, onCloseTab })
@@ -27,6 +35,8 @@ describe("chrome tab strip close-lock", () => {
     act(() => {
       result.current.onCloseTab("docs", closeEvent(88.4));
     });
+    expect(onCloseTab).not.toHaveBeenCalled();
+    await flushQueuedCloses();
 
     expect(onCloseTab).toHaveBeenCalledWith("docs");
     expect(result.current.closeLockedTabWidth).toBe(88);
@@ -37,7 +47,7 @@ describe("chrome tab strip close-lock", () => {
     expect(result.current.closeLockedTabWidth).toBeNull();
   });
 
-  test("does not lock the last remaining tab", () => {
+  test("does not lock the last remaining tab", async () => {
     const onCloseTab = vi.fn();
     const { result } = renderHook(() =>
       useChromeTabStripCloseLock({ tabCount: 1, onCloseTab })
@@ -46,9 +56,28 @@ describe("chrome tab strip close-lock", () => {
     act(() => {
       result.current.onCloseTab("home", closeEvent(88));
     });
+    await flushQueuedCloses();
 
     expect(onCloseTab).toHaveBeenCalledWith("home");
     expect(result.current.closeLockedTabWidth).toBeNull();
+  });
+
+  test("commits a rapid close burst once", async () => {
+    const onCloseTab = vi.fn();
+    const { result } = renderHook(() =>
+      useChromeTabStripCloseLock({ tabCount: 4, onCloseTab })
+    );
+
+    act(() => {
+      result.current.onCloseTab("a", closeEvent(90));
+      result.current.onCloseTab("b", closeEvent(90));
+      result.current.onCloseTab("a", closeEvent(90));
+    });
+    expect(onCloseTab).not.toHaveBeenCalled();
+    await flushQueuedCloses();
+
+    expect(onCloseTab.mock.calls.map((call) => call[0])).toEqual(["a", "b"]);
+    expect(result.current.closeLockedTabWidth).toBe(90);
   });
 
   test("closes on primary pointerdown and ignores the follow-up mouse click", () => {

@@ -73,11 +73,7 @@ const browserAgentTargetFingerprint = (
   element.href ?? "",
   element.inputType ?? "",
   element.discoveryScope ?? "document",
-  element.hostChainFingerprint ?? "",
-  Math.round(element.bounds.x / 8),
-  Math.round(element.bounds.y / 8),
-  Math.round(element.bounds.width / 8),
-  Math.round(element.bounds.height / 8)
+  element.hostChainFingerprint ?? ""
 ].join("|");
 
 const createBrowserAgentTargetRef = (
@@ -95,15 +91,57 @@ const createBrowserAgentTargetRef = (
     | "frameUrl"
     | "discoveryScope"
     | "hostChainFingerprint"
-  >
+  >,
+  ordinal = 0
 ): { readonly stableId: string; readonly targetRef: string; readonly elementFingerprint: string } => {
-  const elementFingerprint = browserAgentTargetFingerprint(pageUrl, element);
+  const elementFingerprint = ordinal === 0
+    ? browserAgentTargetFingerprint(pageUrl, element)
+    : `${browserAgentTargetFingerprint(pageUrl, element)}|${ordinal}`;
   const stableId = hashStableString(elementFingerprint);
   return {
     stableId,
     targetRef: `lumen:${stableId}`,
     elementFingerprint
   };
+};
+
+const disambiguateTargetRefs = <T extends WorkbenchBrowserAgentElement>(
+  elements: readonly T[],
+  pageUrl: string
+): T[] => {
+  // A fingerprint describes an element; it is not its identity. In particular,
+  // repeated row icons already have distinct refs owned by actual DOM nodes.
+  const reserved = new Set(elements.map((element) => element.targetRef));
+  const seen = new Set<string>();
+  return elements.flatMap((element): T[] => {
+    if (!seen.has(element.targetRef)) {
+      seen.add(element.targetRef);
+      return [element];
+    }
+    // Multiple discoveries of one bound node must not invent another handle.
+    if (element.targetRef !== createBrowserAgentTargetRef(pageUrl, element).targetRef) return [];
+    let ordinal = 1;
+    let minted = createBrowserAgentTargetRef(pageUrl, element, ordinal);
+    while (reserved.has(minted.targetRef)) {
+      minted = createBrowserAgentTargetRef(pageUrl, element, ++ordinal);
+    }
+    reserved.add(minted.targetRef);
+    return [{
+      ...element,
+      stableId: minted.stableId,
+      targetRef: minted.targetRef,
+      ...(element.semanticNodeKey === undefined ? {} : {
+        semanticNodeKey: semanticNodeKeyForTarget(minted.targetRef, element.discoveryScope === "ax" ? "ax"
+          : element.discoveryScope === "visual" ? "visual" : element.discoveryScope === "coordinate" ? "coordinate" : "dom", element.frameRef)
+      }),
+      elementFingerprint: minted.elementFingerprint,
+      target: {
+        ...element.target,
+        targetRef: minted.targetRef,
+        elementFingerprint: minted.elementFingerprint
+      }
+    }];
+  });
 };
 
 const createBrowserAgentFrameRef = (
@@ -143,7 +181,7 @@ const browserAgentTargetKind = (
 const normalizeUnitCoverage = (value: number): number =>
   Math.max(0, Math.min(1, Number.isFinite(value) ? Number(value.toFixed(3)) : 0));
 
-const coerceFrameBounds = (value: unknown): WorkbenchBrowserFrameGlobalBounds | null => {
+const coerceFrameBounds = (value: unknown, allowEmpty = false): WorkbenchBrowserFrameGlobalBounds | null => {
   if (value === null || typeof value !== "object") {
     return null;
   }
@@ -157,8 +195,8 @@ const coerceFrameBounds = (value: unknown): WorkbenchBrowserFrameGlobalBounds | 
     || Number.isFinite(y) === false
     || Number.isFinite(width) === false
     || Number.isFinite(height) === false
-    || width <= 0
-    || height <= 0
+    || (allowEmpty ? width < 0 : width <= 0)
+    || (allowEmpty ? height < 0 : height <= 0)
   ) {
     return null;
   }
@@ -181,7 +219,8 @@ const coerceElementVisibility = (
     visible: record.visible !== false,
     offscreen: record.offscreen === true,
     covered: record.covered === true,
-    ariaHidden: record.ariaHidden === true
+    ariaHidden: record.ariaHidden === true,
+    ...(record.inPopup === true ? { inPopup: true } : {})
   };
 };
 
@@ -199,9 +238,9 @@ const semanticNodeKeyForTarget = (
 ): string => `semantic:${hashStableString([targetRef, source, frameRef].join("|"))}`;
 
 const actionCapabilitiesForElement = (
-  element: Pick<WorkbenchBrowserAgentElement, "role" | "tagName" | "editable" | "actionHint" | "stateHint" | "disabled">
+  element: Pick<WorkbenchBrowserAgentElement, "role" | "tagName" | "editable" | "actionHint" | "stateHint" | "disabled" | "cursorOnly">
 ): readonly WorkbenchBrowserSemanticActionCapability[] => {
-  if (element.disabled) {
+  if (element.disabled || element.cursorOnly) {
     return [];
   }
   const role = element.role.toLowerCase();
@@ -328,7 +367,9 @@ const coerceFrameOwnerCandidates = (value: unknown): {
             return null;
           }
           const candidate = entry as Record<string, unknown>;
-          const bounds = coerceFrameBounds(candidate.bounds);
+          // Hidden owners still identify a frame. Dropping their zero-size
+          // boxes shifts later associations and can map an unrelated iframe.
+          const bounds = coerceFrameBounds(candidate.bounds, true);
           if (bounds === null) {
             return null;
           }
@@ -393,22 +434,29 @@ const matchFrameOwnerCandidates = (
 ): ReadonlyMap<number, BrowserAgentFrameOwnerCandidate> => {
   const matches = new Map<number, BrowserAgentFrameOwnerCandidate>();
   const usedCandidateIndexes = new Set<number>();
-  parentFrame.frames
-    .filter((frame) => frame.isDestroyed() === false)
-    .forEach((frame, siblingOrdinal) => {
-      const ranked = candidates
-        .filter((candidate) => usedCandidateIndexes.has(candidate.index) === false)
-        .map((candidate) => ({
-          candidate,
-          score: scoreFrameOwnerCandidate(frame, candidate, siblingOrdinal)
-        }))
-        .sort((left, right) => right.score - left.score || left.candidate.index - right.candidate.index);
-      const selected = ranked[0]?.candidate;
-      if (selected !== undefined) {
-        usedCandidateIndexes.add(selected.index);
-        matches.set(frame.frameTreeNodeId, selected);
-      }
-    });
+  const children = parentFrame.frames.filter((frame) => frame.isDestroyed() === false);
+  // Reserve explicit URL/name matches globally before positional fallbacks.
+  // An unavailable earlier owner must not consume a later frame's exact match.
+  const assign = (frame: WebFrameMain, candidate: BrowserAgentFrameOwnerCandidate) => {
+    usedCandidateIndexes.add(candidate.index);
+    matches.set(frame.frameTreeNodeId, candidate);
+  };
+  for (const identity of ["url", "name"] as const) {
+    for (const [ordinal, frame] of children.entries()) {
+      if (matches.has(frame.frameTreeNodeId)) continue;
+      const ranked = candidates.filter(candidate => !usedCandidateIndexes.has(candidate.index)
+        && (identity === "url" ? frame.url.trim().length > 0 && frame.url.trim() === candidate.src
+          : frame.name.length > 0 && frame.name === candidate.name))
+        .sort((left,right) => scoreFrameOwnerCandidate(frame,right,ordinal)-scoreFrameOwnerCandidate(frame,left,ordinal));
+      if (ranked[0]) assign(frame,ranked[0]);
+    }
+  }
+  // Positional fallback requires a complete owner list and the same ordinal.
+  if (candidates.length === children.length) for (const [ordinal,frame] of children.entries()) {
+    if (matches.has(frame.frameTreeNodeId)) continue;
+    const candidate = candidates.find(candidate => candidate.index === ordinal && !usedCandidateIndexes.has(candidate.index));
+    if (candidate) assign(frame,candidate);
+  }
   return matches;
 };
 
@@ -1024,6 +1072,7 @@ export {
   coerceFrameOwnerCandidates,
   createBrowserAgentFrameRef,
   createBrowserAgentTargetRef,
+  disambiguateTargetRefs,
   delay,
   findSearchInPageMatches,
   hashStableString,

@@ -339,6 +339,19 @@ pub(super) fn provider_protocol_step(
     })
 }
 
+pub(super) fn attach_assistant_replay(message: &mut Value, reply: &ModelReply) {
+    if let Some(protocol) = reply.provider_replay_protocol.as_ref()
+        && protocol != openai_responses::PROTOCOL_ID
+        && !reply.provider_replay_items.is_empty()
+    {
+        message["lyraProviderReplay"] =
+            json!({"protocol":protocol,"items":reply.provider_replay_items});
+    }
+    if let Some(reasoning) = reply.reasoning_content.as_ref() {
+        message["reasoning_content"] = json!(reasoning);
+    }
+}
+
 pub(super) fn attach_prior_provider_protocol_steps(step: &mut Value, prior_steps: &[Value]) {
     if !prior_steps.is_empty() {
         step["priorSteps"] = Value::Array(prior_steps.to_vec());
@@ -415,14 +428,8 @@ pub(super) fn append_truncated_tool_call_recovery(
         && !reply.provider_replay_items.is_empty()
     {
         assistant_message["openaiResponsesShadow"] = Value::Bool(true);
-    } else if let Some(protocol) = reply.provider_replay_protocol.as_ref()
-        && !reply.provider_replay_items.is_empty()
-    {
-        assistant_message["lyraProviderReplay"] = json!({
-            "protocol": protocol,
-            "items": reply.provider_replay_items,
-        });
     }
+    attach_assistant_replay(&mut assistant_message, reply);
     messages.push(assistant_message);
     for call in &reply.tool_calls {
         let content = "This tool call was not executed because the provider ended at the output-token limit. Reissue the complete tool call with valid arguments.";

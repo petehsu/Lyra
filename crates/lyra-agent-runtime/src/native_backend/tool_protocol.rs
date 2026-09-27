@@ -181,7 +181,17 @@ pub(crate) fn is_browser_tool_name(name: &str) -> bool {
     matches!(
         name,
         "lyra_lumen" | "lyra_ax" | "browser" | "lyra_computer" | "computer"
-    )
+    ) || [
+        "browser_",
+        "lyra_lumen_",
+        "lyra_ax_",
+        "computer_",
+        "lyra_computer_",
+        "/tools/browser/",
+        "/tools/computer/",
+    ]
+    .iter()
+    .any(|prefix| name.starts_with(prefix))
 }
 
 pub(crate) fn is_browser_tool_blocked_output(output: &Value) -> bool {
@@ -374,5 +384,35 @@ mod tests {
         assert!(clipped.contains("TAIL_MARK"), "{clipped}");
         assert!(clipped.contains("[omitted]"), "{clipped}");
         assert!(clipped.len() < text.len(), "{clipped}");
+    }
+}
+
+#[test]
+fn browser_tool_classification_includes_provider_visible_names() {
+    for name in [
+        "browser_map",
+        "browser_press",
+        "browser_type",
+        "browser_navigate",
+        "browser__vact",
+        "browser_ax_map",
+        "lyra_lumen",
+        "lyra_ax",
+        "computer_act",
+        "/tools/browser/press",
+    ] {
+        assert!(
+            is_browser_tool_name(name),
+            "{name} bypasses browser ordering/pause handling"
+        );
+    }
+    for name in [
+        "ToolSearch",
+        "web_search",
+        "web_fetch",
+        "shell",
+        "agent_spawn",
+    ] {
+        assert!(!is_browser_tool_name(name));
     }
 }

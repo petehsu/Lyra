@@ -56,6 +56,13 @@ const baseObservation = (
 });
 
 describe("verifyActionOutcome", () => {
+  test("position and focus alone do not verify an outcome; a new dialog does", () => {
+    const before = agentElement({ label: "Open" });
+    const after = agentElement({ label: "Open", bounds: { x: 10, y: 20, width: 10, height: 10 }, semantics: { focused: true } });
+    const input = { priorObservation: baseObservation({ elements: [before] }), observation: baseObservation({ elements: [after] }) };
+    expect(verifyActionOutcome(input).verified).toBe(false);
+    expect(verifyActionOutcome({ ...input, observation: { ...input.observation, pageNotes: [{ id: "dialog:1", kind: "dialog", text: "Delete this chat?" }] } })).toMatchObject({ verified: true, signals: ["page_context_changed"] });
+  });
   test("detects target element state changes after an act", () => {
     const result = verifyActionOutcome({
       interaction: "click",

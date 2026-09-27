@@ -1912,3 +1912,60 @@ fn browser_ax_tools_dispatch_to_ax_host_methods_with_expected_risk() {
     assert_eq!(map.renderer_hint, "lumen");
     assert_eq!(map.activity_kind, "web");
 }
+#[test]
+fn browser_read_formatter_preserves_empty_status_and_execution_errors() {
+    let empty = json!({
+        "ok": true, "kind": "lyraLumenRead", "content": "", "readStatus": "empty"
+    });
+    let formatted = format_lumen_output("read", &empty);
+    assert_eq!(serde_json::from_str::<Value>(&formatted).unwrap(), empty);
+    for action in ["read", "wait", "map", "see"] {
+        let failed = json!({
+            "ok": false, "content": "", "error": { "message": "Renderer context destroyed" }
+        });
+        let formatted = format_lumen_output(action, &failed);
+        assert_eq!(serde_json::from_str::<Value>(&formatted).unwrap(), failed);
+    }
+    assert_eq!(
+        format_lumen_output("read", &json!({ "ok": true, "content": "Visible reply" })),
+        "Visible reply"
+    );
+}
+
+#[test]
+fn browser_wait_keeps_timeout_and_completion_status_with_partial_text() {
+    for matched in [true, false] {
+        let result = json!({
+            "ok": true, "until": "textStable", "matched": matched,
+            "completion": "unknown", "content": "Partial reply"
+        });
+        assert_eq!(
+            serde_json::from_str::<Value>(&format_lumen_output("wait", &result)).unwrap(),
+            result
+        );
+    }
+}
+
+#[test]
+fn browser_type_submit_uses_the_final_effect_for_native_permission_checks() {
+    use tools::{BrowserActionEffect, validate_browser_action_effect};
+    assert_eq!(
+        validate_browser_action_effect(
+            "lyra_lumen",
+            "type",
+            &json!({
+                "effect": "communicate", "thenClick": "lumen:send"
+            })
+        )
+        .unwrap(),
+        Some(BrowserActionEffect::Communicate)
+    );
+    for args in [
+        json!({"effect":"communicate"}),
+        json!({"effect":"communicate","thenClick":""}),
+        json!({"effect":"observe","thenClick":"lumen:send"}),
+        json!({"effect":"click","thenClick":"lumen:send"}),
+    ] {
+        assert!(validate_browser_action_effect("lyra_lumen", "type", &args).is_err());
+    }
+}

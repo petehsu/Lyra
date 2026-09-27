@@ -33,6 +33,7 @@ type LayoutControllerHost = {
   readonly evictExcessHiddenPages: () => void;
   readonly bumpLiveViewBoundsEpoch: (tabId: string) => number;
   readonly reattachVisiblePopover: () => void;
+  readonly syncFocusIsolation: (window: BrowserWindow, entries: readonly BrowserPageEntry[]) => void;
 };
 
 export const createLayoutController = ({
@@ -45,7 +46,8 @@ export const createLayoutController = ({
   scheduleTombstone,
   evictExcessHiddenPages,
   bumpLiveViewBoundsEpoch,
-  reattachVisiblePopover
+  reattachVisiblePopover,
+  syncFocusIsolation
 }: LayoutControllerHost) => {
   const overlayView = new View();
   let overlayAttached = false;
@@ -201,6 +203,7 @@ export const createLayoutController = ({
     if (!modalOcclusionActive) {
       reattachVisiblePopover();
     }
+    syncFocusIsolation(window, nativeVisibleEntries.map(({ entry }) => entry));
     evictExcessHiddenPages();
   };
 

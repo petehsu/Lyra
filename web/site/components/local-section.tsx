@@ -9,11 +9,11 @@ type LocalSectionProps = {
 export function LocalSection({ copy, sectionId }: LocalSectionProps) {
   return (
     <section id={sectionId} className="local-section">
-      <div className="local-copy drop-reveal">
+      <div className="local-copy">
         <h2>{copy.title}</h2>
         <p>{copy.body}</p>
       </div>
-      <ul className="local-points drop-reveal">
+      <ul className="local-points">
         {copy.points.map((point) => (
           <li key={point}>
             <Check size={15} aria-hidden="true" />

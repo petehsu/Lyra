@@ -48,6 +48,33 @@ describe("Agent IPC bridge", () => {
     resetAgentBrowserPreviewTargetForTests();
   });
 
+  test("composer IPC returns page metadata without invoking visual capture", async () => {
+    const page = { tabId: "page-1", targetMode: "live" as const, url: "https://example.com", title: "Example" };
+    const browser = {
+      readAgentPreviewPage: vi.fn(async () => page),
+      capturePage: vi.fn(() => { throw new Error("Unexpected screenshot"); }),
+      captureAgentPage: vi.fn(() => { throw new Error("Unexpected screenshot"); })
+    };
+    const bridge = createAgentIpcBridge({
+      runtimeClient: {
+        request: vi.fn(), subscribe: vi.fn(() => vi.fn()),
+        registerRequestHandler: vi.fn(), unregisterRequestHandler: vi.fn()
+      } as unknown as LyraRuntimeClient,
+      storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: createTerminalBridgeMock() as never,
+      getWindow: () => null,
+      getBrowserBridge: () => browser as never,
+      getWorkbenchObservationService: () => null,
+      workbenchState: createWorkbenchStateMock()
+    });
+    rememberAgentBrowserPreviewTarget({ tabId: page.tabId, targetMode: page.targetMode });
+    await expect(electronMock.handlers.get(LYRA_CHANNELS.agentBrowserPreviewRead)?.({})).resolves.toEqual([page]);
+    expect(browser.readAgentPreviewPage).toHaveBeenCalledWith("page-1", "live");
+    expect(browser.capturePage).not.toHaveBeenCalled();
+    expect(browser.captureAgentPage).not.toHaveBeenCalled();
+    bridge.dispose();
+  });
+
   test("forwards Agent IPC channels to runtime methods", async () => {
     const request = vi.fn(async (method: string, payload: unknown) => ({ method, payload }));
     const bridge = createAgentIpcBridge({
@@ -659,15 +686,11 @@ describe("Agent IPC bridge", () => {
         height: 1,
         visibleOnly: true
       })),
-      captureAgentPreviewPage: vi.fn(async (tabId: string, targetMode: "live" | "isolated") => ({
+      readAgentPreviewPage: vi.fn(async (tabId: string, targetMode: "live" | "isolated") => ({
         tabId,
         targetMode,
         url: "https://example.com/app",
-        title: "Example App",
-        mimeType: "image/png",
-        imageBase64: "AAAA",
-        width: 80,
-        height: 50
+        title: "Example App"
       })),
       readRenderedSnapshot: vi.fn(async (payload: unknown) => ({
         ok: true,
@@ -868,15 +891,11 @@ describe("Agent IPC bridge", () => {
     } as unknown as WorkbenchObservationService;
     const browserBridge = {
       readActiveTabId: vi.fn(() => "page-1"),
-      captureAgentPreviewPage: vi.fn(async (tabId: string, targetMode: "live" | "isolated") => ({
+      readAgentPreviewPage: vi.fn(async (tabId: string, targetMode: "live" | "isolated") => ({
         tabId,
         targetMode,
         url: "https://example.com",
-        title: "Example",
-        mimeType: "image/png",
-        imageBase64: "AAAA",
-        width: 80,
-        height: 50
+        title: "Example"
       })),
       readPageState: vi.fn(() => ({
         tabId: "page-1",
@@ -1303,11 +1322,7 @@ describe("Agent IPC bridge", () => {
       tabId: "page-1",
       targetMode: "live",
       url: "https://example.com",
-      title: "Example",
-      mimeType: "image/png",
-      imageBase64: "AAAA",
-      width: 80,
-      height: 50
+      title: "Example"
     }]);
     browserBridge.observeAgentPage.mockClear();
     await expect(registered.get("lyraLumen.map")?.({})).resolves.toMatchObject({
@@ -1423,6 +1438,22 @@ describe("Agent IPC bridge", () => {
     });
     expect(browserBridge.actOnAgentElement).toHaveBeenLastCalledWith("page-1", {
       targetRef: "lumen:stable-target",
+      interaction: "click",
+      targetMode: "live",
+      verification: "fast"
+    });
+
+    await expect(
+      registered.get("lyraLumen.act")?.({
+        elementId: "lumen:csf5x2",
+        interaction: "click"
+      })
+    ).resolves.toMatchObject({
+      kind: "lyraLumenActionResult",
+      targetRef: "lumen:csf5x2"
+    });
+    expect(browserBridge.actOnAgentElement).toHaveBeenLastCalledWith("page-1", {
+      targetRef: "lumen:csf5x2",
       interaction: "click",
       targetMode: "live",
       verification: "fast"
@@ -1623,8 +1654,15 @@ describe("Agent IPC bridge", () => {
     expect(browserBridge.pressAgentKey).toHaveBeenCalledWith("page-1", {
       key: "Enter",
       targetMode: "live",
-      effect: "submitExternal"
+      effect: "submitExternal",
+      verification: "fast"
     });
+    for (const verification of ["none", "fast", "full"] as const) {
+      await registered.get("lyraLumen.press")?.({ key: "Tab", verification });
+      expect(browserBridge.pressAgentKey).toHaveBeenLastCalledWith("page-1", {
+        key: "Tab", targetMode: "live", verification
+      });
+    }
 
     await expect(
       registered.get("lyraLumen.read")?.({})
@@ -1635,42 +1673,23 @@ describe("Agent IPC bridge", () => {
     });
     expect(browserBridge.readAgentPage).toHaveBeenCalledWith("page-1", {
       strategy: "focus",
+      scope: "viewport",
       targetMode: "live",
       timeoutMs: 4000
     });
 
     browserBridge.readAgentPage.mockClear();
-    browserBridge.readAgentPage
-      .mockRejectedValueOnce(new Error("frame script timed out after 4000ms"))
-      .mockResolvedValueOnce({
-        tabId: "page-1",
-        targetMode: "live",
-        scope: "main",
-        text: "fallback page text",
-        content: "fallback page text",
-        truncated: false,
-        startChar: 0,
-        endChar: 18,
-        totalChars: 18,
-        hasMore: false,
-        extractionMethod: "lumen:dom-fallback"
-      });
+    browserBridge.readAgentPage.mockRejectedValueOnce(new Error("frame script timed out after 4000ms"));
     await expect(
       registered.get("lyraLumen.read")?.({})
     ).resolves.toMatchObject({
-      kind: "lyraLumenRead",
-      strategy: "domFallback",
-      content: "fallback page text",
-      degraded: true,
-      warning: "frame script timed out after 4000ms"
+      ok: false,
+      error: { message: "frame script timed out after 4000ms" }
     });
-    expect(browserBridge.readAgentPage).toHaveBeenNthCalledWith(1, "page-1", {
+    expect(browserBridge.readAgentPage).toHaveBeenCalledTimes(1);
+    expect(browserBridge.readAgentPage).toHaveBeenCalledWith("page-1", {
       strategy: "focus",
-      targetMode: "live",
-      timeoutMs: 4000
-    });
-    expect(browserBridge.readAgentPage).toHaveBeenNthCalledWith(2, "page-1", {
-      strategy: "domFallback",
+      scope: "viewport",
       targetMode: "live",
       timeoutMs: 4000
     });
@@ -1685,6 +1704,7 @@ describe("Agent IPC bridge", () => {
     });
     expect(browserBridge.readAgentPage).toHaveBeenCalledWith("page-1", {
       strategy: "focus",
+      scope: "viewport",
       targetMode: "live",
       maxChars: 2048,
       timeoutMs: 750

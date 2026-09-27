@@ -173,6 +173,7 @@ type FakeWebContents = {
   emit: (event: string, ...args: unknown[]) => void;
   listenerCount: (event: string) => number;
   removeAllListeners: ReturnType<typeof vi.fn>;
+  removeListener: ReturnType<typeof vi.fn>;
   insertCSS: ReturnType<typeof vi.fn>;
   findInPage: ReturnType<typeof vi.fn>;
   stopFindInPage: ReturnType<typeof vi.fn>;
@@ -206,6 +207,12 @@ const createWindow = (html: string, url: string): DOMWindow => {
     pretendToBeVisual: true
   });
   const win = dom.window;
+  // Layout is supplied by setRect; native visibility behavior is covered by the
+  // Chromium suite, since JSDOM does not implement Element.checkVisibility.
+  Object.defineProperty(win.Element.prototype, "checkVisibility", { configurable: true, value: function (this: Element) {
+    const style = win.getComputedStyle(this);
+    return style.display !== "none" && !["hidden", "collapse"].includes(style.visibility);
+  } });
   Object.defineProperty(win, "innerWidth", { configurable: true, value: 1_280 });
   Object.defineProperty(win, "innerHeight", { configurable: true, value: 720 });
   win.scrollTo = vi.fn();
@@ -382,6 +389,10 @@ const createWebContents = (
     loadURL: vi.fn(async (url: string) => {
       mainFrame.url = url;
       mainFrame.origin = originFromUrl(url);
+      if (!options.hangLoad) queueMicrotask(() => {
+        webContents.emit("did-navigate", {}, url);
+        webContents.emit("dom-ready");
+      });
       if (options.hangLoad === true) {
         await new Promise(() => undefined);
       }
@@ -402,6 +413,7 @@ const createWebContents = (
     on: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
       addListener(event, listener);
     }),
+    removeListener: vi.fn((event: string, listener: (...args: unknown[]) => void) => { removeListener(event,listener); }),
     off: vi.fn((event: string, listener: (...args: unknown[]) => void) => {
       removeListener(event, listener);
     }),
@@ -502,6 +514,46 @@ describe("Workbench browser semantic tree fixtures", () => {
     delete process.env.LYRA_BROWSER_ENABLE_TEMP_SNAPSHOT_RENDERER;
   });
 
+  test("explicit missing page state never aliases the foreground page",()=>{
+    const frame=createFrame({id:1,url:"https://active.example/",html:"<main>Active</main>"});
+    const {manager}=createManager(frame);
+    expect(manager.readPageState({tabId:"missing"})).toBeNull();
+    expect(manager.readPageState({tabId:"tab-1"})).not.toBeNull();
+  });
+
+  test("subframe history changes cannot replace tab identity or main-document targets", async () => {
+    const frame = createFrame({ id: 1, url: "https://mail.example/#drafts", html: '<button>Compose</button>' });
+    setRect(frame.window.document.querySelector("button")!, { x: 20, y: 20, width: 120, height: 40 });
+    const { manager, webContents } = createManager(frame);
+    const before = await manager.observeAgentPage("tab-1", { strategy: "interactiveOnly" });
+    webContents.emit("did-navigate-in-page", {}, "https://contacts.example/widget#profile", false, 2, 2);
+    expect(manager.readPageState({ tabId: "tab-1" })?.address).toBe(frame.url);
+    expect((await manager.readAgentPage("tab-1", { strategy: "focus" })).url).toBe(frame.url);
+    const after = await manager.observeAgentPage("tab-1", { strategy: "interactiveOnly" });
+    expect(findByLabel(after.elements, "Compose").targetRef).toBe(findByLabel(before.elements, "Compose").targetRef);
+    frame.url = "https://mail.example/#inbox";
+    webContents.emit("did-navigate-in-page", {}, frame.url, true, 1, 1);
+    expect(manager.readPageState({ tabId: "tab-1" })?.address).toBe(frame.url);
+    expect((await manager.readAgentPage("tab-1", { strategy: "focus" })).url).toBe(frame.url);
+  });
+
+  test("an agent can materialize a known hidden page without activating another tab",async()=>{
+    const active=createWebContents(createFrame({id:1,url:"https://active.example/",html:"<main>Active</main>"}));
+    const hidden=createWebContents(createFrame({id:2,url:"https://hidden.example/",html:"<main>Hidden</main>"}));
+    electronMock.webContentsQueue.push(active,hidden);
+    const manager=createEmptyManager();
+    manager.syncTopology({activeTabId:"active",pages:[
+      {tabId:"active",address:"https://active.example/",isActive:true,isVisible:true},
+      {tabId:"hidden",address:"https://hidden.example/",isActive:false,isVisible:false}
+    ]});
+    expect(electronMock.webContentsQueue).toEqual([hidden]);
+    await manager.readAgentPage("hidden",{targetMode:"live"});
+    expect(electronMock.webContentsQueue).toHaveLength(0);
+    expect(manager.readPageState({tabId:"active"})?.address).toBe("https://active.example/");
+    manager.syncTopology({activeTabId:"active",pages:[{tabId:"active",address:"https://active.example/",isActive:true,isVisible:true}]});
+    await expect(manager.readAgentPage("hidden",{targetMode:"live"})).rejects.toThrow("not materialized");
+  });
+
   test("keeps HTML video fullscreen inside the browser view", () => {
     const frame = createFrame({
       id: 1,
@@ -577,6 +629,8 @@ describe("Workbench browser semantic tree fixtures", () => {
     await Promise.resolve();
 
     expect(hiddenWebContents.loadURL).toHaveBeenCalledWith("https://hidden.example/");
+    // Load/commit may read restore state; removing the tab must not do so.
+    hiddenWebContents.executeJavaScript.mockClear();
 
     manager.syncTopology({
       activeTabId: "active",
@@ -745,7 +799,7 @@ describe("Workbench browser semantic tree fixtures", () => {
       event.kind === "request-open-tab"
       && event.embedded === true
       && event.tabId === "preview-tab"
-      && event.address === "https://example.com/preview"
+      && event.address === "about:blank"
     )).toBe(true);
   });
 
@@ -916,7 +970,7 @@ describe("Workbench browser semantic tree fixtures", () => {
     expect((input as HTMLInputElement).value).toBe("Ada");
   });
 
-  test("uses a lightweight interactive-only map with CDP enhancement but without frame graph or AX debugger", async () => {
+  test("maps named interactive controls without a second full-document CDP scan", async () => {
     const mainFrame = createFrame({
       id: 1,
       url: "https://app.test/quick",
@@ -942,16 +996,17 @@ describe("Workbench browser semantic tree fixtures", () => {
       title: "Quick"
     });
     expect(observation.elements.map((element) => element.label)).toEqual(["Save", "Name"]);
-    expect(mainFrame.executeJavaScript).toHaveBeenCalledTimes(1);
-    expect(mainFrame.executeJavaScript.mock.calls[0]?.[0]).toContain("const INCLUDE_CHILD_FRAMES = true");
-    expect(webContents.debugger.attach).toHaveBeenCalledWith("1.3");
+    const scripts = mainFrame.executeJavaScript.mock.calls.map((call) => String(call[0]));
+    expect(scripts.filter((script) => script.includes("const INCLUDE_CHILD_FRAMES = true"))).toHaveLength(1);
+    expect(scripts.some((script) => script.includes("role='tooltip'"))).toBe(false);
+    expect(webContents.debugger.attach).not.toHaveBeenCalled();
     expect(
       webContents.debugger.sendCommand.mock.calls.some(
         ([method, params]) =>
           method === "DOMSnapshot.captureSnapshot"
           && (params as { includePaintOrder?: boolean })?.includePaintOrder === true
       )
-    ).toBe(true);
+    ).toBe(false);
     expect(webContents.debugger.sendCommand).not.toHaveBeenCalledWith("Accessibility.getFullAXTree");
   });
 
@@ -976,13 +1031,74 @@ describe("Workbench browser semantic tree fixtures", () => {
       strategy: "interactiveOnly"
     });
 
-    expect(observation.elements.map((element) => element.label)).toEqual(["Save"]);
+    expect(observation.elements.map((element) => element.label)).toEqual(["Save", "Footer"]);
     expect(observation.inViewport?.map((element) => element.label)).toEqual(["Save"]);
     expect(observation.needsScroll?.map((element) => element.label)).toEqual(["Footer"]);
-    expect(observation.mapAppendix).toContain("Now clickable:");
-    expect(observation.mapAppendix).toContain("Needs scroll (act on these; do not call scroll, find, or ensure_visible):");
+    expect(observation.mapAppendix).toContain("Now operable:");
+    expect(observation.mapAppendix).toContain("Also on this page:");
     expect(observation.mapAppendix).toContain("Footer");
     expect(observation.elements.some((element) => element.tagName.toLowerCase() === "span")).toBe(false);
+  });
+
+  test("keeps a sidebar footer when the column inherits one pointer cursor", async () => {
+    const mainFrame = createFrame({
+      id: 1,
+      url: "https://app.test/sidebar",
+      html: "<!doctype html><title>Sidebar</title><aside style=\"cursor:pointer\"><a href=\"/chat\">History</a><div id=\"account\" style=\"cursor:pointer\">Account<img alt=\"\"><button type=\"button\">More</button></div></aside>"
+    });
+    const aside = mainFrame.window.document.querySelector("aside");
+    const link = mainFrame.window.document.querySelector("a");
+    const account = mainFrame.window.document.querySelector("#account");
+    const avatar = mainFrame.window.document.querySelector("img");
+    const more = mainFrame.window.document.querySelector("button");
+    expect(aside).toBeInstanceOf(mainFrame.window.HTMLElement);
+    expect(link).toBeInstanceOf(mainFrame.window.HTMLAnchorElement);
+    expect(account).toBeInstanceOf(mainFrame.window.HTMLDivElement);
+    expect(avatar).toBeInstanceOf(mainFrame.window.HTMLImageElement);
+    expect(more).toBeInstanceOf(mainFrame.window.HTMLButtonElement);
+    setRect(aside as Element, { x: 0, y: 0, width: 240, height: 700 });
+    setRect(link as Element, { x: 12, y: 40, width: 200, height: 28 });
+    setRect(account as Element, { x: 12, y: 640, width: 216, height: 44 });
+    setRect(avatar as Element, { x: 24, y: 648, width: 28, height: 28 });
+    setRect(more as Element, { x: 180, y: 650, width: 28, height: 28 });
+
+    const { manager } = createManager(mainFrame);
+    const observation = await manager.observeAgentPage("tab-1", {
+      targetMode: "live",
+      strategy: "interactiveOnly"
+    });
+
+    expect(observation.elements.map((element) => element.label)).toEqual(expect.arrayContaining(["History", "More"]));
+  });
+
+  test("keeps each toggle's own on or off when they sit in one pointer row", async () => {
+    const mainFrame = createFrame({
+      id: 1,
+      url: "https://app.test/composer",
+      html: "<!doctype html><title>Composer</title><div id=\"bar\" style=\"cursor:pointer\"><div id=\"think\" style=\"cursor:pointer\" aria-pressed=\"true\"><span id=\"think-label\">DeepThink</span></div><div id=\"search\" style=\"cursor:pointer\" aria-pressed=\"false\"><span id=\"search-label\">Search</span></div></div>"
+    });
+    const bar = mainFrame.window.document.querySelector("#bar");
+    const think = mainFrame.window.document.querySelector("#think");
+    const search = mainFrame.window.document.querySelector("#search");
+    const thinkLabel = mainFrame.window.document.querySelector("#think-label");
+    const searchLabel = mainFrame.window.document.querySelector("#search-label");
+    setRect(bar as Element, { x: 20, y: 400, width: 220, height: 36 });
+    setRect(think as Element, { x: 28, y: 404, width: 96, height: 28 });
+    setRect(search as Element, { x: 132, y: 404, width: 80, height: 28 });
+    setRect(thinkLabel as Element, { x: 36, y: 408, width: 72, height: 20 });
+    setRect(searchLabel as Element, { x: 140, y: 408, width: 56, height: 20 });
+
+    const { manager } = createManager(mainFrame);
+    const observation = await manager.observeAgentPage("tab-1", {
+      targetMode: "live",
+      strategy: "interactiveOnly"
+    });
+    const labels = observation.elements.map((element) => element.label);
+    expect(labels).toEqual(expect.arrayContaining(["DeepThink", "Search"]));
+    expect(labels.some((label) => label.includes("DeepThink Search"))).toBe(false);
+    expect(observation.elements.find((element) => element.label === "DeepThink")?.tagName).toBe("div");
+    expect(observation.elements.find((element) => element.label === "DeepThink")?.stateHint).toBe("pressed");
+    expect(observation.elements.find((element) => element.label === "Search")?.stateHint).toBe("unpressed");
   });
 
   test("finds and semantically locates page text before returning nearby controls", async () => {
@@ -1724,7 +1840,7 @@ describe("Workbench browser semantic tree fixtures", () => {
     expect(observation.nextRecommendedAction).not.toBe("ask_user");
   });
 
-  test("detects captcha iframe and returns ask_user with map appendix support", async () => {
+  test("detects a captcha iframe without pausing the agent", async () => {
     const mainFrame = createFrame({
       id: 1,
       url: "https://app.test/login",
@@ -1754,16 +1870,11 @@ describe("Workbench browser semantic tree fixtures", () => {
         })
       ])
     );
-    expect(observation.needsUserAction).toMatchObject({
-      kind: "auth_challenge",
-      reason: "captcha",
-      suggestedAction: "ask_user"
-    });
-    expect(observation.nextRecommendedAction).toBe("ask_user");
+    expect(observation.needsUserAction).toBeUndefined();
+    expect(observation.nextRecommendedAction).not.toBe("ask_user");
     expect(observation.warnings).toEqual(
       expect.arrayContaining([
-        expect.stringContaining("captcha_detected"),
-        expect.stringContaining("browser_health:captcha:")
+        expect.stringContaining("captcha_detected")
       ])
     );
   });
@@ -1992,11 +2103,11 @@ describe("Workbench browser semantic tree fixtures", () => {
     electronMock.webContentsQueue.push(shadowWebContents);
     const manager = createEmptyManager();
 
-    await manager.navigateAgentPage("agent-tab", {
+    await expect(manager.navigateAgentPage("agent-tab", {
       targetMode: "isolated",
       url: "https://app.test/dashboard",
       timeoutMs: 2_000
-    });
+    })).resolves.toMatchObject({ alreadyOpen: true });
 
     expect(shadowWebContents.loadURL).not.toHaveBeenCalled();
     expect(shadowWebContents.reload).not.toHaveBeenCalled();
@@ -2270,7 +2381,7 @@ describe("Workbench browser semantic tree fixtures", () => {
     });
   });
 
-  test("captures a composer preview from a live tab that is not visible", async () => {
+  test("reads composer identity from a hidden live tab without capturing it", async () => {
     const mainFrame = createFrame({
       id: 1,
       url: "https://app.test/hidden-preview",
@@ -2292,24 +2403,18 @@ describe("Workbench browser semantic tree fixtures", () => {
         isFocusedPane: false
       }]
     });
-    webContents.capturePage.mockResolvedValue({
-      getSize: () => ({ width: 800, height: 500 }),
-      toPNG: () => Buffer.from("preview")
-    });
+    webContents.capturePage.mockRejectedValue(new Error("Unexpected preview capture"));
 
     await expect(manager.captureAgentPage("tab-1", { targetMode: "live" })).rejects.toMatchObject({
       code: "background_visual_capture_unsupported"
     });
 
-    const preview = await manager.captureAgentPreviewPage("tab-1", "live");
+    const preview = await manager.readAgentPreviewPage("tab-1", "live");
     expect(preview).toMatchObject({
       tabId: "tab-1",
-      targetMode: "live",
-      mimeType: "image/png",
-      width: 800,
-      height: 500
+      targetMode: "live"
     });
-    expect(preview?.imageBase64.length).toBeGreaterThan(0);
-    expect(webContents.capturePage).toHaveBeenCalled();
+    expect(preview).not.toHaveProperty("imageBase64");
+    expect(webContents.capturePage).not.toHaveBeenCalled();
   });
 });

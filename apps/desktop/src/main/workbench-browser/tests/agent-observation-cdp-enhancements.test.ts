@@ -138,7 +138,8 @@ describe("agent-observation-cdp-enhancements", () => {
       label: "Continue",
       selectorPreview: "span.label"
     });
-    const filtered = filterElementsByParentContainment([parent, child]);
+    const filtered = filterElementsByParentContainment([parent, { ...child, ancestorTargetRefs: [parent.targetRef] }]);
+    expect(filterElementsByParentContainment([parent, { ...child, ancestorTargetRefs: [] }])).toHaveLength(2);
     expect(filtered.map((element) => element.id)).toEqual([1]);
   });
 

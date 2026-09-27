@@ -1,3 +1,10 @@
+import { validatePointerOptions, type PointerOptions } from "../workbench-browser/view-manager-runtime/bound-pointer";
+import { browserSensitiveBoundary } from "../sensitive-values/browser-boundary";
+import { browserAgentOperationContext } from "../workbench-browser/agent-operation-context";
+import { createLumenSessionPages } from "./lumen-session-pages";
+import { lumenMapResult } from "./lumen-map-result";
+import { createLumenMapPager } from "./lumen-map-pager";
+import { waitForLumenPage } from "./lumen-page-wait";
 import { isLyraSensitiveValueRef, type LyraSensitiveValueRef } from "../../shared/sensitive-value";
 import type {
   WorkbenchBrowserAgentModeRequest,
@@ -12,10 +19,10 @@ import {
 } from "../workbench-browser/view-manager-runtime/lumen-runtime-guards";
 import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
 import { grantBrowserAuthorizeAct } from "../open-in-workbench";
+import { loginMapNoteForStorage } from "./login-map-note";
 import type { WorkbenchObservedTabDescriptor } from "../../shared/workbench-observation";
 import {
   allocateLiveAgentBrowserPreviewTabId,
-  readAgentBrowserPreviewTarget,
   rememberAgentBrowserPreviewTarget
 } from "./agent-browser-preview-target";
 import { materializeLumenCapture, materializeQrCropCapture } from "./artifact-materializer";
@@ -27,6 +34,7 @@ import {
   readOptionalNumberField,
   readOptionalStringField,
   readRuntimeTurnId,
+  readRuntimeSessionId,
   readStringField
 } from "./host-payload";
 import {
@@ -37,8 +45,6 @@ import {
 import {
   annotationColorForIndex,
   applyBrowserBlockedEnvelope,
-  budgetMapResult,
-  createLumenMapObservationCache,
   findActiveBrowserBlock,
   InvalidLumenElementIdError,
   isUncertainTimeoutMethod,
@@ -72,21 +78,51 @@ export const createLumenToolHost = ({
   getBrowserBridge,
   tabResolver,
   storageRoot,
+  loginManagerStorageRoot,
   resolveSensitiveValueForFill
 }: {
   readonly getBrowserBridge: () => WorkbenchBrowserIpcBridge | null;
   readonly tabResolver: WorkbenchBrowserTabResolver;
   readonly storageRoot: string;
+  readonly loginManagerStorageRoot?: string;
   readonly resolveSensitiveValueForFill?: (
     ref: LyraSensitiveValueRef
   ) => Promise<string>;
 }): { readonly handlers: AgentHostCapabilityHandlers } => {
   const {
-    resolveBrowserAgentTabId,
+    resolveBrowserAgentTabId: resolveWorkbenchBrowserAgentTabId,
     readWorkbenchTabWithSummaryFallback,
     listBrowserPageTabs,
     describeWorkbenchTabKind
   } = tabResolver;
+
+  const mapPager = createLumenMapPager();
+
+  const readLumenInputFields = (
+    payload: Record<string, unknown>
+  ): readonly { readonly targetRef: string; readonly text: string; readonly clear?: boolean }[] | undefined => {
+    const value = payload.fields;
+    if (value === undefined) return undefined;
+    if (!Array.isArray(value) || value.length === 0) {
+      throw new Error("fields must be a non-empty list of targetRef and text");
+    }
+    return value.map((entry) => {
+      if (typeof entry !== "object" || entry === null) {
+        throw new Error("fields must be a non-empty list of targetRef and text");
+      }
+      const record = entry as Record<string, unknown>;
+      const targetRef = record.targetRef;
+      const text = record.text;
+      if (typeof targetRef !== "string" || targetRef.trim().length === 0 || typeof text !== "string" || (text.length === 0 && record.clear !== true)) {
+        throw new Error("fields must be a non-empty list of targetRef and text");
+      }
+      return {
+        targetRef: targetRef.trim(),
+        text,
+        ...(record.clear === true ? { clear: true } : {})
+      };
+    });
+  };
 
   const readSensitiveFillText = async (payload: Record<string, unknown>): Promise<string> => {
     const sensitiveRef = payload.sensitiveValueRef;
@@ -98,9 +134,14 @@ export const createLumenToolHost = ({
         throw new Error("Sensitive value fill is not available in this runtime.");
       }
       const secret = await resolveSensitiveValueForFill(sensitiveRef);
+      browserSensitiveBoundary.remember(sensitiveRef, secret);
       return secret;
     }
-    return readStringField(payload, "text");
+    const text = payload.text;
+    if (typeof text !== "string" || (text.length === 0 && payload.clear !== true)) {
+      throw new Error("text must be a string; empty text requires clear=true");
+    }
+    return text;
   };
 
   const attemptPostTimeoutActionVerification = async (
@@ -215,26 +256,79 @@ export const createLumenToolHost = ({
     };
   };
 
-  const mapObservationCache = createLumenMapObservationCache();
 
+  const sessionPages = createLumenSessionPages();
+  const resolveBrowserAgentTabId = (payload: Record<string, unknown>, targetMode: "live" | "isolated") => {
+    const tabId = readTabId(payload);
+    // A task's isolated page has its own browser instance and need not appear
+    // in the user's live workbench topology. Never use this exemption for live tabs.
+    if (targetMode === "isolated" && tabId && sessionPages.pages(payload).some(page => page.tabId === tabId)) {
+      return Promise.resolve(tabId);
+    }
+    return resolveWorkbenchBrowserAgentTabId(payload, targetMode);
+  };
   const withLyraLumenResult = (
     requestedMethod: string,
     handler: (payload: Record<string, unknown>) => Promise<unknown>
   ) => async (payload: unknown) => {
-    const normalized = normalizePayload(payload);
+    let normalized = normalizePayload(payload);
     const actionTimeoutMs = clampHostActionTimeoutMs(
       readOptionalNumberField(normalized, "timeoutMs"),
       LUMEN_HOST_ACTION_TIMEOUT_MS
     );
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      return await Promise.race([
-        handler(normalized),
+      normalized = sessionPages.prepare(requestedMethod, normalized);
+      const awaitResponse = normalized.awaitResponse === true;
+      if (awaitResponse && (!['lyraLumen.act','lyraLumen.type','lyraLumen.press'].includes(requestedMethod)
+        || normalized.effect !== 'communicate'
+        || requestedMethod === 'lyraLumen.type' && typeof normalized.thenClick !== 'string')) {
+        throw new Error("awaitResponse requires an explicit communicate send (type with thenClick, act, or press). No action was executed.");
+      }
+      const startedAt = Date.now();
+      const result = await Promise.race([
+        browserAgentOperationContext.run({sessionId:readRuntimeSessionId(normalized),
+          ...(readRuntimeTurnId(normalized) ? {turnId:readRuntimeTurnId(normalized)!} : {})}, async () => {
+          const pendingTab = readTabId(normalized) ?? sessionPages.current(normalized);
+          if (pendingTab && requestedMethod !== "lyraLumen.dialog" && requestedMethod !== "lyraLumen.navigate") {
+            const pending=getBrowserBridge()?.peekAgentDialog?.(pendingTab,readLumenTargetMode(normalized));
+            if(pending)return pending;
+          }
+          const action = await handler(normalized);
+          if (!awaitResponse || !isRecord(action) || action.ok === false || action.status === "dialogPending") return action;
+          const browser = getBrowserBridge();
+          if (!browser || typeof action.tabId !== 'string' || !isRecord(action.responseWatch) || typeof action.responseWatch.operationId !== 'string') {
+            return {...action, completion:'unknown', responseError:'No response observation was established. The action must not be repeated automatically.'};
+          }
+          try {
+            const targetMode = readLumenTargetMode(normalized);
+            const waited = await waitForLumenPage(browser, action.tabId, {
+              ...readLumenModeRequest(normalized,targetMode), targetMode, until:'responseComplete',
+              operationId:action.responseWatch.operationId, idleMs:160, scope:'full',
+              timeoutMs:Math.max(0,Math.min(30000,actionTimeoutMs-(Date.now()-startedAt)-750))
+            });
+            return {...action, response:waited.content.content, waitState:waited.content.waitState,
+              matched:waited.matched, completion:waited.matched?'conditionMet':'unknown',
+              nextRecommendedAction:waited.matched?'use_returned_state':'inspect_returned_state_before_waiting',
+              responseElapsedMs:waited.elapsedMs, responseTruncated:waited.content.truncated === true};
+          } catch (error) {
+            // A failed read after a send is not a failed send. Never invite retry.
+            return {...action,completion:'unknown',responseError:String(error),nextRecommendedAction:'inspect_returned_state_before_waiting'};
+          }
+        }),
         new Promise<never>((_resolve, reject) => {
-          setTimeout(() => {
+          timer = setTimeout(() => {
             reject(new LumenActionTimeoutError(requestedMethod, actionTimeoutMs));
           }, actionTimeoutMs);
         })
       ]);
+      if (isRecord(result)) {
+        sessionPages.remember(normalized, result, requestedMethod);
+        const context = sessionPages.summary(normalized);
+        if (context && typeof result.mapAppendix === "string") result.mapAppendix += `\n${context}`;
+        if (context && requestedMethod === "lyraLumen.navigate") result.message = `${result.message}\n${context}`;
+      }
+      return result;
     } catch (error) {
       const handoff = isRecord(error) && isRecord(error.handoff)
         ? error.handoff
@@ -279,6 +373,14 @@ export const createLumenToolHost = ({
         };
       }
       const message = error instanceof Error ? error.message : String(error);
+      if (/not materialized|Unknown Workbench tab|Targets belong to different tabs/.test(message)) {
+        const candidates = listBrowserPageTabs ? await listBrowserPageTabs().catch(() => []) : [];
+        return { ok: false, kind: "lyraLumenResult", requestedMethod,
+          error: { kind: "browserTabUnavailable", message },
+          pageCandidates: candidates.map(tab => ({tabId:tab.tabId,title:tab.title,address:tab.displayAddress,active:tab.active})),
+          message: `${message} Select an existing tabId with browser_map; no other tab was substituted.`,
+          nextRecommendedAction: "lyra_lumen.map" };
+      }
       const isUncertainAction =
         error instanceof LumenActionTimeoutError
         && isUncertainTimeoutMethod(requestedMethod);
@@ -313,96 +415,7 @@ export const createLumenToolHost = ({
         nextRecommendedAction: "lyra_lumen.map"
       };
     }
-  };
-
-  const waitForLumenPage = async (
-    browser: NonNullable<ReturnType<typeof getBrowserBridge>>,
-    tabId: string,
-    request: {
-      readonly targetMode: "isolated" | "live";
-      readonly visibleFollow?: boolean;
-      readonly authState?: "none" | "borrowLiveLogin";
-      readonly useLiveLoginState?: boolean;
-      readonly until: "loadIdle" | "textChanged" | "textStable" | "textContains";
-      readonly timeoutMs: number;
-      readonly idleMs: number;
-      readonly maxChars?: number;
-      readonly text?: string;
-    }
-  ) => {
-    const startedAt = Date.now();
-    const deadline = startedAt + request.timeoutMs;
-    const pollDelayMs = Math.max(20, Math.min(250, request.idleMs));
-    let firstContent: string | null = null;
-    let previousContent: string | null = null;
-    let stableSince = Date.now();
-    let lastContent = "";
-    let lastReadContent: Awaited<ReturnType<typeof browser.readAgentPage>> | null = null;
-
-    while (Date.now() <= deadline - 320) {
-      const remainingMs = deadline - Date.now();
-      const readTimeoutMs = Math.max(250, Math.min(4_000, remainingMs - 60));
-      const content = await browser.readAgentPage(tabId, {
-        strategy: "focus",
-        targetMode: request.targetMode,
-        ...(request.visibleFollow === undefined ? {} : { visibleFollow: request.visibleFollow }),
-        ...(request.authState === undefined ? {} : { authState: request.authState }),
-        ...(request.useLiveLoginState === undefined ? {} : { useLiveLoginState: request.useLiveLoginState }),
-        timeoutMs: readTimeoutMs,
-        ...(request.maxChars === undefined ? {} : { maxChars: request.maxChars })
-      });
-      lastReadContent = content;
-      lastContent = content.content;
-      if (firstContent === null) {
-        firstContent = lastContent;
-      }
-
-      if (
-        request.until === "textContains"
-        && request.text !== undefined
-        && lastContent.includes(request.text)
-      ) {
-        return { content, matched: true, elapsedMs: Date.now() - startedAt };
-      }
-      if (request.until === "textChanged" && firstContent !== lastContent) {
-        return { content, matched: true, elapsedMs: Date.now() - startedAt };
-      }
-
-      if (previousContent !== lastContent) {
-        previousContent = lastContent;
-        stableSince = Date.now();
-      } else if (
-        (request.until === "textStable" || request.until === "loadIdle")
-        && Date.now() - stableSince >= request.idleMs
-      ) {
-        return { content, matched: true, elapsedMs: Date.now() - startedAt };
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, pollDelayMs));
-    }
-
-    const content = lastReadContent ?? await browser.readAgentPage(tabId, {
-      strategy: "focus",
-      targetMode: request.targetMode,
-      ...(request.visibleFollow === undefined ? {} : { visibleFollow: request.visibleFollow }),
-      ...(request.authState === undefined ? {} : { authState: request.authState }),
-      ...(request.useLiveLoginState === undefined ? {} : { useLiveLoginState: request.useLiveLoginState }),
-      timeoutMs: 250,
-      ...(request.maxChars === undefined ? {} : { maxChars: request.maxChars })
-    });
-    if (
-      request.until === "textContains"
-      && request.text !== undefined
-      && content.content.includes(request.text)
-    ) {
-      return { content, matched: true, elapsedMs: Date.now() - startedAt };
-    }
-    return {
-      content,
-      matched: false,
-      elapsedMs: Date.now() - startedAt,
-      lastContent
-    };
+    finally { if (timer !== undefined) clearTimeout(timer); }
   };
 
   const elementRevealKey = (element: unknown): string => {
@@ -433,152 +446,80 @@ export const createLumenToolHost = ({
     );
   };
 
-  const withLumenFailureDiagnostics = async <T extends Record<string, unknown>>(
-    browser: NonNullable<ReturnType<typeof getBrowserBridge>>,
-    tabId: string,
-    targetMode: "isolated" | "live",
-    result: T
-  ): Promise<T> => {
-    if (result.ok !== false) {
-      return result;
-    }
-    try {
-      const audit = await browser.auditAgentPageDiagnostics(tabId, {
-        targetMode,
-        severity: "error",
-        maxEntries: 20
-      });
-      const diagnostics = audit.diagnostics ?? audit.entries;
-      if (diagnostics.length === 0 && audit.available !== false) {
-        return result;
-      }
-      return {
-        ...result,
-        diagnostics,
-        diagnosticSummary: audit.summary,
-        ...(audit.evidenceRefs === undefined ? {} : { evidenceRefs: audit.evidenceRefs }),
-        nextRecommendedAction: "lyra_lumen.map"
-      };
-    } catch {
-      return result;
-    }
-  };
-
+  // Action failures report the action error. Historical page diagnostics are
+  // available through lyraLumen.audit; attaching them here inflates every retry
+  // and wrongly presents unrelated console errors as the cause of this action.
   const lyraLumenHandlers: AgentHostCapabilityHandlers = {
+    "lyraLumen.dialog": withLyraLumenResult("lyraLumen.dialog", async payload => {
+      const browser=getBrowserBridge();if(!browser)throw new Error("Browser capability is not available");
+      const targetMode=readLumenTargetMode(payload),tabId=await resolveBrowserAgentTabId(payload,targetMode);
+      const effect=readOptionalLumenActionEffect(payload);
+      if(!effect || typeof payload.accept!=="boolean")throw new Error("A dialog requires accept and its effect");
+      if(payload.promptText!==undefined && typeof payload.promptText!=="string")throw new Error("promptText must be a literal string");
+      return browser.handleAgentDialog(tabId,{targetMode,effect,accept:payload.accept,dialogId:readStringField(payload,"dialogId"),
+        ...(payload.promptText===undefined?{}:{promptText:payload.promptText})});
+    }),
+    "lyraLumen.drag": withLyraLumenResult("lyraLumen.drag", async payload => {
+      const browser = getBrowserBridge();
+      if (!browser) throw new Error("Browser capability is not available");
+      const targetMode = readLumenTargetMode(payload), tabId = await resolveBrowserAgentTabId(payload,targetMode);
+      const effect = readOptionalLumenActionEffect(payload);
+      if (!effect || effect === "observe" || effect === "unknown") throw new Error("Declare the effect of this drag");
+      return browser.dragAgentElement(tabId,{targetMode,effect,targetRef:readStringField(payload,"targetRef"),toTargetRef:readStringField(payload,"toTargetRef"),
+        ...(payload.modifiers === undefined ? {} : {modifiers:payload.modifiers as PointerOptions["modifiers"]}),
+        ...(payload.fromPosition === undefined ? {} : {fromPosition:payload.fromPosition as PointerOptions["position"]}),
+        ...(payload.toPosition === undefined ? {} : {toPosition:payload.toPosition as PointerOptions["position"]})});
+    }),
+    "lyraLumen.upload": withLyraLumenResult("lyraLumen.upload", async payload => {
+      const browser = getBrowserBridge();
+      if (!browser) throw new Error("Browser capability is not available");
+      if (payload.effect !== "upload") throw new Error("Uploading files requires effect=upload.");
+      if (!Array.isArray(payload.files) || payload.files.some(path => typeof path !== "string")) {
+        throw new Error("files must contain explicit absolute local file paths.");
+      }
+      const targetMode = readLumenTargetMode(payload);
+      const tabId = await resolveBrowserAgentTabId(payload, targetMode);
+      const targetRef = readOptionalLumenTargetRef(payload), chooserId = readOptionalStringField(payload, "chooserId");
+      const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
+      return withLumenTargetIds(await browser.uploadAgentFiles(tabId, {
+        files: payload.files as string[], effect: "upload", targetMode,
+        ...(targetRef === undefined ? {} : { targetRef }), ...(chooserId === undefined ? {} : { chooserId }),
+        ...(timeoutMs === undefined ? {} : { timeoutMs })
+      }), tabId);
+    }),
     "lyraLumen.map": withLyraLumenResult("lyraLumen.map", async (payload) => {
       const browser = getBrowserBridge();
       if (!browser) throw new Error("Browser capability is not available");
       const targetMode = readLumenTargetMode(payload);
       const tabId = await resolveBrowserAgentTabId(payload, targetMode);
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
-      const observation = await browser.observeAgentPage(tabId, {
-        strategy: readLumenStrategy(payload, "interactiveOnly"),
-        mapScope: readLumenMapScope(payload) ?? "viewport",
-        ...readLumenModeRequest(payload, targetMode),
-        ...(timeoutMs === undefined ? {} : { timeoutMs })
-      });
-      const mapKey = `${targetMode}:${tabId}`;
-      const compacted = mapObservationCache.compact(mapKey, observation);
-      const initialBlockingSignal = observation.authChallengeSignals
-        ?.find((signal) =>
-          signal.confidence === "high"
-          && signal.actionability === "user_only"
-          && signal.kind !== "oauth_popup"
-          && signal.kind !== "active_file_chooser"
-          && signal.kind !== "login_wall"
-        );
-      let stableBlockingSignal = initialBlockingSignal;
-      let stableObservationCount = initialBlockingSignal === undefined ? 0 : 1;
-      if (initialBlockingSignal !== undefined) {
-        for (const delayMs of [250, 750]) {
-          await pauseForLumenIdle(delayMs);
-          const nextObservation = await browser.observeAgentPage(tabId, {
-            strategy: readLumenStrategy(payload, "interactiveOnly"),
-            mapScope: readLumenMapScope(payload) ?? "viewport",
-            ...readLumenModeRequest(payload, targetMode),
-            ...(timeoutMs === undefined ? {} : { timeoutMs })
-          });
-          const matchingSignal = nextObservation.authChallengeSignals?.find((signal) =>
-            signal.kind === initialBlockingSignal.kind
-            && signal.confidence === "high"
-            && signal.actionability === "user_only"
-            && (initialBlockingSignal.reasonCode === undefined
-              || signal.reasonCode === initialBlockingSignal.reasonCode)
-          );
-          if (matchingSignal === undefined) {
-            stableBlockingSignal = undefined;
-            stableObservationCount = 0;
-            break;
-          }
-          stableObservationCount += 1;
-          stableBlockingSignal = matchingSignal;
-        }
-      }
-      if (stableBlockingSignal !== undefined && stableObservationCount >= 3) {
-        stableBlockingSignal = {
-          ...stableBlockingSignal,
-          stableObservationCount
-        };
-      } else {
-        stableBlockingSignal = undefined;
-      }
-      const activeFileChooser = observation.authChallengeSignals
-        ?.find((signal) =>
-          signal.confidence === "high"
-          && signal.actionability === "user_only"
-          && signal.kind === "active_file_chooser"
-        );
-      const highConfidenceOauthSignal = observation.authChallengeSignals
-        ?.find((signal) => signal.confidence === "high" && signal.kind === "oauth_popup");
+      const view = { query: readOptionalStringField(payload, "query"), region: readOptionalStringField(payload, "region"), cursor: readOptionalStringField(payload, "cursor") };
+      const key = JSON.stringify([readRuntimeSessionId(payload) ?? "", targetMode, tabId]);
+      const presented = view.cursor
+        ? mapPager.next(key, view, (await browser.readAgentPreviewPage(tabId, targetMode))?.url)
+        : mapPager.start(key, await browser.observeAgentPage(tabId, {
+          strategy: "interactiveOnly", mapScope: "document",
+          ...readLumenModeRequest(payload, targetMode),
+          ...(timeoutMs === undefined ? {} : { timeoutMs })
+        }), view);
+      const compacted = { observation: { ...presented.observation, mapAppendix: presented.mapAppendix } };
+      const savedSignIn = loginMapNoteForStorage(
+        compacted.observation.url,
+        compacted.observation.elements,
+        loginManagerStorageRoot
+      );
+      const mapAppendix = savedSignIn.length === 0
+        ? compacted.observation.mapAppendix
+        : [compacted.observation.mapAppendix, savedSignIn].filter((line) => (line ?? "").length > 0).join("\n");
       const mapResult = applyBrowserBlockedEnvelope(
-        budgetMapResult({
-          ...compacted.observation,
-          kind: "lyraLumenMap"
-        }),
+        lumenMapResult(compacted.observation, mapAppendix ?? ""),
         findActiveBrowserBlock(compacted.observation.blockedRegions)
       );
       return withLumenTargetIds({
         ...mapResult,
-        ...(stableBlockingSignal !== undefined
-            ? {
-              needsUserAction: {
-                kind: "auth_challenge",
-                reason: stableBlockingSignal.kind,
-                signal: stableBlockingSignal,
-                tabId,
-                targetMode,
-                suggestedAction: "ask_user",
-                actionability: "user_only",
-                taskBlocking: true,
-                confidence: "high",
-                reasonCode: stableBlockingSignal.reasonCode ?? stableBlockingSignal.kind,
-                stableObservationCount
-              }
-            }
-            : activeFileChooser !== undefined
-              ? {
-                needsUserAction: {
-                  kind: "auth_challenge",
-                  reason: "active_file_chooser",
-                  signal: activeFileChooser,
-                  tabId,
-                  targetMode,
-                  suggestedAction: "ask_user",
-                  actionability: "user_only",
-                  taskBlocking: true,
-                  confidence: "high",
-                  reasonCode: "active_file_chooser",
-                  stableObservationCount: 1
-                }
-              }
-              : {}),
         nextRecommendedAction:
           compacted.observation.nextRecommendedAction
-          ?? (stableBlockingSignal !== undefined || activeFileChooser !== undefined
-            ? "ask_user"
-            : highConfidenceOauthSignal !== undefined
-                ? "browser_ax.map"
-                : compacted.observation.elements.length > 0 ? "lyra_lumen.act" : "lyra_lumen.read")
+          ?? (compacted.observation.elements.length > 0 ? "lyra_lumen.act" : "lyra_lumen.read")
       }, tabId);
     }),
     "lyraLumen.act": withLyraLumenResult("lyraLumen.act", async (payload) => {
@@ -593,8 +534,19 @@ export const createLumenToolHost = ({
       const effect = readOptionalLumenActionEffect(payload);
       const settle = readLumenSettle(payload);
       const workflow = readWorkflowFields(payload);
-      const optionLabel = readOptionalStringField(payload, "optionLabel");
-      const selectValue = readOptionalStringField(payload, "selectValue");
+      const optionLabel = payload.optionLabel;
+      const optionQuery = payload.optionQuery;
+      const optionOffset = payload.optionOffset;
+      if (optionLabel !== undefined && typeof optionLabel !== "string") throw new Error("optionLabel must be a string");
+      if (optionQuery !== undefined && typeof optionQuery !== "string") throw new Error("optionQuery must be a string");
+      if (optionOffset !== undefined && (!Number.isInteger(optionOffset) || Number(optionOffset) < 0)) throw new Error("optionOffset must be a nonnegative integer");
+      const selectValue = payload.selectValue;
+      const selectValues = payload.selectValues;
+      if (selectValue !== undefined && typeof selectValue !== "string") throw new Error("selectValue must be a string");
+      if (selectValues !== undefined && (!Array.isArray(selectValues) || selectValues.length > 100 || selectValues.some(value => typeof value !== "string"))) throw new Error("selectValues must be an array of strings");
+      const pointer = Object.fromEntries(["modifiers", "button", "holdMs", "position"].filter(key => payload[key] !== undefined).map(key => [key, payload[key]])) as PointerOptions;
+      validatePointerOptions(pointer);
+      if (Object.keys(pointer).length && !targetRef) throw new Error("Pointer options require a mapped targetRef");
       if (workflow.cacheMode === "replay" && workflow.workflowId !== undefined) {
         const replayed = await browser.replayWorkflowOnPage(tabId, {
           workflowId: workflow.workflowId,
@@ -602,11 +554,10 @@ export const createLumenToolHost = ({
           targetMode,
           ...(timeoutMs === undefined ? {} : { timeoutMs })
         });
-        const enriched = await withLumenFailureDiagnostics(browser, tabId, targetMode, replayed);
         return withLumenTargetIds({
-          ...enriched,
+          ...replayed,
           kind: "lyraLumenActionResult",
-          nextRecommendedAction: nextRecommendedActionAfterFastLumenAction(enriched)
+          nextRecommendedAction: nextRecommendedActionAfterFastLumenAction(replayed)
         }, tabId, elementId);
       }
       const result = elementId === undefined && targetRef === undefined
@@ -619,6 +570,11 @@ export const createLumenToolHost = ({
           ...(timeoutMs === undefined ? {} : { timeoutMs })
         })
         : await browser.actOnAgentElement(tabId, {
+        ...pointer,
+        ...(optionQuery === undefined ? {} : {optionQuery}),
+        ...(optionOffset === undefined ? {} : {optionOffset:optionOffset as number}),
+        ...(selectValues === undefined ? {} : {selectValues: selectValues as string[]}),
+        ...(payload.awaitResponse === true ? { awaitResponse: true } : {}),
           ...(elementId === undefined ? {} : { elementId }),
           ...(targetRef === undefined ? {} : { targetRef }),
           ...(effect === undefined ? {} : { effect }),
@@ -632,11 +588,10 @@ export const createLumenToolHost = ({
           ...(selectValue === undefined ? {} : { selectValue }),
           ...(timeoutMs === undefined ? {} : { timeoutMs })
         });
-      const enriched = await withLumenFailureDiagnostics(browser, tabId, targetMode, result);
       return withLumenTargetIds({
-        ...enriched,
+        ...result,
         kind: "lyraLumenActionResult",
-        nextRecommendedAction: nextRecommendedActionAfterFastLumenAction(enriched)
+        nextRecommendedAction: nextRecommendedActionAfterFastLumenAction(result)
       }, tabId, elementId);
     }),
     "lyraLumen.vact": withLyraLumenResult("lyraLumen.vact", async (payload) => {
@@ -773,10 +728,9 @@ export const createLumenToolHost = ({
           ...readLumenModeRequest(payload, targetMode),
           ...(timeoutMs === undefined ? {} : { timeoutMs })
         });
-      if (actionResult.ok === false) {
-        const enriched = await withLumenFailureDiagnostics(browser, tabId, targetMode, actionResult);
+      if (actionResult.ok === false || "status" in actionResult && actionResult.status === "dialogPending") {
         return withLumenTargetIds({
-          ...enriched,
+          ...actionResult,
           kind: "lyraLumenActionResult",
           nextRecommendedAction: "lyra_lumen.map"
         }, tabId, elementId);
@@ -819,13 +773,19 @@ export const createLumenToolHost = ({
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
       const verification = readLumenVerification(payload, "fast");
       const effect = readOptionalLumenActionEffect(payload);
-      const fillText = await readSensitiveFillText(payload);
+      const fields = readLumenInputFields(payload);
+      const thenClick = readOptionalStringField(payload, "thenClick");
+      if (thenClick !== undefined && !["communicate", "submitExternal", "authorize", "purchase", "delete", "upload", "download"].includes(effect ?? "")) {
+        throw new Error("thenClick is a submit operation and requires its actual submission effect. For a local UI action, type with editDraft and use a separate act with an explicit interaction. No text was inserted.");
+      }
+      const fillText = fields === undefined ? await readSensitiveFillText(payload) : "";
       const result = await browser.typeIntoAgentElement(tabId, {
         ...(elementId === undefined ? {} : { elementId }),
         ...(targetRef === undefined ? {} : { targetRef }),
-        ...(effect === undefined ? {} : { effect }),
+        ...(effect === undefined ? {} : { effect: thenClick === undefined ? effect : "editDraft" as const }),
         text: fillText,
         clear: payload.clear === true,
+        ...(fields === undefined ? {} : { fields }),
         ...readLumenModeRequest(payload, targetMode),
         ...(verification === "none" ? {} : { verification }),
         ...(timeoutMs === undefined ? {} : { timeoutMs }),
@@ -833,11 +793,39 @@ export const createLumenToolHost = ({
           ? {}
           : { sensitiveFill: true, inputValuePreview: "[secret:redacted]" })
       });
-      const enriched = await withLumenFailureDiagnostics(browser, tabId, targetMode, result);
+      if (thenClick !== undefined && result.ok && result.inputValidation?.valid === false) {
+        return withLumenTargetIds({ ...result, ok:false,
+          error:{kind:"input_validation_failed",message:"Text was inserted, but the field rejected its format. Submit was not clicked. Check the field's label, constraints and verification mode."},
+          nextRecommendedAction:"lyra_lumen.map" }, tabId, elementId);
+      }
+      if (thenClick === undefined || result.ok === false
+        || "status" in result && ["uncertain", "dialogPending"].includes(String(result.status))
+        || "outcome" in result && result.outcome === "uncertain") {
+        return withLumenTargetIds({
+          ...result,
+          kind: "lyraLumenActionResult",
+          nextRecommendedAction: nextRecommendedActionAfterFastLumenAction(result)
+        }, tabId, elementId);
+      }
+      const clicked = await browser.actOnAgentElement(tabId, {
+        ...(payload.awaitResponse === true ? { awaitResponse: true } : {}),
+        targetRef: thenClick,
+        ...(effect === undefined ? {} : { effect }),
+        interaction: "click",
+        ...readLumenModeRequest(payload, targetMode),
+        ...(verification === "none" ? {} : { verification }),
+        ...(timeoutMs === undefined ? {} : { timeoutMs })
+      });
+      const typedMessage = "Text insertion verified; the following observation is after the requested submit click.";
+      const clickMessage = clicked.message ?? (clicked.ok === false ? "Click failed." : "Clicked.");
       return withLumenTargetIds({
-        ...enriched,
+        ...clicked,
+        inputValidation: result.inputValidation,
+        inputInsertionMethod: result.inputInsertionMethod,
+        inputEvidence: result.inputEvidence,
         kind: "lyraLumenActionResult",
-        nextRecommendedAction: nextRecommendedActionAfterFastLumenAction(enriched)
+        message: `${typedMessage}\n${clickMessage}`,
+        nextRecommendedAction: nextRecommendedActionAfterFastLumenAction(clicked)
       }, tabId, elementId);
     }),
     "lyraLumen.press": withLyraLumenResult("lyraLumen.press", async (payload) => {
@@ -848,22 +836,31 @@ export const createLumenToolHost = ({
       const elementId = readOptionalLumenElementId(payload);
       const targetRef = readOptionalLumenTargetRef(payload);
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
-      const verification = readLumenVerification(payload);
+      const verification = readLumenVerification(payload, "fast");
       const effect = readOptionalLumenActionEffect(payload);
+      const repeat = readOptionalNumberField(payload, "repeat");
+      const selectText = payload.selectText;
+      if (selectText !== undefined && (typeof selectText !== "string" || selectText.length === 0)) {
+        throw new Error("selectText must be a non-empty literal string");
+      }
+      const occurrence = readOptionalNumberField(payload, "occurrence");
       const result = await browser.pressAgentKey(tabId, {
+        ...(payload.awaitResponse === true ? { awaitResponse: true } : {}),
         key: readStringField(payload, "key"),
+        ...(repeat === undefined ? {} : { repeat }),
+        ...(selectText === undefined ? {} : { selectText }),
+        ...(occurrence === undefined ? {} : { occurrence }),
         ...(effect === undefined ? {} : { effect }),
         ...(elementId === undefined ? {} : { elementId }),
         ...(targetRef === undefined ? {} : { targetRef }),
         ...readLumenModeRequest(payload, targetMode),
-        ...(verification === "full" ? { verification } : {}),
+        verification,
         ...(timeoutMs === undefined ? {} : { timeoutMs })
       });
-      const enriched = await withLumenFailureDiagnostics(browser, tabId, targetMode, result);
       return withLumenTargetIds({
-        ...enriched,
+        ...result,
         kind: "lyraLumenActionResult",
-        nextRecommendedAction: nextRecommendedActionAfterFastLumenAction(enriched)
+        nextRecommendedAction: nextRecommendedActionAfterFastLumenAction(result)
       }, tabId, elementId);
     }),
     "lyraLumen.scroll": withLyraLumenResult("lyraLumen.scroll", async (payload) => {
@@ -1050,48 +1047,38 @@ export const createLumenToolHost = ({
       const browser = getBrowserBridge();
       if (!browser) throw new Error("Browser capability is not available");
       const url = readStringField(payload, "url");
-      const explicitTabId = readTabId(payload);
+      let explicitTabId = readTabId(payload);
       const targetMode = readLumenTargetMode(payload);
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
       const useFrameworkRouter = payload.useFrameworkRouter === true;
       const newTab = payload.newTab === true;
-      let resolvedTabId = explicitTabId ?? browser.readActiveTabId() ?? "";
-      grantBrowserAuthorizeAct(url, explicitTabId ?? undefined);
-      const res = targetMode === "live"
-        ? await (async () => {
-          if (newTab) {
-            const opened = await browser.navigate({
-              address: url,
-              newTab: true,
-              ...(useFrameworkRouter ? { useFrameworkRouter: true } : {}),
-              ...(explicitTabId === null ? {} : { tabId: explicitTabId })
-            });
-            if (typeof opened.tabId === "string" && opened.tabId.length > 0) {
-              rememberAgentBrowserPreviewTarget({ tabId: opened.tabId, targetMode: "live" });
-            }
-            return opened;
-          }
-          const preview = readAgentBrowserPreviewTarget();
-          const tabId = explicitTabId
-            ?? (preview?.targetMode === "live" ? preview.tabId : null)
-            ?? allocateLiveAgentBrowserPreviewTabId();
-          rememberAgentBrowserPreviewTarget({ tabId, targetMode: "live" });
-          return await browser.navigateAgentPage(tabId, {
-            url,
-            targetMode: "live",
-            ...(useFrameworkRouter ? { useFrameworkRouter: true } : {}),
-            ...(timeoutMs === undefined ? {} : { timeoutMs })
-          });
-        })()
-        : await (async () => {
-          resolvedTabId = await resolveBrowserAgentTabId(payload, targetMode);
-          return await browser.navigateAgentPage(resolvedTabId, {
-            url,
-            ...readLumenModeRequest(payload, targetMode),
-            ...(useFrameworkRouter ? { useFrameworkRouter: true } : {}),
-            ...(timeoutMs === undefined ? {} : { timeoutMs })
-          });
-        })();
+      // A URL is a destination, not a tab identity. Opening a helper website
+      // must not replace the task's in-progress editor or verification form.
+      if (explicitTabId !== null && !newTab) explicitTabId = await resolveBrowserAgentTabId(payload, targetMode);
+      const available = targetMode === "live" && listBrowserPageTabs ? await listBrowserPageTabs() : undefined;
+      const existing = !newTab && explicitTabId === null && payload.newTab !== false
+        ? sessionPages.pages(payload).find(page => {
+          const live = available?.find(tab => tab.tabId === page.tabId);
+          return (!available || live) && (live?.displayAddress || page.url) === url;
+        }) : undefined;
+      const resolvedTabId = newTab ? allocateLiveAgentBrowserPreviewTabId()
+        : explicitTabId ?? existing?.tabId
+          ?? (payload.newTab === false ? sessionPages.current(payload) : undefined)
+          ?? allocateLiveAgentBrowserPreviewTabId();
+      const res = await browser.navigateAgentPage(resolvedTabId, {
+        url, ...readLumenModeRequest(payload, targetMode),
+        ...(useFrameworkRouter ? { useFrameworkRouter: true } : {}),
+        ...(timeoutMs === undefined ? {} : { timeoutMs })
+      });
+      if (typeof res.tabId !== "string" || !res.tabId) throw new Error("Navigation did not produce a browser tab identity");
+      rememberAgentBrowserPreviewTarget({tabId:res.tabId,targetMode});
+      sessionPages.remember(payload,{ok:true,tabId:res.tabId,url:res.address,title:res.title});
+      if ("navigationState" in res && res.navigationState !== "ready") {
+        return withLumenTargetIds({ok:false,kind:"lyraLumenNavigate",tabId:res.tabId,url:res.address,
+          status:res.navigationState === "pending" ? "uncertain" : "failed",
+          message:`Navigation ${res.navigationState} in ${res.tabId}. Read this tab to check progress; do not repeat the navigation.`,
+          nextRecommendedAction:"lyra_lumen.map"},res.tabId);
+      }
       grantBrowserAuthorizeAct(res.address, res.tabId ?? undefined);
       return withLumenTargetIds({
         ok: true,
@@ -1101,7 +1088,9 @@ export const createLumenToolHost = ({
         title: res.title,
         targetMode,
         ...("browserMode" in res && res.browserMode !== undefined ? { browserMode: res.browserMode } : {}),
-        message: `Navigated Lyra Lumen to ${res.address}.`,
+        message: "alreadyOpen" in res && res.alreadyOpen === true
+          ? `Already open at ${res.address}. It was not loaded again.`
+          : `Navigated Lyra Lumen to ${res.address}.`,
         nextRecommendedAction: "lyra_lumen.map"
       }, res.tabId ?? resolvedTabId);
     }),
@@ -1160,6 +1149,9 @@ export const createLumenToolHost = ({
         });
         return withLumenTargetIds({
           ...result,
+          ...(result.totalMatches === 0 ? {
+            message: "No page-text matches. read(query) searches displayed text like Ctrl+F; it does not retrieve a field by its label or targetRef. Use map(query) to locate a named field; zero text matches does not mean that field is empty or missing."
+          } : {}),
           nextRecommendedAction: "lyra_lumen.map"
         }, tabId);
       }
@@ -1169,10 +1161,12 @@ export const createLumenToolHost = ({
         const scope = payload.scope === "full" ? "full" : "viewport";
         const extracted = await browser.readAgentPage(tabId, {
           strategy: scope === "full" ? "domFallback" : "focus",
+          scope,
+          ...(maxChars === undefined ? {} : { maxChars }),
           ...readLumenModeRequest(payload, targetMode),
           ...(timeoutMs === undefined ? {} : { timeoutMs })
-        }).catch(() => null);
-        const budgeted = truncateLumenTextContent(extracted?.content ?? "");
+        });
+        const budgeted = truncateLumenTextContent(extracted.content);
         return withLumenTargetIds({
           ok: true,
           kind: "lyraLumenExtract",
@@ -1184,7 +1178,10 @@ export const createLumenToolHost = ({
           ...("browserMode" in (extracted ?? {}) && (extracted as { browserMode?: unknown }).browserMode !== undefined
             ? { browserMode: (extracted as { browserMode: unknown }).browserMode }
             : {}),
+          url: "url" in extracted ? extracted.url : undefined,
+          title: "title" in extracted ? extracted.title : undefined,
           content: budgeted.content,
+          readStatus: budgeted.content.length === 0 ? "empty" : "text",
           truncated: budgeted.truncated,
           message: `Read browser page for structured extraction. Conform your next reply to the provided JSON schema${
             schemaHint === undefined ? "" : " (schemaHint)"
@@ -1197,15 +1194,18 @@ export const createLumenToolHost = ({
       const readPage = (readStrategy: WorkbenchBrowserAgentObserveStrategy) =>
         browser.readAgentPage(tabId, {
           strategy: readStrategy,
+          scope: payload.scope === "full" ? "full" : "viewport",
           ...modeRequest,
           ...(maxChars === undefined ? {} : { maxChars }),
           timeoutMs: readTimeoutMs
         });
       const formatRead = (
         content: Awaited<ReturnType<typeof browser.readAgentPage>>,
-        readStrategy: WorkbenchBrowserAgentObserveStrategy,
-        degraded?: { readonly reason: string }
+        readStrategy: WorkbenchBrowserAgentObserveStrategy
       ) => {
+        if (readStrategy === "focus" && content.truncated !== true) {
+          sessionPages.rememberText(payload, tabId, content.content, maxChars, payload.scope === "full" ? "full" : "viewport");
+        }
         if (readStrategy === "domFallback") {
           return withLumenTargetIds({
             ok: true,
@@ -1214,10 +1214,12 @@ export const createLumenToolHost = ({
             strategy: readStrategy,
             targetMode,
             ...("browserMode" in content && content.browserMode !== undefined ? { browserMode: content.browserMode } : {}),
+            url: "url" in content ? content.url : undefined,
+            title: "title" in content ? content.title : undefined,
             content: content.content,
+            readStatus: content.content.length === 0 ? "empty" : "text",
             summary: content,
             truncated: "truncated" in content ? content.truncated : false,
-            ...(degraded === undefined ? {} : { degraded: true, warning: degraded.reason }),
             nextRecommendedAction: "lyra_lumen.map"
           }, tabId);
         }
@@ -1228,50 +1230,23 @@ export const createLumenToolHost = ({
           strategy: readStrategy,
           targetMode,
           ...("browserMode" in content && content.browserMode !== undefined ? { browserMode: content.browserMode } : {}),
+          url: "url" in content ? content.url : undefined,
+          title: "title" in content ? content.title : undefined,
           content: content.content,
+          scope: payload.scope === "full" ? "full" : "viewport",
+          ...(content.waitState?.coverage === undefined ? {} : { coverage: content.waitState.coverage }),
+          readStatus: content.content.length === 0 ? "empty" : "text",
+          ...("extractionMethod" in content ? { extractionMethod: content.extractionMethod } : {}),
           truncated: "truncated" in content ? content.truncated : false,
           ...("startChar" in content ? { startChar: content.startChar } : {}),
           ...("endChar" in content ? { endChar: content.endChar } : {}),
           ...("totalChars" in content ? { totalChars: content.totalChars } : {}),
-          ...(degraded === undefined ? {} : { degraded: true, warning: degraded.reason }),
           nextRecommendedAction: "lyra_lumen.map"
         }, tabId);
       };
-      try {
-        return formatRead(await readPage(strategy), strategy);
-      } catch (error) {
-        const handoff = isRecord(error) && isRecord(error.handoff) ? error.handoff : null;
-        if (handoff !== null && handoff.kind === "browser-shared-control-interrupted") {
-          throw error;
-        }
-        const reason = error instanceof Error ? error.message : String(error);
-        if (strategy !== "domFallback") {
-          try {
-            return formatRead(await readPage("domFallback"), "domFallback", { reason });
-          } catch {
-            // Fall through to a non-failing state-only result; the model can still map/see.
-          }
-        }
-        const state = browser.readPageState({ tabId });
-        return withLumenTargetIds({
-          ok: true,
-          kind: "lyraLumenRead",
-          tabId,
-          strategy,
-          targetMode,
-          content: "",
-          degraded: true,
-          warning: reason,
-          pageState: state === null
-            ? null
-            : {
-              address: state.address,
-              title: state.title,
-              isLoading: state.isLoading
-            },
-          nextRecommendedAction: "lyra_lumen.map"
-        }, tabId);
-      }
+      // A different strategy with the same scope uses the same extractor. Do
+      // not retry it under another name or turn a failed read into empty text.
+      return formatRead(await readPage(strategy), strategy);
     }),
     "lyraLumen.see": withLyraLumenResult("lyraLumen.see", async (payload) => {
       const browser = getBrowserBridge();
@@ -1563,28 +1538,73 @@ export const createLumenToolHost = ({
         250,
         Math.min(30_000, readOptionalNumberField(payload, "timeoutMs") ?? 10_000)
       );
-      const waitBudgetMs = Math.max(250, timeoutMs - 350);
+      const mapBudgetMs = Math.min(4_000, Math.floor(timeoutMs / 3));
+      const waitBudgetMs = Math.max(0, timeoutMs - mapBudgetMs - 350);
       const idleMs = Math.max(
         20,
         Math.min(5_000, readOptionalNumberField(payload, "idleMs") ?? 800)
       );
-      const until = readLumenWaitUntil(payload);
+      const operationId = sessionPages.responseOperation(payload, tabId);
+      const until = payload.until === undefined && operationId ? "responseComplete" : readLumenWaitUntil(payload);
+      if (until === "responseComplete" && !operationId) throw new Error("No tracked send exists for this task and tab. Use a concrete page condition; no wait was started.");
       const text = readOptionalStringField(payload, "text");
-      const maxChars = readOptionalNumberField(payload, "maxChars");
+      const targetRef = readOptionalLumenTargetRef(payload);
+      const previousText = typeof payload.previousText === "string" ? payload.previousText : undefined;
+      if (until === "textContains" && !text?.trim()) throw new Error("textContains requires non-empty text");
+      if (until === "textChanged" && targetRef !== undefined) throw new Error("textChanged must read the same scope as its baseline; use a target condition when specifying targetRef.");
+      if ((until === "targetHidden" || until === "targetEnabled") && targetRef === undefined) {
+        throw new Error(`${until} requires a targetRef from the current page map`);
+      }
+      const requestedMaxChars = readOptionalNumberField(payload, "maxChars");
+      if (payload.scope !== undefined && payload.scope !== "viewport" && payload.scope !== "full") throw new Error("scope must be full or viewport");
+      const baseline = until === "textChanged"
+        ? sessionPages.requireTextBaseline(payload, tabId, previousText, requestedMaxChars, payload.scope as "viewport" | "full" | undefined)
+        : undefined;
+      const maxChars = baseline?.maxChars ?? requestedMaxChars;
+      const scope = baseline?.scope ?? (payload.scope === "viewport" ? "viewport" : "full");
       await browser.showAgentActivity(tabId, {
         action: "wait",
         ...readLumenModeRequest(payload, targetMode),
         durationMs: Math.max(900, Math.min(5_000, timeoutMs))
       });
+      const preparationStarted = Date.now();
+      if (until === "targetEnabled" && targetRef !== undefined) {
+        const revealed = await browser.scrollAgentPage(tabId, {
+          ...readLumenModeRequest(payload, targetMode), targetRef, block: "nearest",
+          behavior: "instant", autoMap: false, reason: "ensure_visible", timeoutMs: waitBudgetMs
+        });
+        if (!revealed.ok) return withLumenTargetIds({ ...revealed, matched: false, completion: "unknown" }, tabId);
+      }
       const result = await waitForLumenPage(browser, tabId, {
         ...readLumenModeRequest(payload, targetMode),
         targetMode,
         until,
-        timeoutMs: waitBudgetMs,
+        ...(sessionPages.navigationOrigin(payload, tabId) ? { navigationFromUrl: sessionPages.navigationOrigin(payload, tabId)! } : {}),
+        ...(until === "responseComplete" && operationId !== undefined ? { operationId } : {}),
+        scope,
+        timeoutMs: Math.max(0, waitBudgetMs - (Date.now() - preparationStarted)),
         idleMs,
         ...(maxChars === undefined ? {} : { maxChars }),
-        ...(text === undefined ? {} : { text })
+        ...(text === undefined ? {} : { text }),
+        ...(targetRef === undefined ? {} : { targetRef }),
+        ...(previousText === undefined ? {} : { previousText })
       });
+      // Observe controls once, after polling. Return the state needed for the
+      // next decision without another model round trip or activating anything.
+      let mapAppendix: string | undefined;
+      let mapError: string | undefined;
+      const completedResponse = until === "responseComplete" && result.matched;
+      try {
+        if (!completedResponse) {
+          const remainingMs = timeoutMs - (Date.now() - preparationStarted) - 100;
+          if (remainingMs < 250) throw new Error("Wait budget exhausted before the final map; text and condition state are retained.");
+          const observation = await browser.observeAgentPage(tabId, {
+            strategy: "interactiveOnly", mapScope: "document", ...readLumenModeRequest(payload, targetMode), timeoutMs: Math.min(mapBudgetMs, remainingMs)
+          });
+          const key = JSON.stringify([readRuntimeSessionId(payload) ?? "", targetMode, tabId]);
+          mapAppendix = mapPager.start(key, observation, {}, Date.now(), 3_000).mapAppendix;
+        }
+      } catch (error) { mapError = String(error); }
       return withLumenTargetIds({
         ok: true,
         kind: "lyraLumenWait",
@@ -1596,19 +1616,35 @@ export const createLumenToolHost = ({
         until,
         timeoutMs,
         idleMs,
+        scope,
+        waitState: result.content.waitState,
+        coverage: result.content.waitState?.coverage ?? { scope, scanComplete: result.content.truncated !== true },
+        ...(mapAppendix === undefined ? { mapError } : { mapAppendix }),
         matched: result.matched,
-        elapsedMs: result.elapsedMs,
+        ...("stopReason" in result ? { stopReason: result.stopReason } : {}),
+        completion: result.matched && until !== "textStable" ? "conditionMet" : "unknown",
+        readStatus: result.content.content.trim().length > 0 ? "text" : "empty",
+        ...(targetRef === undefined ? {} : { targetRef }),
+        elapsedMs: Date.now() - preparationStarted,
+        url: "url" in result.content ? result.content.url : undefined,
+        title: "title" in result.content ? result.content.title : undefined,
         content: result.content.content,
         truncated: "truncated" in result.content ? result.content.truncated : false,
         message: result.matched
-          ? `Wait condition '${until}' was met after ${result.elapsedMs}ms.`
+          ? `Wait condition '${until}' was met after ${result.elapsedMs}ms.${until === "textStable" ? " Text stability is not proof that a new reply finished; verify an expected page state." : " This confirms the requested condition only."}`
+          : "stopReason" in result ? "Navigation reached another ready page without the anticipated text. Inspect the returned page and controls; the text condition was not met."
           : `Wait condition '${until}' timed out after ${result.elapsedMs}ms.`,
-        nextRecommendedAction: "lyra_lumen.map"
+        nextRecommendedAction: completedResponse || mapAppendix !== undefined ? "use_returned_state" : "inspect_returned_state_before_waiting"
       }, tabId);
     })
   };
 
 
 
-  return { handlers: lyraLumenHandlers };
+  return { handlers: Object.fromEntries(Object.entries(lyraLumenHandlers).map(([method, handler]) => [method, async (payload: unknown) => {
+    const safe = await browserSensitiveBoundary.sanitize(await handler(payload));
+    const refs = browserSensitiveBoundary.references(safe);
+    return refs.length && isRecord(safe) ? { ...safe, sensitiveValues: refs,
+      sensitiveValueUsage: "Values are stored in secure storage. Use sensitiveValueRef to fill, or shell sensitiveEnv to use a ref. Never put plaintext credentials in command arguments, URLs, or files." } : safe;
+  }])) };
 };

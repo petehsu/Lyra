@@ -163,6 +163,13 @@ export type WorkbenchBrowserIpcBridge = {
     options?: BrowserTextExtractOptions
   ) => Promise<WorkbenchTabExtractTextResult>;
   readonly capturePage: (tabId: string) => Promise<WorkbenchVisualCaptureResult>;
+  readonly captureVisiblePageLayers?: () => Promise<readonly {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+    readonly imageBase64: string;
+  }[]>;
   readonly readRenderedSnapshot: (payload: unknown) => Promise<unknown>;
   readonly resolveFrameGlobalBounds: (
     tabId: string,
@@ -212,6 +219,7 @@ export type WorkbenchBrowserIpcBridge = {
       readonly elementId?: number;
       readonly targetRef?: string;
       readonly effect?: import("./types").BrowserActionEffect;
+      readonly awaitResponse?: boolean;
       readonly interaction: WorkbenchBrowserAgentInteraction;
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
@@ -219,6 +227,9 @@ export type WorkbenchBrowserIpcBridge = {
       readonly settle?: boolean;
       readonly optionLabel?: string;
       readonly selectValue?: string;
+      readonly selectValues?: readonly string[];
+      readonly optionQuery?: string;
+      readonly optionOffset?: number;
       readonly workflowId?: string;
       readonly cacheMode?: import("./types").WorkbenchBrowserWorkflowCacheMode;
     }
@@ -301,6 +312,10 @@ export type WorkbenchBrowserIpcBridge = {
       readonly reason?: "explicit_scroll" | "ensure_visible";
     }
   ) => Promise<WorkbenchBrowserAgentScrollResult>;
+  readonly dragAgentElement: (tabId: string, request: import("./view-manager-runtime/surface-drag").BrowserDragRequest) => Promise<Record<string, unknown>>;
+  readonly handleAgentDialog: (tabId:string,request:import("./view-manager-runtime/agent-native-dialog").NativeDialogRequest) => Promise<Record<string,unknown>>;
+  readonly peekAgentDialog: (tabId:string,mode:"live"|"isolated") => Record<string,unknown> | undefined;
+  readonly uploadAgentFiles: (tabId: string, request: import("./view-manager-runtime/agent-file-input").BrowserUploadRequest) => Promise<Record<string, unknown>>;
   readonly typeIntoAgentElement: (
     tabId: string,
     request: {
@@ -309,6 +324,11 @@ export type WorkbenchBrowserIpcBridge = {
       readonly effect?: import("./types").BrowserActionEffect;
       readonly text: string;
       readonly clear?: boolean;
+      readonly fields?: readonly {
+        readonly targetRef: string;
+        readonly text: string;
+        readonly clear?: boolean;
+      }[];
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
       readonly timeoutMs?: number;
       readonly verification?: WorkbenchBrowserAgentVerification;
@@ -319,7 +339,11 @@ export type WorkbenchBrowserIpcBridge = {
     tabId: string,
     request: {
       readonly key: string;
+      readonly repeat?: number;
+      readonly selectText?: string;
+      readonly occurrence?: number;
       readonly effect?: import("./types").BrowserActionEffect;
+      readonly awaitResponse?: boolean;
       readonly elementId?: number;
       readonly targetRef?: string;
       readonly targetMode?: WorkbenchBrowserAgentTargetMode;
@@ -338,7 +362,7 @@ export type WorkbenchBrowserIpcBridge = {
   readonly reloadAgentPage: WorkbenchBrowserViewManager["reloadAgentPage"];
   readonly readAgentPage: WorkbenchBrowserViewManager["readAgentPage"];
   readonly captureAgentPage: WorkbenchBrowserViewManager["captureAgentPage"];
-  readonly captureAgentPreviewPage: WorkbenchBrowserViewManager["captureAgentPreviewPage"];
+  readonly readAgentPreviewPage: WorkbenchBrowserViewManager["readAgentPreviewPage"];
   readonly destroyBrowserAgentShadow: WorkbenchBrowserViewManager["destroyBrowserAgentShadow"];
   readonly detectAgentPageQr: WorkbenchBrowserViewManager["detectAgentPageQr"];
   readonly showAgentActivity: WorkbenchBrowserViewManager["showAgentActivity"];
@@ -671,6 +695,7 @@ export const createWorkbenchBrowserIpcBridge = ({
     readPageDomSummary: manager.readPageDomSummary,
     extractPageText: manager.extractPageText,
     capturePage: manager.capturePage,
+    captureVisiblePageLayers: manager.captureVisiblePageLayers,
     readRenderedSnapshot: manager.readRenderedSnapshot,
     resolveFrameGlobalBounds: manager.resolveFrameGlobalBounds,
     reapplyLayout: manager.reapplyLayout,
@@ -691,6 +716,10 @@ export const createWorkbenchBrowserIpcBridge = ({
     actOnAgentVisualPoint: manager.actOnAgentVisualPoint,
     focusAgentPage: manager.focusAgentPage,
     scrollAgentPage: manager.scrollAgentPage,
+    uploadAgentFiles: manager.uploadAgentFiles,
+    dragAgentElement: manager.dragAgentElement,
+    handleAgentDialog: manager.handleAgentDialog,
+    peekAgentDialog: manager.peekAgentDialog,
     typeIntoAgentElement: manager.typeIntoAgentElement,
     pressAgentKey: manager.pressAgentKey,
     navigateAgentPage: manager.navigateAgentPage,
@@ -699,7 +728,7 @@ export const createWorkbenchBrowserIpcBridge = ({
     findAgentPage: manager.findAgentPage,
     locateAgentPage: manager.locateAgentPage,
     captureAgentPage: manager.captureAgentPage,
-    captureAgentPreviewPage: manager.captureAgentPreviewPage,
+    readAgentPreviewPage: manager.readAgentPreviewPage,
     destroyBrowserAgentShadow: manager.destroyBrowserAgentShadow,
     detectAgentPageQr: manager.detectAgentPageQr,
     showAgentActivity: manager.showAgentActivity,

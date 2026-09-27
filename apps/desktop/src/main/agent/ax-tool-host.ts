@@ -1,3 +1,4 @@
+import { browserAgentOperationContext } from "../workbench-browser/agent-operation-context";
 import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
 import type {
   BrowserActionEffect,
@@ -15,6 +16,7 @@ import {
   readOptionalNumberField,
   readOptionalStringField,
   readRuntimeToolCallId,
+  readRuntimeSessionId,
   readStringField
 } from "./host-payload";
 import {
@@ -204,7 +206,18 @@ export const createAxToolHost = ({
     handler: (payload: Record<string, unknown>) => Promise<unknown>
   ) => async (payload: unknown) => {
     try {
-      return await handler(normalizePayload(payload));
+      const normalized = normalizePayload(payload);
+      return await browserAgentOperationContext.run({sessionId:readRuntimeSessionId(normalized)}, async () => {
+        const browser = getBrowserBridge();
+        if (browser?.peekAgentDialog) {
+          const mode = readAxTargetMode(normalized);
+          const tabId = await resolveBrowserAgentTabId(normalized, mode);
+          const pending = browser.peekAgentDialog(tabId, mode);
+          if (pending) return pending;
+          return handler({...normalized,tabId});
+        }
+        return handler(normalized);
+      });
     } catch (error) {
       const handoff = isRecord(error) && isRecord(error.handoff) ? error.handoff : null;
       if (handoff !== null && handoff.kind === "browser-shared-control-interrupted") {

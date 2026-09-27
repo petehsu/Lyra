@@ -2,7 +2,7 @@ import { renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AgentRuntimeEvent } from "../../../../shared/agent";
-import { useWorkbenchProviderFaultNotifications } from "../use-workbench-provider-fault-notifications";
+import { buildProviderRouteNotification, useWorkbenchProviderFaultNotifications } from "../use-workbench-provider-fault-notifications";
 
 describe("useWorkbenchProviderFaultNotifications", () => {
   it("publishes a deduped notification for providerFault events", () => {
@@ -60,5 +60,23 @@ describe("useWorkbenchProviderFaultNotifications", () => {
         source: expect.objectContaining({ id: "mimo-provider" })
       })
     );
+  });
+});
+
+
+it("formats verified route changes for the unified notification publisher", () => {
+  const t = ((key: string, values?: Record<string, unknown>) =>
+    key === "notification.providerRouteAdjustedTitle" ? "MiMo connection updated"
+      : `${values?.from} → ${values?.to}`) as never;
+  expect(buildProviderRouteNotification({
+    profileId: "my-account", fromRouteId: "mimo", fromLabel: "MiMo OpenAI",
+    toRouteId: "mimo_token_plan_cn", toLabel: "MiMo Token Plan (CN, OpenAI)",
+    baseUrl: "https://token-plan-cn.xiaomimimo.com/v1",
+  }, t)).toEqual({
+    title: "MiMo connection updated",
+    preview: "MiMo OpenAI → MiMo Token Plan (CN, OpenAI)",
+    level: "success",
+    source: { id: "provider-settings", title: "MiMo", iconKey: "system" },
+    target: { kind: "none" },
   });
 });

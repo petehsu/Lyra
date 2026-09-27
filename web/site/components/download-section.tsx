@@ -65,13 +65,13 @@ export function DownloadSection({ copy }: DownloadSectionProps) {
   };
 
   return (
-    <section id="download" className="download-section drop-reveal">
+    <section id="download" className="download-section">
       <div className="download-inner" ref={rootRef}>
         <header className="download-intro">
           <h2>{copy.title}</h2><p>{copy.body}</p>
         </header>
         <div className="download-platforms">
-          {copy.platforms.map((platform, index) => {
+          {copy.platforms.map((platform) => {
             const recommended = detectionDone ? recommendedVariant(detected, platform.id) : null;
             const selected = selections[platform.id] ?? recommended;
             const menuId = `${sectionId}-${platform.id}-menu`;
@@ -79,7 +79,7 @@ export function DownloadSection({ copy }: DownloadSectionProps) {
             const PlatformIcon = icons[platform.id];
             return (
               <article className="download-platform" key={platform.id}>
-                <header><span>0{index + 1}</span><PlatformIcon size={20} aria-hidden="true" /></header>
+                <header><PlatformIcon size={20} aria-hidden="true" /></header>
                 <h3>{platform.name}</h3><p>{platform.detail}</p>
                 <div className="download-split" data-download-control={platform.id}>
                   {selected === null ? (
@@ -106,7 +106,15 @@ export function DownloadSection({ copy }: DownloadSectionProps) {
             );
           })}
         </div>
-        <div className="download-upcoming"><h3>{copy.upcomingTitle}</h3><ul>{copy.upcoming.map((platform, index) => { const Icon = upcomingPlatforms[index]; return <li key={platform}><Icon size={16} strokeWidth={1.5} aria-hidden="true" /><span>{platform}</span><small>{copy.waiting}</small></li>; })}</ul></div>
+        <div className="download-upcoming">
+          <div><h3>{copy.upcomingTitle}</h3><p>{copy.upcomingNote}</p></div>
+          <ul>
+            {copy.upcoming.map((platform, index) => {
+              const Icon = upcomingPlatforms[index];
+              return <li key={platform}><Icon size={16} strokeWidth={1.5} aria-hidden="true" /><span>{platform}</span><small>{copy.waiting}</small></li>;
+            })}
+          </ul>
+        </div>
       </div>
     </section>
   );

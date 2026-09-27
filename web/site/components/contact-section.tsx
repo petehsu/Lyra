@@ -37,7 +37,7 @@ const contactLinks = [
 
 export function ContactSection({ copy }: ContactSectionProps) {
   return (
-    <section id="contact" className="contact-section drop-reveal">
+    <section id="contact" className="contact-section">
       <div className="contact-inner">
         <header className="contact-intro">
           <h2>{copy.title}</h2>

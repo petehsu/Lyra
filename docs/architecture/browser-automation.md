@@ -2,12 +2,14 @@
 
 Audience: Internal
 Status: Active
-Last verified: 2026-07-28
+Last verified: 2026-09-26
 
 Lyra's workbench browser is an Electron WebContentsView system managed by
 `apps/desktop/src/main/workbench-browser`. It provides user-visible browsing and
 Agent observation/action capabilities; it is not a general promise that every
 site or operating-system control can be automated.
+
+See [nonvisual control design, coverage and regression checklist](nonvisual-browser-control.md) for the complete-index/short-map contract and continuous editor input.
 
 ## Profiles
 
@@ -35,6 +37,25 @@ actions, navigation, page read/extract, and accessibility operations. Critical
 live-profile input is coordinated with shared-control logic so user and Agent
 input do not silently race.
 
+The default surface map collects DOM controls and keyboard-focusable elements.
+It does not hover every unnamed control, open menus, or wait for cursor
+animations. DOM hit testing determines whether a control is covered; a second
+full-document paint-order approximation must not override that result. Optional
+accessibility names supplement unnamed controls without acting on the page.
+
+Map, input, and verification share references attached to the actual collected
+nodes, including open shadow roots and same-origin frames. They never reinterpret
+an observation-local ordinal as a new selector-query index or identify a node
+from a cached rectangle. Replacement nodes require fresh references. A click
+waits briefly for the mapped node to become enabled, stable, and hit-testable,
+then dispatches Chromium input once. Unchanged button text is not permission to
+repeat the click with synthetic events.
+
+Fast click verification returns the resulting control-map changes in the same
+tool result. An agent can use those references for the next operation without
+another map request. The result proves the observed page state, not an arbitrary
+server-side business outcome.
+
 ## Security boundaries
 
 - Website content and metadata are untrusted input.
@@ -53,3 +74,9 @@ shared control, cookie borrowing, navigation supersession, and rendered
 snapshots after changes. Update [the data-flow document](security-data-flow.md)
 when a new external request or captured data class is introduced.
 
+Run `node --import tsx apps/desktop/e2e/nonvisual-browser.mts` with Node 24
+and an installed Playwright Chromium, or set `LYRA_TEST_CHROMIUM` to a Chromium
+executable. The harness uses production observation/input/action code against
+temporary local pages, without screenshots, model image inputs, live profiles,
+or historical sessions. See [the nonvisual regression record](../operations/nonvisual-browser.md)
+for its scope and the remaining live-agent acceptance check.

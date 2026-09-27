@@ -706,7 +706,7 @@ pub(crate) fn codex_code_model_tools() -> Vec<Value> {
         ),
         function_tool(
             tools::GLOB_MODEL_TOOL,
-            "Enumerate files by glob pattern. Use this instead of read_file for directories or when finding files by name/path.",
+            "Find existing files recursively by name/path pattern. Use the narrowest relevant root and pattern. This is not needed to create a new file at a known path; do not scan the home directory just to prepare a test file.",
             json!({
                 "type": "object",
                 "properties": {
@@ -772,7 +772,7 @@ pub(crate) fn codex_code_model_tools() -> Vec<Value> {
         ),
         function_tool(
             tools::EXEC_COMMAND_MODEL_TOOL,
-            "Execute a command that exits on its own — repository inspection, tests, builds, git, and validation. timeout_ms is required: your prediction of how long this should take, not a kill timer. This call occupies the turn up to two minutes; a prediction over ten minutes parks after a start check. The process keeps running and Lyra notifies you when it later exits — do not poll. Do not use this for dev servers or watchers — start those with write_stdin. File mutations should use edit_file or write_file.",
+            "Execute a command that exits on its own — repository inspection, tests, builds, git, and validation. timeout_ms is required: your prediction of how long this should take, not a kill timer. This call occupies the turn up to two minutes; a prediction over ten minutes parks after a start check. The process keeps running within this turn and Lyra notifies you when it exits; unfinished foreground commands are stopped when this turn ends — do not poll. Do not use this for dev servers or watchers — start those with write_stdin. File mutations should use edit_file or write_file.",
             json!({
                 "type": "object",
                 "properties": {
@@ -789,6 +789,11 @@ pub(crate) fn codex_code_model_tools() -> Vec<Value> {
                         "minimum": 1,
                         "description": "Required. Your prediction of how long this command should take, in milliseconds. Not a kill timer. Occupies this turn up to two minutes, or parks immediately when the prediction is over ten minutes. You are notified when it later exits."
                     },
+                    "sensitiveEnv": {
+                        "type": "object",
+                        "description": "Optional environment bindings: LYRA_SECRET_* names to lyra-sensitive-value-ref objects from secure storage. Values are resolved only in the process host, never in the command text. Use a credential helper/stdin consumer; never expand into a URL or write to a file.",
+                        "additionalProperties": { "type": "object" }
+                    },
                     "max_output_tokens": {
                         "type": "integer",
                         "minimum": 1,
@@ -800,13 +805,17 @@ pub(crate) fn codex_code_model_tools() -> Vec<Value> {
         ),
         function_tool(
             tools::WRITE_STDIN_MODEL_TOOL,
-            "Write characters to a terminal session. Omit sessionId to create a private background terminal and start long-running processes (dev servers, watchers). Pass a sessionId returned by a prior terminal result to write to that session. One-shot commands that exit must use exec_command.",
+            "Write characters to a terminal session. Omit sessionId to reuse this task's private terminal or create one if missing. To create another, omit sessionId and set createNew=true. Use only sessionId values returned by terminal results, never placeholders. Start long-running processes (dev servers, watchers) here. One-shot commands that exit must use exec_command.",
             json!({
                 "type": "object",
                 "properties": {
                     "sessionId": {
                         "type": "string",
-                        "description": "Existing terminal session id. Omit to create a private background terminal."
+                        "description": "Existing ID returned by a terminal result. Omit to reuse/create this task's terminal; never invent an ID."
+                    },
+                    "createNew": {
+                        "type": "boolean",
+                        "description": "Create a new private terminal instead of reusing the current one. Omit sessionId when true."
                     },
                     "chars": {
                         "type": "string",

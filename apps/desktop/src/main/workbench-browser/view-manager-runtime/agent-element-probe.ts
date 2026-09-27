@@ -1,3 +1,5 @@
+import { surfaceNameRuntime } from "./surface-name-runtime";
+import { SURFACE_TARGET_LOOKUP } from "./surface-target";
 import type { WebFrameMain } from "electron";
 import type {
   WorkbenchBrowserAgentElement,
@@ -8,41 +10,31 @@ import { normalizeExecuteScriptTimeoutMs, runFrameScriptWithTimeout } from "./no
 
 const PROBE_TIMEOUT_MS = 500;
 
+const pressedHint = (hint: string | undefined): boolean | undefined => {
+  if (hint === "pressed" || hint === "checked" || hint === "on") return true;
+  if (hint === "unpressed" || hint === "unchecked" || hint === "off") return false;
+  return undefined;
+};
+
 export const elementStateFromCached = (
   element: WorkbenchBrowserAgentElement
-): WorkbenchBrowserAgentElementState => ({
+): WorkbenchBrowserAgentElementState => {
+  const checked = element.checked ?? pressedHint(element.stateHint);
+  return ({
   role: element.role,
   label: element.label,
-  ...(element.checked === undefined ? {} : { checked: element.checked }),
+  ...(checked === undefined ? {} : { checked }),
   ...(element.expanded === undefined ? {} : { expanded: element.expanded }),
   disabled: element.disabled,
   ...(element.textSnippet === undefined ? {} : { value: element.textSnippet }),
   ...(element.inputType === undefined ? {} : { inputType: element.inputType })
-});
+  });
+};
 
-const buildElementProbeScript = (elementId: number): string => `
+const buildElementProbeScript = (targetRef: string): string => `
   (() => {
-    const TARGET_ID = ${JSON.stringify(elementId)};
-    const selector = [
-      "a[href]",
-      "button",
-      "input",
-      "select",
-      "textarea",
-      "summary",
-      "[contenteditable]",
-      "[tabindex]",
-      "[role='button']",
-      "[role='link']",
-      "[role='checkbox']",
-      "[role='textbox']",
-      "[role='searchbox']",
-      "[role='menuitem']",
-      "[role='combobox']",
-      "[role='listbox']",
-      "[role='option']"
-    ].join(",");
-
+    ${SURFACE_TARGET_LOOKUP}
+    const surfaceNames = ${surfaceNameRuntime};
     const normalizeText = (value, maxLength = 120) => {
       if (typeof value !== "string") return "";
       const normalized = value.replace(/\\s+/g, " ").trim();
@@ -54,21 +46,13 @@ const buildElementProbeScript = (elementId: number): string => `
       || element.getAttribute?.("disabled") !== null
       || element.getAttribute?.("aria-disabled") === "true";
 
-    const isVisible = (element, win = window) => {
-      const ElementCtor = win.Element || Element;
-      if (!(element instanceof ElementCtor) || !element.isConnected) return false;
-      const rect = element.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return false;
-      const style = win.getComputedStyle(element);
-      if (style.display === "none" || style.visibility === "hidden") return false;
-      if (Number.parseFloat(style.opacity || "1") <= 0) return false;
-      return true;
-    };
-
     const checkedState = (element) => {
       if (element.checked === true) return true;
-      if (element.getAttribute?.("aria-checked") === "true") return true;
-      return element.getAttribute?.("aria-checked") === "false" ? false : undefined;
+      const checked = element.getAttribute?.("aria-checked");
+      const pressed = element.getAttribute?.("aria-pressed");
+      if (checked === "true" || pressed === "true") return true;
+      if (checked === "false" || pressed === "false") return false;
+      return undefined;
     };
 
     const expandedState = (element) => {
@@ -90,53 +74,13 @@ const buildElementProbeScript = (elementId: number): string => `
       return normalizeText(element.textContent || "", 120);
     };
 
-    const collectCandidates = () => {
-      const items = [];
-      const seen = new Set();
-      const crawl = (doc, win) => {
-        for (const element of Array.from(doc.querySelectorAll(selector))) {
-          if (!(element instanceof win.Element) || seen.has(element)) continue;
-          seen.add(element);
-          if (!isVisible(element, win) || isDisabled(element)) continue;
-          if (element instanceof win.HTMLInputElement && element.type === "hidden") continue;
-          items.push({ id: items.length + 1, element });
-        }
-        for (const host of Array.from(doc.querySelectorAll("*"))) {
-          if (host.shadowRoot) {
-            for (const element of Array.from(host.shadowRoot.querySelectorAll(selector))) {
-              if (!(element instanceof win.Element) || seen.has(element)) continue;
-              seen.add(element);
-              if (!isVisible(element, win) || isDisabled(element)) continue;
-              items.push({ id: items.length + 1, element });
-            }
-          }
-        }
-        for (const frame of Array.from(doc.querySelectorAll("iframe, frame"))) {
-          try {
-            const childDoc = frame.contentDocument || frame.contentWindow?.document;
-            const childWin = frame.contentWindow;
-            if (childDoc && childWin) crawl(childDoc, childWin);
-          } catch (_error) {
-            // Cross-origin frames are not probeable here.
-          }
-        }
-      };
-      crawl(document, window);
-      return items;
-    };
-
-    const candidate = collectCandidates().find((item) => item.id === TARGET_ID);
-    if (!candidate) return { ok: false, errorKind: "element_not_found" };
-    const element = candidate.element;
+    const element = findSurfaceTarget(${JSON.stringify(targetRef)});
+    if (!element || !element.isConnected) return { ok: false, errorKind: "element_not_found" };
     const win = element.ownerDocument?.defaultView || window;
     return {
       ok: true,
       role: normalizeText(element.getAttribute?.("role") || String(element.tagName || "element").toLowerCase(), 40),
-      label: normalizeText([
-        element.getAttribute?.("aria-label") || "",
-        element.getAttribute?.("title") || "",
-        element.textContent || ""
-      ].join(" "), 120),
+      label: surfaceNames.label(element) || "(no label)",
       checked: checkedState(element),
       expanded: expandedState(element),
       disabled: isDisabled(element),
@@ -174,7 +118,7 @@ export const probeElementState = async (
 ): Promise<WorkbenchBrowserAgentElementState | null> => {
   try {
     const raw = await runFrameScriptWithTimeout(
-      () => frame.executeJavaScript(buildElementProbeScript(element.id), true),
+      () => frame.executeJavaScript(buildElementProbeScript(element.targetRef), true),
       Math.min(
         PROBE_TIMEOUT_MS,
         normalizeExecuteScriptTimeoutMs(timeoutMs, PROBE_TIMEOUT_MS)
@@ -197,7 +141,7 @@ export const diffElementStates = (
   if (before.label !== after.label) {
     changes.push(`label: ${before.label} -> ${after.label}`);
   }
-  if (before.value !== after.value) {
+  if ((before.value ?? "") !== (after.value ?? "")) {
     changes.push(`value: ${before.value ?? ""} -> ${after.value ?? ""}`);
   }
   if (before.checked !== after.checked) {

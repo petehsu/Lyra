@@ -342,6 +342,11 @@ const AiPanelTabsHeader = ({
                 style={tabStyle}
                 data-lyra-tab-id={tab.tabId}
                 data-ai-session-tab-id={tab.tabId}
+                data-lyra-tab-width={
+                  tabStyle?.width === undefined
+                    ? undefined
+                    : String(tabStyle.width).replace(/px$/, "")
+                }
                 onPointerMove={onTabPointerMove}
                 onPointerUp={onTabPointerUp}
                 onPointerCancel={onTabPointerUp}

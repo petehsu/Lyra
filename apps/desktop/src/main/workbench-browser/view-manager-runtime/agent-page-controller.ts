@@ -1,16 +1,20 @@
+import { observeAgentNavigation } from "./agent-navigation-ready";
+import { createBrowserFrameTextReader, type BrowserTextFrameGraphBuilder } from "./agent-frame-text";
 import type { WorkbenchLumenFollowAudit } from "../../../shared/desktop-bridge";
 import type { WorkbenchBrowserNavigateResult } from "../../../shared/desktop-bridge";
 import type { WorkbenchTabExtractTextResult, WorkbenchVisualCaptureResult } from "../../../shared/workbench-observation";
 import type { WorkbenchObservationBrowserDomSummary } from "../../workbench-observation/types";
-import type { WorkbenchBrowserAgentModeInfo, WorkbenchBrowserAgentModeRequest, WorkbenchBrowserAgentObserveStrategy, WorkbenchBrowserAgentTargetMode, WorkbenchBrowserViewManager } from "../types";
+import type { WorkbenchBrowserWaitState, WorkbenchBrowserAgentModeInfo, WorkbenchBrowserAgentModeRequest, WorkbenchBrowserAgentObserveStrategy, WorkbenchBrowserAgentTargetMode, WorkbenchBrowserViewManager } from "../types";
 import { agentTargetAddress, agentTargetTitle } from "./agent-target-runtime";
+import { VISIBLE_TEXT_RUNTIME, buildVisiblePageReadScript } from "./agent-visible-text";
+import { readResponseWatch } from "./agent-response-watch";
 import type { WorkbenchBrowserAgentControllerHost } from "./agent-controller-types";
 import type { BrowserAgentStateStore } from "./agent-state-store";
 import {
   buildHighlightRegionsFromElements,
   prepareVisionCapturePng
 } from "./lumen-screenshot-highlights";
-import { isScriptExecutionTimeout, normalizeAddress, normalizeExecuteScriptTimeoutMs, normalizeString, runFrameScriptWithTimeout, tryFrameworkRouterNavigation } from "./normalizers";
+import { areNavigationAddressesEquivalent, normalizeAddress, normalizeExecuteScriptTimeoutMs, normalizeString, runFrameScriptWithTimeout, tryFrameworkRouterNavigation } from "./normalizers";
 import { grantBrowserAuthorizeAct } from "../../open-in-workbench";
 import type { BrowserAgentShadowEntry, BrowserAgentPageTarget, BrowserPageEntry } from "./types";
 
@@ -28,7 +32,7 @@ type BrowserAgentPageControllerDeps = Pick<
   | "resolveBrowserAgentTarget"
   | "waitForAgentPageLoad"
   | "waitForAgentPageReload"
-> & { readonly stateStore: BrowserAgentStateStore };
+> & { readonly stateStore: BrowserAgentStateStore; readonly buildFrameGraph?: BrowserTextFrameGraphBuilder };
 
 export const createBrowserAgentPageController = (deps: BrowserAgentPageControllerDeps) => {
   const {
@@ -47,6 +51,7 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
     waitForAgentPageReload
   } = deps;
   const { invalidateBrowserAgentTargets, readBrowserAgentCacheEntry } = stateStore;
+  const readFrameText = createBrowserFrameTextReader(deps.buildFrameGraph);
 
   const readAgentDomSummaryFromTarget = async (
     target: BrowserAgentPageTarget,
@@ -58,172 +63,125 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
     readonly content: string;
   }> => {
     const limit = Math.max(256, Math.min(24_000, Math.round(maxChars ?? 12_000)));
-    try {
-      const raw = await runFrameScriptWithTimeout(
-        () => target.webContents.executeJavaScript(`
-          (() => {
-            const normalizeText = (value) =>
-              typeof value === "string" ? value.replace(/\\s+/g, " ").trim() : "";
-            const bodyText = normalizeText(document.body?.textContent ?? document.body?.innerText ?? "");
-            const headings = Array.from(document.querySelectorAll("h1,h2,h3,h4,h5,h6"))
-              .map((element) => normalizeText(element.textContent ?? ""))
-              .filter(Boolean)
-              .slice(0, 40);
-            const links = Array.from(document.querySelectorAll("a[href]"))
-              .map((element) => ({
-                text: normalizeText(element.textContent ?? ""),
-                href: typeof element.href === "string" ? element.href : ""
-              }))
-              .filter((entry) => entry.href.length > 0)
-              .slice(0, 50);
-            return {
-              domTitle: normalizeText(document.title ?? ""),
-              documentLanguage: normalizeText(document.documentElement?.lang ?? ""),
-              selectionText: normalizeText(String(window.getSelection?.() ?? "")),
-              headings,
-              links,
-              forms: [],
-              mainTextExcerpt: bodyText.slice(0, ${limit}),
-              truncated: bodyText.length > ${limit}
-            };
-          })()
-        `, true),
-        timeoutMs
-      ) as Record<string, unknown>;
-      const headings = Array.isArray(raw.headings)
-        ? raw.headings.filter((value): value is string => typeof value === "string")
-        : [];
-      const links = Array.isArray(raw.links)
-        ? raw.links
-            .map((value) => {
-              if (value === null || typeof value !== "object") {
-                return null;
-              }
-              const record = value as Record<string, unknown>;
-              return typeof record.href === "string"
-                ? { text: typeof record.text === "string" ? record.text : "", href: record.href }
-                : null;
-            })
-            .filter((value): value is { text: string; href: string } => value !== null)
-        : [];
-      const content = typeof raw.mainTextExcerpt === "string" ? raw.mainTextExcerpt : "";
-      return {
-        targetMode: target.targetMode,
-        browserMode: target.browserMode,
-        content,
-        ...(typeof raw.domTitle === "string" && raw.domTitle.length > 0 ? { domTitle: raw.domTitle } : {}),
-        ...(typeof raw.documentLanguage === "string" && raw.documentLanguage.length > 0
-          ? { documentLanguage: raw.documentLanguage }
-          : {}),
-        ...(typeof raw.selectionText === "string" && raw.selectionText.length > 0
-          ? { selectionText: raw.selectionText }
-          : {}),
-        headings,
-        mainTextExcerpt: content,
-        links,
-        forms: [],
-        truncated: raw.truncated === true
-      };
-    } catch (error) {
-      if (isScriptExecutionTimeout(error)) {
-        throw error;
-      }
-      return {
-        targetMode: target.targetMode,
-        browserMode: target.browserMode,
-        content: "",
-        headings: [],
-        mainTextExcerpt: "",
-        links: [],
-        forms: [],
-        truncated: false
-      };
+    const raw = await runFrameScriptWithTimeout(
+      () => target.webContents.executeJavaScript(`
+        (() => {
+          const normalizeText = (value) =>
+            typeof value === "string" ? value.replace(/\\s+/g, " ").trim() : "";
+          const visibleText = ${VISIBLE_TEXT_RUNTIME};
+          const rendered = visibleText.read(document.body, { limit: ${limit} });
+          const bodyText = rendered.text;
+          const headings = Array.from(document.querySelectorAll("h1,h2,h3,h4,h5,h6"))
+            .filter(visibleText.exposed)
+            .map((element) => visibleText.read(element, { limit: 240 }).text)
+            .filter(Boolean)
+            .slice(0, 40);
+          const links = Array.from(document.querySelectorAll("a[href]"))
+            .filter(visibleText.exposed)
+            .map((element) => ({
+              text: visibleText.read(element, { limit: 240 }).text,
+              href: typeof element.href === "string" ? element.href : ""
+            }))
+            .filter((entry) => entry.href.length > 0)
+            .slice(0, 50);
+          return {
+            domTitle: normalizeText(document.title ?? ""),
+            documentLanguage: normalizeText(document.documentElement?.lang ?? ""),
+            selectionText: normalizeText(String(window.getSelection?.() ?? "")),
+            headings,
+            links,
+            forms: [],
+            mainTextExcerpt: bodyText.slice(0, ${limit}),
+            truncated: rendered.truncated
+          };
+        })()
+      `, true),
+      timeoutMs
+    ) as Record<string, unknown>;
+    if (raw === null || typeof raw !== "object" || typeof raw.mainTextExcerpt !== "string") {
+      throw new Error("Browser text extraction returned an invalid DOM summary");
     }
+    const headings = Array.isArray(raw.headings)
+      ? raw.headings.filter((value): value is string => typeof value === "string")
+      : [];
+    const links = Array.isArray(raw.links)
+      ? raw.links
+          .map((value) => {
+            if (value === null || typeof value !== "object") {
+              return null;
+            }
+            const record = value as Record<string, unknown>;
+            return typeof record.href === "string"
+              ? { text: typeof record.text === "string" ? record.text : "", href: record.href }
+              : null;
+          })
+          .filter((value): value is { text: string; href: string } => value !== null)
+      : [];
+    const rendered = await readFrameText(target, "full", limit, timeoutMs);
+    const content = rendered.text;
+    return {
+      targetMode: target.targetMode,
+      browserMode: target.browserMode,
+      content,
+      ...(typeof raw.domTitle === "string" && raw.domTitle.length > 0 ? { domTitle: raw.domTitle } : {}),
+      ...(typeof raw.documentLanguage === "string" && raw.documentLanguage.length > 0
+        ? { documentLanguage: raw.documentLanguage }
+        : {}),
+      ...(typeof raw.selectionText === "string" && raw.selectionText.length > 0
+        ? { selectionText: raw.selectionText }
+        : {}),
+      headings,
+      mainTextExcerpt: content,
+      links,
+      forms: [],
+      truncated: rendered.truncated
+    };
   };
 
   const readAgentRecentTextFromTarget = async (
     target: BrowserAgentPageTarget,
     maxChars: number | undefined,
-    timeoutMs: number
+    timeoutMs: number,
+    scope: "viewport" | "full",
+    waitTargetRef?: string,
+    textTail?: boolean,
+    waitText?: string
   ): Promise<WorkbenchTabExtractTextResult & {
     readonly targetMode: WorkbenchBrowserAgentTargetMode;
     readonly browserMode?: WorkbenchBrowserAgentModeInfo;
     readonly content: string;
+    readonly waitState?: WorkbenchBrowserWaitState;
   }> => {
     const limit = Math.max(512, Math.min(6_000, Math.round(maxChars ?? 4_000)));
-    try {
-      const raw = await runFrameScriptWithTimeout(
-        () => target.webContents.executeJavaScript(`
-          (() => {
-            const normalizeText = (value) => {
-              if (typeof value !== "string") return "";
-              return value
-                .replace(/\\u00a0/g, " ")
-                .replace(/\\r/g, "")
-                .replace(/[ \\t]+\\n/g, "\\n")
-                .replace(/\\n[ \\t]+/g, "\\n")
-                .replace(/\\n{3,}/g, "\\n\\n")
-                .trim();
-            };
-            const text = normalizeText(document.body?.textContent ?? document.body?.innerText ?? "");
-            const totalChars = text.length;
-            const startChar = Math.max(0, totalChars - ${limit});
-            const slice = text.slice(startChar);
-            return {
-              text: slice,
-              startChar,
-              endChar: totalChars,
-              totalChars,
-              truncated: startChar > 0,
-              hasMore: startChar > 0
-            };
-          })()
-        `, true),
-        timeoutMs
-      ) as Record<string, unknown>;
-      const text = typeof raw.text === "string" ? raw.text : "";
-      const startChar = typeof raw.startChar === "number" && Number.isFinite(raw.startChar)
-        ? Math.max(0, Math.round(raw.startChar))
-        : 0;
-      const endChar = typeof raw.endChar === "number" && Number.isFinite(raw.endChar)
-        ? Math.max(startChar, Math.round(raw.endChar))
-        : startChar + text.length;
-      const totalChars = typeof raw.totalChars === "number" && Number.isFinite(raw.totalChars)
-        ? Math.max(endChar, Math.round(raw.totalChars))
-        : endChar;
-      return {
-        tabId: target.tabId,
-        targetMode: target.targetMode,
-        browserMode: target.browserMode,
-        scope: "main",
-        text,
-        content: text,
-        startChar,
-        endChar,
-        totalChars,
-        truncated: raw.truncated === true,
-        hasMore: raw.hasMore === true,
-        extractionMethod: "lumen:recent-text-tail"
-      };
-    } catch (error) {
-      if (isScriptExecutionTimeout(error)) {
-        throw error;
-      }
-      return {
-        tabId: target.tabId,
-        targetMode: target.targetMode,
-        browserMode: target.browserMode,
-        scope: "main",
-        text: "",
-        content: "",
-        startChar: 0,
-        endChar: 0,
-        totalChars: 0,
-        truncated: false,
-        hasMore: false,
-        extractionMethod: "lumen:recent-text-tail-error"
-      };
-    }
+    const raw = await readFrameText(target, scope, limit, timeoutMs, textTail, waitText) as Record<string, unknown> & { text: string };
+    const text = raw.text;
+    const startChar = typeof raw.startChar === "number" && Number.isFinite(raw.startChar)
+      ? Math.max(0, Math.round(raw.startChar))
+      : 0;
+    const endChar = typeof raw.endChar === "number" && Number.isFinite(raw.endChar)
+      ? Math.max(startChar, Math.round(raw.endChar))
+      : startChar + text.length;
+    const totalChars = typeof raw.totalChars === "number" && Number.isFinite(raw.totalChars)
+      ? Math.max(endChar, Math.round(raw.totalChars))
+      : endChar;
+    return {
+      tabId: target.tabId,
+      targetMode: target.targetMode,
+      browserMode: target.browserMode,
+      scope: "main",
+      text,
+      content: text,
+      ...(raw.waitState === undefined ? {} : {
+        waitState: { ...raw.waitState as WorkbenchBrowserWaitState,
+          ...(target.isLoading ? { readyState: "loading" } : {}) }
+      }),
+      startChar,
+      endChar,
+      totalChars,
+      truncated: raw.truncated === true,
+      hasMore: raw.hasMore === true,
+      extractionMethod: `lumen:rendered-${scope}`
+    };
   };
 
   const ensureLiveWorkbenchPageEntry = async (
@@ -262,6 +220,8 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
       readonly useFrameworkRouter?: boolean;
     }
   ): Promise<WorkbenchBrowserNavigateResult & {
+    readonly alreadyOpen?: true;
+    readonly navigationState?: "ready" | "pending" | "failed";
     readonly targetMode: WorkbenchBrowserAgentTargetMode;
     readonly browserMode?: WorkbenchBrowserAgentModeInfo;
   }> => {
@@ -270,10 +230,22 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
       throw new Error("url is required");
     }
     if (request.targetMode === "live") {
-      await ensureLiveWorkbenchPageEntry(tabId, address);
+      await ensureLiveWorkbenchPageEntry(tabId, "about:blank");
     }
     const target = await resolveBrowserAgentTarget(tabId, request, request.timeoutMs);
     grantBrowserAuthorizeAct(address, tabId);
+    const openAddress = normalizeAddress(target.webContents.getURL()) ?? agentTargetAddress(target);
+    if (areNavigationAddressesEquivalent(openAddress, address)) {
+      return {
+        address: openAddress,
+        tabId,
+        title: agentTargetTitle(target),
+        targetMode: target.targetMode,
+        browserMode: target.browserMode,
+        navigationState: target.isLoading ? "pending" : "ready",
+        alreadyOpen: true
+      };
+    }
     publishBrowserAgentActivity({
       tabId,
       targetMode: target.targetMode,
@@ -283,16 +255,16 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
       durationMs: Math.max(1_800, Math.min(5_000, request.timeoutMs ?? 2_400))
     });
     if (target.liveEntry !== undefined) {
-      return {
-        ...(await navigateInEntry(target.liveEntry, {
+      const completion = observeAgentNavigation(target.webContents, request.timeoutMs ?? 8_000, address);
+      try {
+        const result = await navigateInEntry(target.liveEntry, {
           address,
-          ...(request.useFrameworkRouter === undefined
-            ? {}
-            : { useFrameworkRouter: request.useFrameworkRouter })
-        })),
-        targetMode: "live",
-        browserMode: target.browserMode
-      };
+          ...(request.useFrameworkRouter === undefined ? {} : {useFrameworkRouter:request.useFrameworkRouter})
+        });
+        const navigationState = await completion.done;
+        return { ...result, address:target.webContents.getURL() || address,
+          navigationState, targetMode:"live",browserMode:target.browserMode };
+      } finally { completion.cancel(); }
     }
     const shadow = target as BrowserAgentShadowEntry;
     shadow.detached = true;
@@ -394,12 +366,46 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
     tabId: string,
     request: WorkbenchBrowserAgentModeRequest & {
       readonly strategy?: WorkbenchBrowserAgentObserveStrategy;
+      readonly scope?: "viewport" | "full";
       readonly maxChars?: number;
       readonly timeoutMs?: number;
+      readonly waitTargetRef?: string;
+      readonly waitOperationId?: string;
+      readonly responseStateOnly?: boolean;
+      readonly textTail?: boolean;
+      readonly waitText?: string;
     }
   ) => {
     const timeoutMs = normalizeExecuteScriptTimeoutMs(request.timeoutMs, 8_000);
     const target = await resolveBrowserAgentTarget(tabId, request, timeoutMs);
+    if (request.waitOperationId) {
+      const response = await readResponseWatch(target, request.waitOperationId, Math.min(timeoutMs, 1000));
+      const stateOnly = request.responseStateOnly && response.status !== "complete";
+      const read = stateOnly ? { content: "", text: "", truncated: false }
+        : await readAgentRecentTextFromTarget(target, request.maxChars, timeoutMs, request.scope ?? "full", undefined, true);
+      return { ...read, tabId, targetMode: target.targetMode, browserMode: target.browserMode,
+        url: agentTargetAddress(target), title: target.webContents.getTitle?.() ?? target.title,
+        waitState: { ...("waitState" in read ? read.waitState : undefined), readyState: target.isLoading ? "loading" : "complete", busy: response.status === "streaming", response } };
+    }
+    if (request.waitTargetRef !== undefined) {
+      const cached = readBrowserAgentCacheEntry(tabId, target.targetMode);
+      const element = cached?.elements.find(element => element.targetRef === request.waitTargetRef);
+      if (!element) {
+        throw new Error("Wait targetRef must come from the current page map");
+      }
+      const frame = target.webContents.mainFrame.framesInSubtree.find(frame => frame.frameTreeNodeId === element.frameTreeNodeId);
+      if (!frame || frame.isDestroyed()) throw new Error("Wait target frame is unavailable; refresh the map");
+      const limit = Math.max(512, Math.min(6000, Math.round(request.maxChars ?? 4000)));
+      const raw = await runFrameScriptWithTimeout(
+        () => frame.executeJavaScript(buildVisiblePageReadScript(request.scope ?? "viewport", limit, request.waitTargetRef, undefined, undefined, request.textTail, request.waitText), true), timeoutMs
+      ) as { text?: unknown; truncated?: boolean; waitState?: WorkbenchBrowserWaitState };
+      if (typeof raw?.text !== "string" || !raw.waitState?.target) throw new Error("Invalid target wait observation");
+      return { tabId, targetMode: target.targetMode, browserMode: target.browserMode,
+        url: agentTargetAddress(target), title: target.webContents.getTitle?.() ?? target.title,
+        scope: "main" as const, text: raw.text, content: raw.text, startChar: 0, endChar: raw.text.length,
+        totalChars: raw.text.length, truncated: raw.truncated === true, hasMore: raw.truncated === true,
+        waitState: { ...raw.waitState, ...(raw.waitState.coverage === undefined ? {} : { coverage: { ...raw.waitState.coverage, frameRef: element.frameRef } }) }, extractionMethod: "lumen:target-wait" };
+    }
     publishBrowserAgentActivity({
       tabId,
       targetMode: target.targetMode,
@@ -407,10 +413,12 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
       visibleFollow: target.browserMode.visibleFollow,
       durationMs: Math.max(900, Math.min(3_200, timeoutMs))
     });
-    if (request.strategy === "domFallback") {
-      return await readAgentDomSummaryFromTarget(target, request.maxChars, timeoutMs);
+    if (request.strategy === "domFallback" && request.scope !== "viewport") {
+      return { ...await readAgentDomSummaryFromTarget(target, request.maxChars, timeoutMs),
+        url: agentTargetAddress(target), title: target.webContents.getTitle?.() ?? target.title };
     }
-    return await readAgentRecentTextFromTarget(target, request.maxChars, timeoutMs);
+    return { ...await readAgentRecentTextFromTarget(target, request.maxChars, timeoutMs, request.scope ?? "viewport", request.waitTargetRef, request.textTail, request.waitText),
+      url: agentTargetAddress(target), title: target.webContents.getTitle?.() ?? target.title };
   };
 
   const captureAgentPage = async (
@@ -500,42 +508,37 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
     };
   };
 
-  const captureAgentPreviewPage = async (
-    tabId: string,
-    targetMode: WorkbenchBrowserAgentTargetMode
-  ): Promise<{
-    readonly tabId: string;
-    readonly targetMode: WorkbenchBrowserAgentTargetMode;
-    readonly url: string;
-    readonly title: string;
-    readonly faviconUrl?: string;
-    readonly mimeType: "image/png";
-    readonly imageBase64: string;
-    readonly width: number;
-    readonly height: number;
-  } | null> => {
-    const target = await resolveBrowserAgentTarget(tabId, { targetMode }, undefined);
-    if (target.webContents.isDestroyed()) {
+  // The composer only needs identity. Reading it must not capture a page or
+  // resolve/create a browser target just because the indicator is visible.
+  const readAgentPreviewPage: WorkbenchBrowserViewManager["readAgentPreviewPage"] = async (
+    tabId,
+    targetMode
+  ) => {
+    if (targetMode === "live") {
+      const entry = entries.get(tabId);
+      if (entry === undefined || entry.isDestroyed || entry.webContents.isDestroyed()) {
+        return null;
+      }
+      const faviconUrl = normalizeString(entry.runtime.faviconUrl);
+      return {
+        tabId,
+        targetMode,
+        url: entry.runtime.address,
+        title: entry.runtime.title,
+        ...(faviconUrl === null ? {} : { faviconUrl })
+      };
+    }
+    const shadow = readBrowserAgentShadow(tabId);
+    if (shadow === undefined || shadow.webContents.isDestroyed()) {
       return null;
     }
-    const image = await target.webContents.capturePage();
-    const size = image.getSize();
-    if (size.width <= 0 || size.height <= 0) {
-      return null;
-    }
-    const faviconUrl = normalizeString(
-      target.liveEntry?.runtime.faviconUrl ?? target.faviconUrl
-    );
+    const faviconUrl = normalizeString(shadow.faviconUrl);
     return {
       tabId,
-      targetMode: target.targetMode,
-      url: agentTargetAddress(target),
-      title: agentTargetTitle(target),
-      ...(faviconUrl === undefined ? {} : { faviconUrl }),
-      mimeType: "image/png",
-      imageBase64: image.toPNG().toString("base64"),
-      width: size.width,
-      height: size.height
+      targetMode,
+      url: normalizeAddress(shadow.webContents.getURL()) ?? shadow.address,
+      title: normalizeString(shadow.webContents.getTitle()) ?? shadow.title,
+      ...(faviconUrl === null ? {} : { faviconUrl })
     };
   };
 
@@ -588,7 +591,7 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
 
   return {
     captureAgentPage,
-    captureAgentPreviewPage,
+    readAgentPreviewPage,
     navigateAgentPage,
     reloadAgentPage,
     readAgentFollowFinalPageState,

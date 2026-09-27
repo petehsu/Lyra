@@ -20,7 +20,7 @@ expression: pretty(&snapshot)
         "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
         "riskLevel": "read",
         "runHint": "tool_fs_run with toolHandle: browser_map; operation: map; provide args matching miniSchema.",
-        "summary": "Map actionable elements the user can operate — current window first, then controls that need a scroll. Nested chrome is collapsed to the button itself.",
+        "summary": "Read a short map backed by the complete observed control index. Focused regions and forms appear first. Retrieve omitted controls using query/region/cursor; no link is excluded for seeming unimportant.",
         "title": "Map browser page"
       },
       {
@@ -32,19 +32,31 @@ expression: pretty(&snapshot)
         "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
         "riskLevel": "read",
         "runHint": "tool_fs_run with toolHandle: browser_read; operation: read; provide args matching miniSchema.",
-        "summary": "Read page text, search in-page text, or return a JSON schema hint for structured extraction.",
+        "summary": "Read page text, search displayed text with query (Ctrl+F), or return a JSON schema hint. query does not retrieve a field by its name; use browser_map(query) for named controls.",
         "title": "Read browser page"
       },
       {
         "domain": "browser",
-        "handle": null,
+        "handle": "browser_type",
+        "operation": "type",
+        "path": "/tools/browser/type",
+        "permissionPolicy": "runtime_policy",
+        "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
+        "riskLevel": "browser",
+        "runHint": "tool_fs_run with toolHandle: browser_type; operation: type; provide args matching miniSchema.",
+        "summary": "Type at the current caret/selection, or fill several fields. Use clear=true to replace the whole field; omission preserves existing content. When input and submit targets are already known, use thenClick to fill and submit once in this call; when the task needs a reply, set awaitResponse=true to receive it without another model round trip; declare the submit effect (communicate, submitExternal, etc.); editDraft is invalid for submission. Use a separate act for a local UI click. Without thenClick use effect=editDraft. A split row of boxes takes one string.",
+        "title": "Type in browser"
+      },
+      {
+        "domain": "browser",
+        "handle": "browser_act",
         "operation": "act",
         "path": "/tools/browser/act",
         "permissionPolicy": "runtime_policy",
         "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
         "riskLevel": "browser",
-        "runHint": "tool_fs_run with path: /tools/browser/act; operation: act; provide args matching miniSchema.",
-        "summary": "Click or hover a browser target. Off-screen targetRefs are scrolled into view first.",
+        "runHint": "tool_fs_run with toolHandle: browser_act; operation: act; provide args matching miniSchema.",
+        "summary": "Click, hover, or select a mapped target. Use modifiers/button/holdMs for real pointer gestures; position is a fraction within the target. Native selects without a choice return a bounded option list (optionQuery/optionOffset); no OS popup. To choose, supply exact optionLabel, selectValue or selectValues; ambiguous options are rejected. interaction=click is the gesture; effect is its consequence, never click. Specify interaction explicitly; hover+observe inspects without clicking. Example: {targetRef: 'lumen:…', interaction: 'click', effect: 'editDraft'} opens a local menu. Sending uses communicate or submitExternal; deleting uses delete. Off-screen refs scroll into view.",
         "title": "Act in browser"
       },
       {
@@ -58,21 +70,9 @@ expression: pretty(&snapshot)
         "runHint": "tool_fs_run with path: /tools/browser/detect_qr; operation: detect_qr; provide args matching miniSchema.",
         "summary": "Capture the current browser viewport and detect QR codes with device-pixel bounds, optional QR-only crops, and vact-compatible captureId.",
         "title": "Detect browser QR codes"
-      },
-      {
-        "domain": "browser",
-        "handle": null,
-        "operation": "elevate",
-        "path": "/tools/browser/elevate",
-        "permissionPolicy": "ask_on_risk",
-        "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
-        "riskLevel": "browser",
-        "runHint": "tool_fs_run with path: /tools/browser/elevate; operation: elevate; provide args matching miniSchema.",
-        "summary": "Elevate an isolated browser task.",
-        "title": "Elevate browser task"
       }
     ],
-    "total": 12
+    "total": 16
   },
   "filesystem": {
     "directories": [],

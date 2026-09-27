@@ -8,9 +8,7 @@ import type {
 } from "../../../../apps/desktop/src/shared/agent";
 import type { WorkbenchBrowserEvent } from "../../../../apps/desktop/src/shared/workbench-browser";
 import type { LyraDesktopApi } from "../../../../apps/desktop/src/shared/desktop-bridge";
-import { readDefaultWorkbenchState } from "./default-state";
-
-const STORAGE_PREFIX = "lyra.promo.ui-studio.state.";
+import { readWorkbenchStateSync, writeWorkbenchStateSync, removeWorkbenchStateSync } from "../adapters/state-storage";
 const now = "2026-08-15T06:00:00.000Z";
 const unsubscribe = (): void => undefined;
 const listen = (): (() => void) => unsubscribe;
@@ -20,7 +18,82 @@ const resolveTrue = async (): Promise<boolean> => true;
 const sessionListeners = new Set<(event: AgentRuntimeEvent) => void>();
 const browserListeners = new Set<(event: WorkbenchBrowserEvent) => void>();
 const terminalDataListeners = new Set<(event: { kind: "data"; sessionId: string; data: string }) => void>();
+const bootedTerminalSessions = new Set<string>();
+const terminalInputBySession = new Map<string, string>();
 let promoTurnSent = false;
+
+const TERMINAL_PROMPT = "lyra@MacBook-Pro Lyra % ";
+const TERMINAL_BOOT_OUTPUT = [
+  "Last login: Wed Sep 24 09:41:12 on ttys001",
+  `${TERMINAL_PROMPT}pnpm dev:desktop`,
+  "> lyra@0.1.0 dev:desktop /Users/lyra/Projects/Lyra",
+  "> vite --host 127.0.0.1",
+  "✓ Workbench ready at http://127.0.0.1:5180",
+  TERMINAL_PROMPT
+].join("\r\n");
+
+const emitTerminalData = (sessionId: string, data: string): void => {
+  terminalDataListeners.forEach((listener) => listener({
+    kind: "data",
+    sessionId,
+    data
+  }));
+};
+
+const emitTerminalCommandResult = (sessionId: string, command: string): void => {
+  const normalized = command.trim();
+  if (normalized === "clear") {
+    emitTerminalData(sessionId, `\u001b[2J\u001b[H${TERMINAL_PROMPT}`);
+    return;
+  }
+
+  const output = normalized === ""
+    ? ""
+    : normalized === "ls"
+      ? "apps  crates  packages  services  web"
+      : normalized === "git status"
+        ? "On branch main\r\nnothing to commit, working tree clean"
+        : normalized === "pwd"
+          ? "/Users/lyra/Projects/Lyra"
+          : `zsh: command not found: ${normalized.split(/\s+/u)[0] ?? normalized}`;
+  emitTerminalData(
+    sessionId,
+    `${output.length > 0 ? `${output}\r\n` : ""}${TERMINAL_PROMPT}`
+  );
+};
+
+const writeToPromoTerminal = (request: { sessionId: string; data: string }): void => {
+  const { sessionId, data } = request;
+  let input = terminalInputBySession.get(sessionId) ?? "";
+
+  for (const character of data) {
+    if (character === "\r" || character === "\n") {
+      emitTerminalData(sessionId, "\r\n");
+      emitTerminalCommandResult(sessionId, input);
+      input = "";
+      continue;
+    }
+    if (character === "\u007f") {
+      if (input.length > 0) {
+        input = input.slice(0, -1);
+        emitTerminalData(sessionId, "\b \b");
+      }
+      continue;
+    }
+    if (character === "\u0003") {
+      input = "";
+      emitTerminalData(sessionId, `^C\r\n${TERMINAL_PROMPT}`);
+      continue;
+    }
+    if (character === "\u001b") {
+      continue;
+    }
+    input += character;
+    emitTerminalData(sessionId, character);
+  }
+
+  terminalInputBySession.set(sessionId, input);
+};
 
 const demoSession: AgentSessionSnapshot = {
   id: "promo-session",
@@ -224,6 +297,9 @@ const agentApi = {
   }),
   sendTurn: async (request: { text?: string }) => {
     const text = request.text?.trim() ?? "";
+    if (new URLSearchParams(location.search).get("film") === "1") {
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    }
     startPromoAgentTurn(text);
     return { sessionId: demoSession.id, turnId: "promo-turn", status: "running" };
   },
@@ -306,15 +382,13 @@ const createTerminalSnapshot = (request: Record<string, unknown>) => ({
 });
 
 const workbenchState = {
-  readCached: (key: string) =>
-    window.localStorage.getItem(`${STORAGE_PREFIX}${key}`) ?? readDefaultWorkbenchState(key),
-  read: async (key: string) =>
-    window.localStorage.getItem(`${STORAGE_PREFIX}${key}`) ?? readDefaultWorkbenchState(key),
+  readCached: readWorkbenchStateSync,
+  read: async (key: string) => readWorkbenchStateSync(key),
   write: async (key: string, json: string) => {
-    window.localStorage.setItem(`${STORAGE_PREFIX}${key}`, json);
+    writeWorkbenchStateSync(key, json);
   },
   remove: async (key: string) => {
-    window.localStorage.removeItem(`${STORAGE_PREFIX}${key}`);
+    removeWorkbenchStateSync(key);
   },
   onDidChange: listen
 };
@@ -493,13 +567,22 @@ const promoDesktopApi = {
     onEvent: listen
   },
   terminal: {
-    createSession: async (request: Record<string, unknown>) => createTerminalSnapshot(request),
+    createSession: async (request: Record<string, unknown>) => {
+      const snapshot = createTerminalSnapshot(request);
+      if (!bootedTerminalSessions.has(snapshot.sessionId)) {
+        bootedTerminalSessions.add(snapshot.sessionId);
+        window.setTimeout(() => emitTerminalData(snapshot.sessionId, TERMINAL_BOOT_OUTPUT), 0);
+      }
+      return snapshot;
+    },
     attachRenderer: async () => ({ attached: true }),
     detachRenderer: resolveVoid,
     ackData: resolveVoid,
     reloadPrompt: async () => ({ reloaded: true }),
     writeFast: () => false,
-    write: resolveVoid,
+    write: async (request: { sessionId: string; data: string }) => {
+      writeToPromoTerminal(request);
+    },
     read: async (request: { sessionId: string }) => ({
       sessionId: request.sessionId,
       cursor: "0",
@@ -543,7 +626,8 @@ const promoDesktopApi = {
   },
   i18n: {
     readLocalBundles: async () => ({}),
-    readLanguageBundles: async () => ({ managed: {}, local: {} })
+    readLanguageBundles: async () => ({ managed: {}, local:
+      { "zh-CN": (await import("./film-language")).filmChinese } })
   },
   languagePacks: {
     listCatalog: async () => ({
@@ -656,9 +740,7 @@ export const emitPromoBrowserEvent = (event: WorkbenchBrowserEvent): void => {
 };
 
 export const emitPromoTerminalData = (data: string): void => {
-  terminalDataListeners.forEach((listener) => listener({
-    kind: "data",
-    sessionId: "promo-terminal",
-    data
-  }));
+  // The real terminal generates session IDs; the old overlay hid this mismatch.
+  const sessionId = bootedTerminalSessions.values().next().value;
+  emitTerminalData(sessionId ?? "promo-terminal", data);
 };

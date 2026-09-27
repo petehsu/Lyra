@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
 use serde_json::{Value, json};
-use uuid::Uuid;
 
 use crate::{AgentRuntimeError, AgentRuntimeResult, native_backend::provider::ModelToolCall};
 
@@ -20,9 +19,16 @@ pub(crate) fn tool_name_set(tools: &[Value]) -> HashSet<String> {
         .collect()
 }
 
+/// Missing provider ids become `call-{index}`. A full UUID is 41 characters
+/// with a `tool-` prefix, and DeepSeek rejects any tool call id over 40.
+pub(crate) fn synthesized_tool_call_id(index: usize) -> String {
+    format!("call-{index}")
+}
+
 pub(crate) fn parse_tool_call(
     value: &Value,
     allowed_tool_names: &HashSet<String>,
+    index: usize,
 ) -> Option<ModelToolCall> {
     let function = value.get("function")?;
     let name = function
@@ -34,7 +40,7 @@ pub(crate) fn parse_tool_call(
         .and_then(Value::as_str)
         .filter(|id| is_valid_tool_call_id(id))
         .map(|id| id.trim().to_string())
-        .unwrap_or_else(|| format!("tool-{}", Uuid::new_v4()));
+        .unwrap_or_else(|| synthesized_tool_call_id(index));
     let arguments = match function.get("arguments") {
         Some(Value::String(text)) => parse_tool_arguments(text),
         Some(value) => value.clone(),
@@ -82,7 +88,7 @@ pub(crate) fn finalize_streaming_tool_calls(
                 id: accumulator
                     .id
                     .filter(|id| is_valid_tool_call_id(id))
-                    .unwrap_or_else(|| format!("tool-{}", Uuid::new_v4())),
+                    .unwrap_or_else(|| synthesized_tool_call_id(index)),
                 name,
                 arguments: parse_tool_arguments(&accumulator.arguments),
             },
@@ -151,6 +157,33 @@ mod tests {
     use super::*;
 
     #[test]
+    fn missing_tool_call_id_is_short_and_provider_id_is_kept() {
+        let allowed = HashSet::from(["tool_fs_run".to_string()]);
+        let missing = parse_tool_call(
+            &json!({
+                "id": "null",
+                "function": { "name": "tool_fs_run", "arguments": "{}" }
+            }),
+            &allowed,
+            2,
+        )
+        .expect("missing id");
+        assert_eq!(missing.id, "call-2");
+        assert!(missing.id.len() <= 40);
+
+        let issued = parse_tool_call(
+            &json!({
+                "id": "call_00_ET_14E5Y2N3MsAaj8ljUOJt2553",
+                "function": { "name": "tool_fs_run", "arguments": "{}" }
+            }),
+            &allowed,
+            0,
+        )
+        .expect("provider id");
+        assert_eq!(issued.id, "call_00_ET_14E5Y2N3MsAaj8ljUOJt2553");
+    }
+
+    #[test]
     fn tool_parser_repairs_case_and_preserves_bad_arguments() {
         let allowed = HashSet::from(["tool_fs_run".to_string()]);
         let parsed = parse_tool_call(
@@ -162,6 +195,7 @@ mod tests {
                 }
             }),
             &allowed,
+            0,
         )
         .expect("tool call");
 

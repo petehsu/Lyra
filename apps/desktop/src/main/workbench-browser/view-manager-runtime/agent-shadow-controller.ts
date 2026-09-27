@@ -40,6 +40,7 @@ import type {
 type AgentShadowControllerHost = {
   readonly getWindow: () => BrowserWindow | null;
   readonly getEntry: (tabId: string) => BrowserPageEntry | undefined;
+  readonly ensureLiveEntry?: (tabId: string) => BrowserPageEntry | undefined;
   readonly liveElectronSession: () => Session;
   readonly isolatedElectronSession: () => Session;
   readonly cancelPendingAgentPageLoad: (webContents: WebContents) => void;
@@ -67,6 +68,7 @@ type AgentShadowControllerHost = {
 export const createAgentShadowController = ({
   getWindow,
   getEntry,
+  ensureLiveEntry,
   liveElectronSession,
   isolatedElectronSession,
   cancelPendingAgentPageLoad,
@@ -413,7 +415,7 @@ export const createAgentShadowController = ({
         ? false
         : modeRequest.visibleFollow !== false;
     if (requestedTargetMode === "live") {
-      const liveEntry = getEntry(tabId);
+      const liveEntry = getEntry(tabId) ?? ensureLiveEntry?.(tabId);
       if (liveEntry !== undefined && liveEntry.isDestroyed === false) {
         return liveAgentTarget(
           liveEntry,

@@ -2,6 +2,9 @@ use super::retention::{effective_tool_output_budget, trim_tool_output};
 use super::*;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
+#[path = "reasoning_replay.rs"]
+mod reasoning_replay;
+
 // Direct media is base64-encoded into the provider JSON body. Keep the raw
 // payload bounded so encoding cannot turn one attachment into an 80+ MiB
 // request. Larger-provider upload APIs are separate transports and must not be
@@ -228,12 +231,16 @@ fn provider_protocol_v2_messages(
             prior,
             message_index,
             options,
+            message,
+            false,
         ));
     }
     output.extend(provider_protocol_v2_step_messages(
         protocol,
         message_index,
         options,
+        message,
+        true,
     ));
     Some(output)
 }
@@ -242,6 +249,8 @@ fn provider_protocol_v2_step_messages(
     protocol: &Value,
     message_index: usize,
     options: &ProviderContextOptions,
+    source_message: &Value,
+    current_step: bool,
 ) -> Vec<Value> {
     if protocol.get("status").and_then(Value::as_str) != Some("complete") {
         return Vec::new();
@@ -319,6 +328,7 @@ fn provider_protocol_v2_step_messages(
         provider_protocol_auxiliary_messages(protocol, "auxiliaryMessagesAfterToolResults");
 
     if same_origin
+        && options.protocol_id.as_deref() == Some("openai_responses")
         && replay_protocol == Some("openai_responses")
         && let Some(items) = replay_items
     {
@@ -350,24 +360,22 @@ fn provider_protocol_v2_step_messages(
         return output;
     }
 
-    if same_origin && let (Some(replay_protocol), Some(items)) = (replay_protocol, replay_items) {
+    if same_origin
+        && let (Some(replay_protocol), Some(items)) = (replay_protocol, replay_items)
+        && options.protocol_id.as_deref() == Some(replay_protocol)
+    {
         assistant_message["lyraProviderReplay"] = json!({
             "protocol": replay_protocol,
             "items": items,
         });
-        if replay_protocol == "openai_chat_completions"
-            && let Some(field) = items
-                .first()
-                .and_then(|item| item.get("field"))
-                .and_then(Value::as_str)
-            && matches!(
-                field,
-                "reasoning" | "reasoning_content" | "reasoning_details"
-            )
-            && let Some(value) = items.first().and_then(|item| item.get("value"))
-        {
-            assistant_message[field] = value.clone();
-        }
+    }
+    if same_origin && options.protocol_id.as_deref() == Some("openai_chat_completions") {
+        reasoning_replay::restore_chat_reasoning(
+            &mut assistant_message,
+            protocol,
+            source_message,
+            current_step,
+        );
     }
 
     let mut output = auxiliary_before;
@@ -538,13 +546,13 @@ fn merge_user_content_with_page_citations(message: &Value, role: &str, content: 
     let transcript_marker = "The user referenced prior transcript excerpts.";
     let merged = if user_text.trim().is_empty() {
         format!(
-            "The user referenced Workbench browser pages. Treat every <lyra-page-cite> as a compact pointer (tabId + pageUrl), not the full page. Look up more with workbench.read_tab / extract_tab_text / browser.read using tabId. For sourceKind=terminal-tab, pageUrl is lyra://terminal/{{terminalTabId}}; use terminal_read with that id. The block body is a small excerpt only; truncated=true means more exists — follow the ids.\n\n{cite_blocks}"
+            "The user referenced Workbench browser pages. Treat every <lyra-page-cite> as a compact pointer (tabId + pageUrl), not the full page. Look up more with workbench.read_tab / extract_tab_text / browser.read using tabId. For sourceKind=terminal-tab, pageUrl is lyra://terminal/{{terminalTabId}}; use terminal_read with that id. The block body is a small excerpt, and may include the filtered surface map (Now operable). truncated=true means the excerpt was cut — follow the ids.\n\n{cite_blocks}"
         )
     } else if user_text.contains(transcript_marker) {
         format!("{user_text}\n\n{cite_blocks}")
     } else {
         format!(
-            "The user referenced Workbench browser pages. Treat every <lyra-page-cite> as a compact pointer (tabId + pageUrl), not the full page. Look up more with workbench.read_tab / extract_tab_text / browser.read using tabId. For sourceKind=terminal-tab, pageUrl is lyra://terminal/{{terminalTabId}}; use terminal_read with that id. The block body is a small excerpt only; truncated=true means more exists — follow the ids.\n\n{cite_blocks}\n\nUser message:\n{user_text}"
+            "The user referenced Workbench browser pages. Treat every <lyra-page-cite> as a compact pointer (tabId + pageUrl), not the full page. Look up more with workbench.read_tab / extract_tab_text / browser.read using tabId. For sourceKind=terminal-tab, pageUrl is lyra://terminal/{{terminalTabId}}; use terminal_read with that id. The block body is a small excerpt, and may include the filtered surface map (Now operable). truncated=true means the excerpt was cut — follow the ids.\n\n{cite_blocks}\n\nUser message:\n{user_text}"
         )
     };
     Value::String(merged)

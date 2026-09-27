@@ -189,7 +189,16 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
   const entries = new Map<string, BrowserPageEntry>();
   const pendingLoadAddressByTabId = new Map<string, string>();
 
+  const knownPages = new Map<string, WorkbenchBrowserPageSpec>();
   const getEntry = (tabId: string): BrowserPageEntry | undefined => entries.get(tabId);
+  const ensureAgentEntry = (tabId: string): BrowserPageEntry | undefined => {
+    const existing = entries.get(tabId);
+    if (existing && !existing.isDestroyed) return existing;
+    const spec = knownPages.get(tabId);
+    if (!spec) return undefined; // A closed/unknown tab is never resurrected.
+    const runtime = host.readTombstoneRuntime(tabId);
+    return ensureEntry({...spec, address:runtime?.address ?? spec.address}, true) ?? undefined;
+  };
 
   const hasEntry = (tabId: string): boolean => entries.has(tabId);
 
@@ -356,6 +365,7 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
         backgroundThrottling: false,
         contextIsolation: true,
         disableHtmlFullscreenWindowResize: true,
+        focusOnNavigation: false,
         nodeIntegration: false,
         partition: WORKBENCH_BROWSER_LIVE_PROFILE_PARTITION,
         sandbox: true,
@@ -513,7 +523,11 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
       void host.captureBrowserRestoreState(entry);
     });
 
-    webContents.on("did-navigate-in-page", (_event, url) => {
+    webContents.on("did-navigate-in-page", (_event, url, isMainFrame) => {
+      // Hash/history changes in embedded documents are not tab navigations.
+      // Their DOM changes are revalidated normally, without replacing the tab's
+      // address or discarding targets in the unrelated main document.
+      if (!isMainFrame) return;
       host.hideChromePopover(entry);
       host.handleElementPickerPageNavigated(entry.tabId);
       host.invalidateBrowserAgentTargets(entry.tabId, "live", "navigation");
@@ -705,7 +719,7 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
     return entry;
   };
 
-  const ensureEntry = (spec: WorkbenchBrowserPageSpec): BrowserPageEntry | null => {
+  const ensureEntry = (spec: WorkbenchBrowserPageSpec, forAgent = false): BrowserPageEntry | null => {
     const existing = entries.get(spec.tabId);
     if (existing !== undefined) {
       existing.titleHint = spec.titleHint ?? existing.titleHint;
@@ -723,7 +737,7 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
       return existing;
     }
     const tombstone = host.readTombstone(spec.tabId);
-    if (host.canMaterializePage(spec) === false) {
+    if (!forAgent && host.canMaterializePage(spec) === false) {
       if (tombstone !== undefined) {
         host.updateDormantTombstone(spec);
       }
@@ -769,7 +783,9 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
     }
     host.handleElementPickerActiveTabChanged(nextTopology.activeTabId);
 
-    const nextTabIds = new Set(nextTopology.pages.map((page) => page.tabId));
+    knownPages.clear();
+    for (const page of nextTopology.pages) knownPages.set(page.tabId, page);
+    const nextTabIds = new Set(knownPages.keys());
     for (const [tabId, entry] of entries) {
       if (nextTabIds.has(tabId)) {
         continue;
@@ -985,8 +1001,9 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
 
   const readPageState = (request?: WorkbenchBrowserReadPageStateRequest): WorkbenchBrowserPageRuntimeState | null => {
     const requested = normalizeString(request?.tabId);
-    if (requested !== null && (entries.has(requested) || host.hasTombstone(requested))) {
-      return entries.get(requested)?.runtime ?? host.readTombstoneRuntime(requested);
+    if (requested !== null) {
+      // An explicit identity must never read the foreground page by accident.
+      return entries.get(requested)?.runtime ?? host.readTombstoneRuntime(requested) ?? null;
     }
     const activeTabId = host.getActiveOrFocusedTabId();
     if (activeTabId !== null && (entries.has(activeTabId) || host.hasTombstone(activeTabId))) {
@@ -1086,6 +1103,7 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
     findFrame,
     findFrameInWebContents,
     getEntry,
+    ensureAgentEntry,
     goBack,
     goForward,
     hasEntry,

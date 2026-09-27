@@ -1,5 +1,15 @@
 // ponytail: notifications surface — en-US 字典片段，按 key 前缀切割自原单文件
 export const notifications = {
+  "notification.credentialStorageSource": "Credential storage",
+  "notification.credentialStorageUnavailableTitle": "Saved credentials are unavailable",
+  "notification.credentialStorageUnavailableBody": "Unlock your system credential store and restart Lyra. Your saved credentials have been kept.",
+  "notification.credentialStorageUnavailableLinuxBody": "Unlock your system keyring and restart Lyra. Ensure GNOME Keyring, KWallet, or another Secret Service is available. Your saved credentials have been kept.",
+  "notification.credentialStorageDecryptFailedTitle": "A saved credential could not be opened",
+  "notification.credentialStorageDecryptFailedBody": "Restore the original system keyring or re-enter the affected credential in settings. Lyra has kept the saved value.",
+  "notification.credentialStorageRestoredTitle": "Credential storage is available again",
+  "notification.credentialStorageRestoredBody": "The system credential store is working. You can retry the interrupted action.",
+  "notification.providerRouteAdjustedTitle": "MiMo connection updated",
+  "notification.providerRouteAdjustedBody": "Verified and saved a working connection: {from} → {to}.",
   "downloads.notificationSource": "Downloads",
   "downloads.startedTitle": "Download started",
   "downloads.startedPreview": "Downloading",

@@ -13,11 +13,7 @@ const snapshot: AgentBrowserPreviewSnapshot = {
   tabId: "tab-live",
   targetMode: "live",
   url: "https://example.com",
-  title: "Example",
-  mimeType: "image/png",
-  imageBase64: "AAAA",
-  width: 80,
-  height: 50
+  title: "Example"
 };
 
 afterEach(() => {
@@ -105,6 +101,80 @@ describe("useAgentBrowserPreview", () => {
 
     rerender({ isTurnRunning: false });
     expect(result.current.items).toEqual([snapshot]);
+  });
+
+  test("waits for a slow read before scheduling another one", async () => {
+    vi.useFakeTimers();
+    let finish!: (pages: readonly AgentBrowserPreviewSnapshot[]) => void;
+    const readAgentBrowserPreview = vi.fn(() => new Promise<readonly AgentBrowserPreviewSnapshot[]>((resolve) => {
+      finish = resolve;
+    }));
+    const desktopApi = { agent: { readAgentBrowserPreview } } as unknown as LyraDesktopApi;
+    const { result, unmount } = renderHook(() => useAgentBrowserPreview({ desktopApi, isTurnRunning: true }));
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
+    expect(readAgentBrowserPreview).toHaveBeenCalledTimes(1);
+    await act(async () => { finish([snapshot]); });
+    expect(result.current.items).toEqual([snapshot]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(readAgentBrowserPreview).toHaveBeenCalledTimes(2);
+    unmount();
+    await act(async () => {
+      finish([{ ...snapshot, title: "Late result" }]);
+      await vi.advanceTimersByTimeAsync(3_000);
+    });
+    expect(readAgentBrowserPreview).toHaveBeenCalledTimes(2);
+  });
+
+  test("discards an outstanding read when the turn stops", async () => {
+    vi.useFakeTimers();
+    let finish!: (pages: readonly AgentBrowserPreviewSnapshot[]) => void;
+    const readAgentBrowserPreview = vi.fn(() => new Promise<readonly AgentBrowserPreviewSnapshot[]>((resolve) => {
+      finish = resolve;
+    }));
+    const desktopApi = { agent: { readAgentBrowserPreview } } as unknown as LyraDesktopApi;
+    const { result, rerender } = renderHook(
+      ({ isTurnRunning }) => useAgentBrowserPreview({ desktopApi, isTurnRunning }),
+      { initialProps: { isTurnRunning: true } }
+    );
+    rerender({ isTurnRunning: false });
+    await act(async () => {
+      finish([snapshot]);
+      await vi.advanceTimersByTimeAsync(3_000);
+    });
+    expect(result.current.items).toEqual([]);
+    expect(readAgentBrowserPreview).toHaveBeenCalledTimes(1);
+  });
+
+  test("keeps unchanged IPC metadata stable but publishes navigation and icon changes", async () => {
+    vi.useFakeTimers();
+    let page = snapshot;
+    const readAgentBrowserPreview = vi.fn(async () => [{ ...page }]);
+    const desktopApi = { agent: { readAgentBrowserPreview } } as unknown as LyraDesktopApi;
+    const { result } = renderHook(() => useAgentBrowserPreview({ desktopApi, isTurnRunning: true }));
+    await act(async () => {});
+    const original = result.current.items;
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+    expect(readAgentBrowserPreview).toHaveBeenCalledTimes(5);
+    expect(result.current.items).toBe(original);
+    page = { ...page, url: "https://example.com/inbox", title: "Inbox", faviconUrl: "https://example.com/favicon.ico" };
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(result.current.items).toEqual([page]);
+    expect(result.current.items).not.toBe(original);
+  });
+
+  test("recovers from a failed read without overlapping requests", async () => {
+    vi.useFakeTimers();
+    const readAgentBrowserPreview = vi.fn()
+      .mockRejectedValueOnce(new Error("IPC unavailable"))
+      .mockResolvedValue([snapshot]);
+    const desktopApi = { agent: { readAgentBrowserPreview } } as unknown as LyraDesktopApi;
+    const { result } = renderHook(() => useAgentBrowserPreview({ desktopApi, isTurnRunning: true }));
+    await act(async () => {});
+    expect(result.current.items).toEqual([]);
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(result.current.items).toEqual([snapshot]);
+    expect(readAgentBrowserPreview).toHaveBeenCalledTimes(2);
   });
 
   test("opens live preview on the existing workspace tab", () => {

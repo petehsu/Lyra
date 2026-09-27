@@ -1946,6 +1946,11 @@ describe("AiPanelSurface", () => {
       .toHaveAttribute("aria-selected", "true");
 
     fireEvent.click(screen.getByLabelText("Close session tab: Background plan"));
+    await act(async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0);
+      });
+    });
     expect(onCloseSessionTab).toHaveBeenCalledWith("session-2");
     expect(api.agent?.cancelTurn).not.toHaveBeenCalled();
     expect(container.querySelector(".lyra-agents-session-tab-title")).not.toBeNull();

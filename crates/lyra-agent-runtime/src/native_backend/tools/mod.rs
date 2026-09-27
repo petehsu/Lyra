@@ -47,6 +47,7 @@ mod quality_gate;
 mod search;
 mod shell;
 mod shell_kind;
+mod shell_secrets;
 mod skill_adapter;
 mod software_adapter;
 mod streaming_diff_preview;

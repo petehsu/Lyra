@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 
 import { WorkbenchShell } from "@workbench/shell";
 import { WorkbenchI18nProvider } from "@workbench/i18n";
@@ -6,7 +7,7 @@ import { AppErrorBoundary, AppStatusProvider } from "@renderer/ui/components";
 import LYRA_ASCII_LOGO from "../../../../ascii_logo_v4.txt?raw";
 import {
   emitPromoBrowserEvent,
-  emitPromoAgentEvent,
+  emitPromoAgentEvent as emitOriginalAgentEvent,
   emitPromoTerminalData,
   hasPromoTurnStarted,
   resetPromoAgentDemo,
@@ -14,11 +15,19 @@ import {
 } from "../../src/runtime/browser-desktop-api";
 import { defineShot } from "../../src/runtime/shot-types";
 import { openingCopy, resolveOpeningLocale, type OpeningCopy } from "./copy";
+import { localizeFilmEvent } from "./film-copy";
+import { createFilmPointerTrack, type PointerPoint } from "../../src/runtime/film-pointer-track";
 import siteDownloadImage from "./assets/site-download.png";
 import siteHomeImage from "./assets/site-home.png";
 import sitePricingImage from "./assets/site-pricing.png";
 import config from "./shot.json";
 import "./scene.css";
+
+const isWebFilm = new URLSearchParams(window.location.search).get("film") === "1";
+const filmDark = isWebFilm && new URLSearchParams(window.location.search).get("theme") === "dark";
+const emitPromoAgentEvent: typeof emitOriginalAgentEvent = event => emitOriginalAgentEvent(
+  isWebFilm && resolveOpeningLocale() === "zh-CN" ? localizeFilmEvent(event) : event
+);
 
 type LogoPoint = {
   readonly character: string;
@@ -61,6 +70,9 @@ let cameraElement: HTMLDivElement | null = null;
 let productElement: HTMLDivElement | null = null;
 let cursorElement: HTMLDivElement | null = null;
 let settingsCursorElement: HTMLDivElement | null = null;
+let filmPresentationSeconds = 0;
+let filmOptionPoint: PointerPoint | null = null;
+const filmPointerTrack = createFilmPointerTrack();
 let caretElement: HTMLDivElement | null = null;
 let browserSurfaceElement: HTMLDivElement | null = null;
 let siteImageElement: HTMLImageElement | null = null;
@@ -94,6 +106,7 @@ const hash = (index: number, salt: number): number => {
 };
 
 const setLightThemePreference = (): void => {
+  if (isWebFilm) return;
   const key = "lyra.promo.ui-studio.state.preferences";
   let existing: Record<string, unknown> = {};
   try {
@@ -109,6 +122,7 @@ const setLightThemePreference = (): void => {
 };
 
 const resetSequenceState = (): void => {
+  filmOptionPoint = null;
   homeClicked = false;
   composerFocused = false;
   sendClicked = false;
@@ -144,6 +158,11 @@ const writePrompt = (value: string): void => {
 
 const baseRect = (element: HTMLElement | null): DOMRect | null => {
   if (element === null || cameraElement === null) return null;
+  if (isWebFilm) {
+    const rect = element.getBoundingClientRect();
+    const matrix = new DOMMatrix(cameraElement.style.transform || "none");
+    return new DOMRect((rect.x - matrix.e) / matrix.a, (rect.y - matrix.f) / matrix.d, rect.width / matrix.a, rect.height / matrix.d);
+  }
   cameraElement.style.transform = "none";
   return element.getBoundingClientRect();
 };
@@ -226,10 +245,10 @@ const updateCameraAndCursor = (timeMs: number, width: number, height: number): v
   }
   const settingsPointer = timeMs >= 56_500 && timeMs < CHINESE_GREETING_START;
   if (settingsPointer) {
-    const settingsRect = baseRect(document.querySelector<HTMLButtonElement>('button[aria-label="Open settings"]'));
+    const settingsRect = baseRect(document.querySelector<HTMLButtonElement>('button[aria-label="Open settings"], button[aria-label="打开设置"]'));
     const languageRect = baseRect(document.querySelector<HTMLButtonElement>(".lyra-language-picker-trigger"));
     const chineseRect = baseRect(Array.from(document.querySelectorAll<HTMLButtonElement>('[role="option"]'))
-      .find((button) => button.textContent?.includes("简体中文")) ?? null);
+      .find((button) => button.textContent?.includes(isWebFilm && resolveOpeningLocale() === "zh-CN" ? "English" : "简体中文")) ?? null);
     const settingsPoint = settingsRect === null
       ? { x: width * 0.82, y: height * 0.08 }
       : { x: settingsRect.left + settingsRect.width * 0.5, y: settingsRect.top + settingsRect.height * 0.5 };
@@ -254,8 +273,10 @@ const updateCameraAndCursor = (timeMs: number, width: number, height: number): v
     clickCompression = 1 - Math.max(settingsClick, languageClick, chineseClick) * 0.16;
     cursor.dataset.mode = "arrow";
   }
-  cursor.style.opacity = approaching || sending || resizePointer ? "1" : "0";
-  cursor.style.transform = `translate3d(${cursorX}px, ${cursorY}px, 0) scale(${clickCompression})`;
+  if (!isWebFilm) {
+    cursor.style.opacity = approaching || sending || resizePointer ? "1" : "0";
+    cursor.style.transform = `translate3d(${cursorX}px, ${cursorY}px, 0) scale(${clickCompression})`;
+  }
   if (settingsCursorElement !== null) {
     settingsCursorElement.dataset.mode = "arrow";
     settingsCursorElement.style.opacity = settingsPointer ? "1" : "0";
@@ -320,6 +341,30 @@ const updateCameraAndCursor = (timeMs: number, width: number, height: number): v
   camera.style.transform = timeMs >= SETTINGS_START
     ? "none"
     : `matrix(${scale}, 0, 0, ${scale}, ${dx}, ${dy})`;
+  if (isWebFilm) {
+    const matrix = new DOMMatrix(camera.style.transform);
+    const screenPoint = (point: PointerPoint) => ({ x: point.x * matrix.a + matrix.e, y: point.y * matrix.d + matrix.f });
+    const center = (rect: DOMRect | null, fallback: PointerPoint): PointerPoint => rect
+      ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : fallback;
+    const divider = document.querySelector<HTMLElement>('[role="separator"][aria-label="left-resizer"]')?.getBoundingClientRect();
+    // Settings are approached before the camera's cut, so use their upcoming
+    // unzoomed position. The menu itself is a viewport/body portal.
+    const settings = center(baseRect(document.querySelector<HTMLButtonElement>('button[aria-label="Open settings"], button[aria-label="打开设置"]')), { x: width * .82, y: height * .08 });
+    const language = center(document.querySelector<HTMLElement>(".lyra-language-picker-trigger")?.getBoundingClientRect() ?? null, { x: width * .72, y: height * .32 });
+    const option = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]'))
+      .find(button => button.textContent?.includes(resolveOpeningLocale() === "zh-CN" ? "English" : "简体中文"));
+    if (option) filmOptionPoint = center(option.getBoundingClientRect(), language);
+    // Keep the clicked option's location after the menu closes, then move out
+    // of the frame before the greeting cut instead of blinking away.
+    const pointer = filmPointerTrack(filmPresentationSeconds, {
+      input: screenPoint(inputPoint), send: screenPoint(sendPoint),
+      divider: divider ? { x: divider.left + divider.width / 2, y: divider.top + divider.height * .54 } : screenPoint({ x: width * .5, y: height * .52 }),
+      settings, language, option: filmOptionPoint ?? { x: language.x, y: language.y + 92 }
+    }, width, height);
+    cursor.dataset.mode = pointer.mode;
+    cursor.style.opacity = pointer.visible ? "1" : "0";
+    cursor.style.transform = `translate3d(${pointer.x}px, ${pointer.y}px, 0) scale(${pointer.scale})`;
+  }
 };
 
 const updateTechCard = (timeMs: number): void => {
@@ -380,6 +425,14 @@ const updateBrowserSurface = (timeMs: number): void => {
           : siteHomeImage;
     }
   }
+  if (isWebFilm && siteMode) {
+    const preview = surface.querySelector<HTMLIFrameElement>("iframe");
+    const stage = timeMs >= 46_200 ? "download" : timeMs >= 43_800 ? "pricing" : "home";
+    if (preview && preview.dataset.stage !== stage) {
+      preview.dataset.stage = stage;
+      preview.contentWindow?.postMessage({ type: "lyra-film-page", stage }, window.location.origin);
+    }
+  }
 };
 
 const updateTerminalOverlay = (timeMs: number): void => {
@@ -430,8 +483,8 @@ const updateGreeting = (timeMs: number): void => {
   greetingElement.style.display = visible ? "grid" : "none";
   if (!visible) return;
 
-  let primary = "你好，Lyra！";
-  let secondary = "简体中文";
+  let primary = isWebFilm && resolveOpeningLocale() === "zh-CN" ? "Hello, Lyra." : "你好，Lyra！";
+  let secondary = isWebFilm && resolveOpeningLocale() === "zh-CN" ? "English" : "简体中文";
   if (timeMs >= MULTILINGUAL_START) {
     const greetings = [
       { at: 63_437, primary: "Hello, Lyra.", secondary: "English" },
@@ -450,7 +503,7 @@ const updateGreeting = (timeMs: number): void => {
     });
   }
   greetingPrimaryElement.textContent = primary;
-  greetingSecondaryElement.textContent = secondary;
+  greetingSecondaryElement.textContent = isWebFilm ? "" : secondary;
 };
 
 const runOnce = (key: string, condition: boolean, action: () => void): void => {
@@ -508,7 +561,7 @@ const updateAgentInteraction = (timeMs: number): void => {
   if (timeMs >= FOCUS_INPUT && !composerFocused) {
     composerFocused = true;
     const textbox = composerInput();
-    textbox?.focus();
+    if (!isWebFilm) textbox?.focus({ preventScroll: true });
     if (textbox !== null) setCaretToEnd(textbox);
   }
   const typingProgress = clamp01((timeMs - TYPING_START) / (TYPING_DONE - TYPING_START));
@@ -519,8 +572,10 @@ const updateAgentInteraction = (timeMs: number): void => {
   if (timeMs >= SEND_TIME && !sendClicked) {
     sendClicked = true;
     const sendButton = document.querySelector<HTMLButtonElement>(".lyra-agents-composer-send");
+    // Let the real composer create its backing session first. The browser
+    // adapter starts the event tape after that transaction has committed.
     if (sendButton !== null && !sendButton.disabled) sendButton.click();
-    startPromoAgentTurn(sceneCopy.prompt);
+    if (!isWebFilm) startPromoAgentTurn(sceneCopy.prompt);
     composerFocused = false;
     writePrompt("");
   }
@@ -956,14 +1011,14 @@ const updateAgentInteraction = (timeMs: number): void => {
   });
 
   runOnce("open-settings", timeMs >= 57_050, () => {
-    document.querySelector<HTMLButtonElement>('button[aria-label="Open settings"]')?.click();
+    document.querySelector<HTMLButtonElement>('button[aria-label="Open settings"], button[aria-label="打开设置"]')?.click();
   });
   runOnce("open-language", timeMs >= 58_050, () => {
     document.querySelector<HTMLButtonElement>(".lyra-language-picker-trigger")?.click();
   });
   runOnce("select-chinese", timeMs >= 59_050, () => {
     const option = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="option"]'))
-      .find((button) => button.textContent?.includes("简体中文"));
+      .find((button) => button.textContent?.includes(isWebFilm && resolveOpeningLocale() === "zh-CN" ? "English" : "简体中文"));
     option?.click();
   });
 };
@@ -998,12 +1053,12 @@ const renderSequence = (timeMs: number): void => {
   const characterFade = 1 - smooth((timeMs - 6_180) / (WORKSPACE_DONE - 6_180));
   const frameIndex = Math.floor(timeMs / 84);
 
-  if (timeMs < WORKSPACE_START) {
-    const level = Math.round(mix(0, 247, lightTransition));
+  if (!isWebFilm && timeMs < WORKSPACE_START) {
+    const level = Math.round(mix(0, filmDark ? 24 : 247, lightTransition));
     context.fillStyle = `rgb(${level},${level},${Math.max(0, level - 1)})`;
     context.fillRect(0, 0, width, height);
-  } else if (timeMs < WORKSPACE_DONE) {
-    context.fillStyle = `rgba(247,247,246,${1 - uiReveal})`;
+  } else if (!isWebFilm && timeMs < WORKSPACE_DONE) {
+    context.fillStyle = filmDark ? `rgba(24,24,24,${1 - uiReveal})` : `rgba(247,247,246,${1 - uiReveal})`;
     context.fillRect(0, 0, width, height);
   }
 
@@ -1028,7 +1083,7 @@ const renderSequence = (timeMs: number): void => {
   context.textBaseline = "middle";
   context.font = `${fontSize}px "Geist Mono", "SFMono-Regular", monospace`;
 
-  logoPoints.forEach((point, index) => {
+  if (timeMs < WORKSPACE_DONE) logoPoints.forEach((point, index) => {
     const cellColumn = index % fieldColumns;
     const cellRow = Math.floor(index / fieldColumns) % fieldRows;
     const fieldX = (cellColumn + 0.16 + hash(index, 1) * 0.68) / fieldColumns * width;
@@ -1061,7 +1116,7 @@ const renderSequence = (timeMs: number): void => {
     const randomCharacter = randomGlyphs[Math.floor(hash(index, frameIndex + 50) * randomGlyphs.length)];
     const logoCharacter = localLogo > 0.72 ? point.character : randomCharacter;
     const character = localStructure > 0.5 ? randomCharacter : logoCharacter;
-    const ink = Math.round(mix(255, 18, lightTransition));
+    const ink = isWebFilm ? (filmDark ? 235 : 18) : Math.round(mix(255, 18, lightTransition));
     context.globalAlpha = alpha;
     context.fillStyle = `rgb(${ink},${ink},${ink})`;
     if (flash || (localLogo > 0.92 && hash(index, 12) > 0.96)) {
@@ -1083,12 +1138,12 @@ const renderSequence = (timeMs: number): void => {
   updatePanelResize(timeMs, width, height);
   updateCameraAndCursor(timeMs, width, height);
   updateBrowserSurface(timeMs);
-  updateTerminalOverlay(timeMs);
+  if (!isWebFilm) updateTerminalOverlay(timeMs);
   updateTechCard(timeMs);
   updateGreeting(timeMs);
 };
 
-const OpeningSequenceScene = () => {
+export const OpeningSequenceScene = () => {
   setLightThemePreference();
   const locale = resolveOpeningLocale();
   sceneCopy = openingCopy(locale);
@@ -1114,8 +1169,8 @@ const OpeningSequenceScene = () => {
     canvasElement = canvasRef.current;
     cameraElement = cameraRef.current;
     productElement = productRef.current;
-    cursorElement = cursorRef.current;
-    settingsCursorElement = settingsCursorRef.current;
+    cursorElement = isWebFilm ? settingsCursorRef.current : cursorRef.current;
+    settingsCursorElement = isWebFilm ? null : settingsCursorRef.current;
     caretElement = caretRef.current;
     browserSurfaceElement = browserSurfaceRef.current;
     siteImageElement = siteImageRef.current;
@@ -1154,11 +1209,11 @@ const OpeningSequenceScene = () => {
     <main className="opening-sequence-scene" aria-label="Lyra continuous opening sequence">
       <div className="opening-sequence-camera" ref={cameraRef}>
         <section className="opening-sequence-window" ref={productRef} aria-label="Lyra for Mac">
-          <div className="opening-sequence-traffic" aria-hidden="true">
+          {!isWebFilm && <div className="opening-sequence-traffic" aria-hidden="true">
             <span className="opening-sequence-traffic-red" />
             <span className="opening-sequence-traffic-yellow" />
             <span className="opening-sequence-traffic-green" />
-          </div>
+          </div>}
           <div className="opening-sequence-workbench">
             <WorkbenchI18nProvider>
               <AppStatusProvider>
@@ -1173,22 +1228,22 @@ const OpeningSequenceScene = () => {
             </WorkbenchI18nProvider>
           </div>
         </section>
-        <div className="opening-sequence-cursor" ref={cursorRef} aria-hidden="true">
+        {!isWebFilm && <div className="opening-sequence-cursor" ref={cursorRef} aria-hidden="true">
           <svg viewBox="0 0 24 32" role="presentation">
             <path d="M2.8 1.9v23.6l6.1-5.7 4 9.1 4-1.8-4-8.8 8.2-.5z" />
           </svg>
           <span className="opening-sequence-ibeam" />
           <span className="opening-sequence-col-resize" />
-        </div>
+        </div>}
         <div className="opening-sequence-caret" ref={caretRef} aria-hidden="true" />
       </div>
-      <div className="opening-sequence-cursor opening-sequence-cursor--top" ref={settingsCursorRef} aria-hidden="true">
+      {createPortal(<div className="opening-sequence-cursor opening-sequence-cursor--top" ref={settingsCursorRef} aria-hidden="true">
         <svg viewBox="0 0 24 32" role="presentation">
           <path d="M2.8 1.9v23.6l6.1-5.7 4 9.1 4-1.8-4-8.8 8.2-.5z" />
         </svg>
         <span className="opening-sequence-ibeam" />
         <span className="opening-sequence-col-resize" />
-      </div>
+      </div>, isWebFilm ? document.body : document.getElementById("app")!)}
       <div className="opening-sequence-browser-surface" ref={browserSurfaceRef} aria-label="Browser page content">
           <div className="opening-sequence-research-page">
             <header>
@@ -1216,14 +1271,20 @@ const OpeningSequenceScene = () => {
               </article>
             </main>
           </div>
-          <img
+          {isWebFilm ? <iframe
+            className="opening-sequence-site-image"
+            title="Lyra website preview"
+            src={`/film-preview?locale=${locale === "zh-CN" ? "zh" : "en"}&theme=${filmDark ? "dark" : "light"}`}
+            tabIndex={-1}
+            onLoad={event => event.currentTarget.contentWindow?.postMessage({ type: "lyra-film-page", stage: event.currentTarget.dataset.stage ?? "home" }, window.location.origin)}
+          /> : <img
             className="opening-sequence-site-image"
             ref={siteImageRef}
             src={siteHomeImage}
             alt="Lyra website running locally"
-          />
+          />}
       </div>
-      <pre className="opening-sequence-terminal-output" ref={terminalOverlayRef} aria-label="Terminal output" />
+      {!isWebFilm && <pre className="opening-sequence-terminal-output" ref={terminalOverlayRef} aria-label="Terminal output" />}
       <canvas className="opening-sequence-canvas" ref={canvasRef} aria-hidden="true" />
       <section className="opening-sequence-tech" ref={techRef} aria-live="off">
         <div className="opening-sequence-tech-copy">
@@ -1242,6 +1303,11 @@ const OpeningSequenceScene = () => {
       </section>
     </main>
   );
+};
+
+export const seekOpeningFilm = (sourceTimeMs: number, presentationSeconds: number) => {
+  filmPresentationSeconds = presentationSeconds;
+  renderSequence(sourceTimeMs);
 };
 
 export default defineShot({

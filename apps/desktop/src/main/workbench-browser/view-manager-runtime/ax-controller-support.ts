@@ -10,7 +10,6 @@ import type {
   WorkbenchBrowserOsAxAdapter
 } from "../types";
 import type { WorkbenchBrowserAgentControllerHost } from "./agent-controller-types";
-import type { BrowserAxActCache } from "./ax-act-cache";
 import type { BrowserAxSnapshotStore } from "./ax-snapshot-store";
 import { detectProvider } from "./ax-detectors";
 import type { BrowserAgentPageTarget, BrowserAgentSemanticFrameGraph } from "./types";
@@ -30,8 +29,6 @@ export type BrowserAxControllerDeps = Pick<
   ) => Promise<BrowserAgentSemanticFrameGraph>;
   readonly nextMapEpoch: (tabId: string, targetMode: WorkbenchBrowserAgentTargetMode) => number;
   readonly axSnapshotStore: BrowserAxSnapshotStore;
-  readonly axActCache: BrowserAxActCache;
-  readonly getActCacheEnabled?: () => boolean;
   readonly osAxAdapter?: WorkbenchBrowserOsAxAdapter;
 };
 

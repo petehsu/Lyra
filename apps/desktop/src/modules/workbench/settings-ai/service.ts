@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { AgentProviderRouteAdjustment } from "../../../shared/agent";
 
 import type {
   AgentAccountRequest,
@@ -33,6 +34,7 @@ import type {
 type UseSettingsAiModelOptions = {
   readonly desktopApi: LyraDesktopApi | null;
   readonly labels: SettingsAiLabels;
+  readonly onProviderRouteAdjusted?: (adjustment: AgentProviderRouteAdjustment) => void;
   readonly onOpenAgentConfigFile?:
     | ((filePath: string) => void | Promise<void>)
     | undefined;
@@ -80,6 +82,7 @@ const isUnknownModelDeleteMethodError = (error: unknown): boolean => {
 export const useSettingsAiModel = ({
   desktopApi,
   labels,
+  onProviderRouteAdjusted,
   onOpenAgentConfigFile,
   onOpenSite,
 }: UseSettingsAiModelOptions): SettingsAiModel => {
@@ -187,6 +190,7 @@ export const useSettingsAiModel = ({
     try {
       const catalog = await desktopApi.agent.saveAndDiscoverAgentProviderProfile(request);
       setAgentModelCatalog(catalog);
+      if (catalog.routeAdjustment) onProviderRouteAdjusted?.(catalog.routeAdjustment);
       await refreshAgent();
       setErrorMessage(null);
       return catalog;
@@ -196,7 +200,7 @@ export const useSettingsAiModel = ({
     } finally {
       setIsSaving(false);
     }
-  }, [desktopApi, refreshAgent]);
+  }, [desktopApi, refreshAgent, onProviderRouteAdjusted]);
 
   const refreshAgentModels = useCallback(async (providerId: string) => {
     if (desktopApi?.agent === undefined) return null;
@@ -204,6 +208,7 @@ export const useSettingsAiModel = ({
     try {
       const catalog = await desktopApi.agent.refreshAgentModels({ provider: providerId });
       setAgentModelCatalog(catalog);
+      if (catalog.routeAdjustment) onProviderRouteAdjusted?.(catalog.routeAdjustment);
       await refreshAgent();
       setErrorMessage(null);
       return catalog;
@@ -213,13 +218,15 @@ export const useSettingsAiModel = ({
     } finally {
       setIsSaving(false);
     }
-  }, [desktopApi, refreshAgent]);
+  }, [desktopApi, refreshAgent, onProviderRouteAdjusted]);
 
   const refreshAgentModelCatalog = useCallback(async () => {
     if (desktopApi?.agent === undefined) return;
     setIsSaving(true);
     try {
-      setAgentModelCatalog(await desktopApi.agent.refreshAgentModels());
+      const catalog = await desktopApi.agent.refreshAgentModels();
+      setAgentModelCatalog(catalog);
+      if (catalog.routeAdjustment) onProviderRouteAdjusted?.(catalog.routeAdjustment);
       await refreshAgent();
       setErrorMessage(null);
     } catch (error) {
@@ -227,7 +234,7 @@ export const useSettingsAiModel = ({
     } finally {
       setIsSaving(false);
     }
-  }, [desktopApi, refreshAgent]);
+  }, [desktopApi, refreshAgent, onProviderRouteAdjusted]);
 
   const switchAgentModel = useCallback(async (request: AgentModelSwitchRequest) => {
     if (desktopApi?.agent === undefined) return;

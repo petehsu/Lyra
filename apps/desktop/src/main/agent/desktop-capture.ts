@@ -5,6 +5,9 @@ export type DesktopCaptureSourceRef = {
   readonly name: string;
 };
 
+export const waylandSession = (): boolean =>
+  process.env.XDG_SESSION_TYPE === "wayland" || (process.env.WAYLAND_DISPLAY ?? "").length > 0;
+
 const isScreenSource = (source: DesktopCaptureSourceRef): boolean =>
   source.id.startsWith("screen:");
 

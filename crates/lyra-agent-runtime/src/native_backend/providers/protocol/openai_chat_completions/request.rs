@@ -1,5 +1,6 @@
 use serde_json::{Value, json};
 
+use super::super::openai_common::replay_reasoning_value;
 use crate::native_backend::ReasoningReplayField;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -94,8 +95,8 @@ fn wire_message(message: &Value, reasoning_replay: ReasoningReplayPolicy) -> Opt
             }
             if let Some(field) = reasoning_replay.field.wire_name() {
                 let value = replay_reasoning_value(message, field).or_else(|| {
-                    (field != "reasoning_content")
-                        .then(|| message.get("reasoning_content").cloned())
+                    (field != "reasoning_content" && field != "reasoning_details")
+                        .then(|| replay_reasoning_value(message, "reasoning_content"))
                         .flatten()
                 });
                 if let Some(value) = value {
@@ -128,25 +129,6 @@ fn wire_message(message: &Value, reasoning_replay: ReasoningReplayPolicy) -> Opt
         // never belong on the Chat Completions wire.
         _ => None,
     }
-}
-
-fn replay_reasoning_value(message: &Value, field: &str) -> Option<Value> {
-    message.get(field).cloned().or_else(|| {
-        message
-            .get("lyraProviderReplay")
-            .filter(|replay| {
-                replay.get("protocol").and_then(Value::as_str) == Some(super::PROTOCOL_ID)
-            })
-            .and_then(|replay| replay.get("items"))
-            .and_then(Value::as_array)
-            .and_then(|items| {
-                items.iter().find_map(|item| {
-                    (item.get("field").and_then(Value::as_str) == Some(field))
-                        .then(|| item.get("value").cloned())
-                        .flatten()
-                })
-            })
-    })
 }
 
 fn normalized_content(content: Value) -> Value {

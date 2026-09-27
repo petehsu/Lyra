@@ -129,6 +129,7 @@ import {
 import { materializeImageAttachment } from "./artifact-materializer";
 import { normalizePayload } from "./host-payload";
 import { actCacheController } from "./act-cache-toggle";
+import { attachPageCitationMaps } from "./page-citation-map";
 import { createProviderIconCache } from "./provider-icon-cache";
 
 type RequestRuntime = <T>(method: string, payload?: object) => Promise<T>;
@@ -331,13 +332,13 @@ export const createAgentIpcRouter = ({
           return [];
         }
         const browser = getBrowserBridge();
-        if (browser === null || typeof browser.captureAgentPreviewPage !== "function") {
+        if (browser === null || typeof browser.readAgentPreviewPage !== "function") {
           return [];
         }
         const snapshots: AgentBrowserPreviewSnapshot[] = [];
         for (const target of targets) {
           const snapshot = await Promise.resolve(
-            browser.captureAgentPreviewPage(target.tabId, target.targetMode)
+            browser.readAgentPreviewPage(target.tabId, target.targetMode)
           ).then(
             (value) => value,
             () => null
@@ -389,26 +390,26 @@ export const createAgentIpcRouter = ({
     ],
     [
       LYRA_CHANNELS.agentTurnStart,
-      (_event, payload) =>
+      async (_event, payload) =>
         requestRuntime<AgentTurnSendResponse>(
           "agent.turn.start",
-          payload as AgentTurnSendRequest
+          await attachPageCitationMaps(payload as AgentTurnSendRequest, getBrowserBridge())
         )
     ],
     [
       LYRA_CHANNELS.agentTurnSend,
-      (_event, payload) =>
+      async (_event, payload) =>
         requestRuntime<AgentTurnSendResponse>(
           "agent.turn.send",
-          payload as AgentTurnSendRequest
+          await attachPageCitationMaps(payload as AgentTurnSendRequest, getBrowserBridge())
         )
     ],
     [
       LYRA_CHANNELS.agentTurnResume,
-      (_event, payload) =>
+      async (_event, payload) =>
         requestRuntime<AgentTurnSendResponse>(
           "agent.turn.resume",
-          payload as AgentTurnSendRequest
+          await attachPageCitationMaps(payload as AgentTurnSendRequest, getBrowserBridge())
         )
     ],
     [

@@ -1,7 +1,7 @@
 use crate::{
     AgentRuntimeError, AgentRuntimeResult,
     native_backend::{
-        NativeProviderModel, NativeProviderProfile,
+        NativeProviderModel, NativeProviderProfile, ReasoningReplayField,
         providers::protocol::openai_common::{self, ModelDiscoveryScope},
     },
 };
@@ -17,6 +17,22 @@ pub(crate) const OPENAI_BASE_URL: &str = "https://api.deepseek.com";
 pub(crate) const ANTHROPIC_BASE_URL: &str = "https://api.deepseek.com/anthropic";
 
 static MODEL_DISCOVERY_HOOK: DeepSeekModelDiscoveryHook = DeepSeekModelDiscoveryHook;
+
+// https://api-docs.deepseek.com/guides/thinking_mode/
+// A transport requirement, including unlisted/new model IDs. Discovery and
+// a user's thinking-effort selection must not gate historical reasoning replay.
+pub(crate) fn default_reasoning_replay_field(route_id: &str) -> Option<ReasoningReplayField> {
+    (route_id == OPENAI_ROUTE_ID).then_some(ReasoningReplayField::ReasoningContent)
+}
+
+pub(crate) fn default_requires_reasoning_field_on_assistant_messages(
+    route_id: &str,
+) -> Option<bool> {
+    // A response can legitimately contain no thought (including history made
+    // before thinking was enabled). Keep the field present as an empty string
+    // in that case; this must never replace any surviving native thought.
+    (route_id == OPENAI_ROUTE_ID).then_some(true)
+}
 
 pub(crate) fn route_descriptors() -> Vec<ProviderRouteDescriptor> {
     [OPENAI_ROUTE_ID, ANTHROPIC_ROUTE_ID]

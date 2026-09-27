@@ -871,175 +871,15 @@ fn browser_shared_control_interruption_requests_clarification_and_resolves_decis
     assert_eq!(read["tools"][0]["status"], "uncertain");
 }
 #[test]
-fn auth_challenge_signal_triggers_elevation_clarification_and_verification() {
+fn auth_challenge_does_not_open_a_system_pause() {
     let backend = LyraAgentBackend;
     let created = backend
-        .call_agent_method(
-            "agent.session.create",
-            json!({ "title": "Auth Elevation Test" }),
-        )
+        .call_agent_method("agent.session.create", json!({ "title": "Auth Continues" }))
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
     let turn_id = start_test_runtime_turn(&session_id);
-    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, payload| {
-        let input: Value = serde_json::from_str(&payload).expect("payload json");
-        match method.as_str() {
-            "lyraLumen.map" => Ok(serde_json::to_string(&json!({
-                "ok": true,
-                "kind": "lyraLumenMap",
-                "tabId": "browser-tab-1",
-                "targetMode": "isolated",
-                "observationId": "obs-auth",
-                "title": "Login",
-                "url": "https://example.com/login",
-                "elements": [],
-                "authChallengeSignals": [{
-                    "kind": "captcha",
-                    "confidence": "high",
-                    "source": "frame",
-                    "label": "recaptcha"
-                }],
-                "needsUserAction": {
-                    "kind": "auth_challenge",
-                    "reason": "captcha",
-                    "tabId": "browser-tab-1",
-                    "targetMode": "isolated",
-                    "suggestedAction": "lyra_lumen_elevate",
-                    "actionability": "user_only",
-                    "confidence": "high",
-                    "taskBlocking": true,
-                    "stableObservationCount": 3
-                }
-            }))
-            .expect("json")),
-            "lyraLumen.elevate" => {
-                assert_eq!(input["reason"], "captcha");
-                Ok(serde_json::to_string(&json!({
-                    "ok": true,
-                    "kind": "lyraLumenElevation",
-                    "tabId": "browser-tab-1",
-                    "targetMode": "isolated",
-                    "liveTabId": "browser-elevated-1",
-                    "address": "https://example.com/login",
-                    "title": "Login",
-                    "userActionRequired": true,
-                    "elevationSession": {
-                        "sessionId": "elevation-1"
-                    }
-                }))
-                .expect("json"))
-            }
-            "lyraLumen.completeElevation" => {
-                assert_eq!(input["liveTabId"], "browser-elevated-1");
-                Ok(serde_json::to_string(&json!({
-                    "ok": true,
-                    "kind": "lyraLumenElevationCompletion",
-                    "tabId": "browser-tab-1",
-                    "targetMode": "isolated",
-                    "liveTabId": "browser-elevated-1",
-                    "address": "https://example.com/app",
-                    "title": "App",
-                    "verified": true,
-                    "message": "verified"
-                }))
-                .expect("json"))
-            }
-            other => panic!("unexpected method {other}"),
-        }
-    });
-    let thread_session_id = session_id.clone();
-    let thread_turn_id = turn_id.clone();
-    let handle = thread::spawn(move || {
-        execute_model_tool_sync(
-            &thread_session_id,
-            &thread_turn_id,
-            &Some(dispatcher),
-            &CancellationToken::new(),
-            tool_fs_run_call(
-                "tool-map-auth",
-                "/tools/browser/map",
-                json!({ "tabId": "browser-tab-1", "targetMode": "isolated" }),
-            ),
-        )
-    });
-    let clarification_id = wait_for_pending_clarification(&session_id);
-    backend
-        .call_agent_method(
-            "agent.clarification.respond",
-            json!({
-                "sessionId": session_id.clone(),
-                "clarificationId": clarification_id,
-                "answer": "Open Visible Tab",
-                "selectedOptionValue": "open_visible_tab"
-            }),
-        )
-        .expect("respond elevation clarification");
-    let permission_id = wait_for_pending_permission(&session_id);
-    backend
-        .call_agent_method(
-            "agent.permission.respond",
-            json!({ "sessionId": session_id.clone(), "permissionId": permission_id, "allowed": true }),
-        )
-        .expect("allow elevation");
-    let completion_id = wait_for_pending_clarification(&session_id);
-    backend
-        .call_agent_method(
-            "agent.clarification.respond",
-            json!({
-                "sessionId": session_id,
-                "clarificationId": completion_id,
-                "answer": "Done",
-                "selectedOptionValue": "resume_authentication"
-            }),
-        )
-        .expect("respond completion clarification");
-    let output = handle.join().expect("join auth map");
-    assert_eq!(
-        output
-            .pointer("/raw/userActionResolution/decision")
-            .and_then(Value::as_str),
-        Some("elevate_and_verify")
-    );
-    assert_eq!(
-        output
-            .pointer("/raw/userActionResolution/verification/verified")
-            .and_then(Value::as_bool),
-        Some(true)
-    );
-    assert_eq!(
-        output
-            .pointer("/raw/userActionResolution/policyDecision/mode")
-            .and_then(Value::as_str),
-        Some("user_prompt")
-    );
-    assert_eq!(
-        output
-            .pointer("/raw/userActionResolution/policyDecision/outcome")
-            .and_then(Value::as_str),
-        Some("approved")
-    );
-    assert_eq!(
-        output
-            .pointer("/raw/userActionResolution/policyDecision/action")
-            .and_then(Value::as_str),
-        Some("elevate")
-    );
-}
-
-#[test]
-fn live_auth_challenge_prompt_does_not_offer_open_visible_tab() {
-    let backend = LyraAgentBackend;
-    let created = backend
-        .call_agent_method(
-            "agent.session.create",
-            json!({ "title": "Live Auth Challenge Prompt Test" }),
-        )
-        .expect("create session");
-    let session_id = created["id"].as_str().expect("session id").to_string();
-    let turn_id = start_test_runtime_turn(&session_id);
-    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(|method, payload| {
-        let input: Value = serde_json::from_str(&payload).expect("payload json");
-        match method.as_str() {
+    let dispatcher: Arc<HostCapabilityDispatcher> =
+        Arc::new(|method, _payload| match method.as_str() {
             "lyraLumen.map" => Ok(serde_json::to_string(&json!({
                 "ok": true,
                 "kind": "lyraLumenMap",
@@ -1048,19 +888,10 @@ fn live_auth_challenge_prompt_does_not_offer_open_visible_tab() {
                 "observationId": "obs-live-auth",
                 "title": "Login",
                 "url": "https://example.com/login",
-                "elements": [],
-                "authChallengeSignals": [{
-                    "kind": "captcha",
-                    "confidence": "high",
-                    "source": "frame",
-                    "label": "recaptcha"
-                }],
+                "elements": [{ "id": 1, "role": "button", "label": "Sign in" }],
                 "needsUserAction": {
                     "kind": "auth_challenge",
                     "reason": "captcha",
-                    "tabId": "browser-tab-1",
-                    "targetMode": "live",
-                    "suggestedAction": "lyra_lumen_elevate",
                     "actionability": "user_only",
                     "confidence": "high",
                     "taskBlocking": true,
@@ -1068,84 +899,25 @@ fn live_auth_challenge_prompt_does_not_offer_open_visible_tab() {
                 }
             }))
             .expect("json")),
-            "lyraLumen.completeElevation" => {
-                assert_eq!(input["targetMode"], "live");
-                Ok(serde_json::to_string(&json!({
-                    "ok": true,
-                    "kind": "lyraLumenElevationCompletion",
-                    "tabId": "browser-tab-1",
-                    "targetMode": "live",
-                    "verified": true,
-                    "message": "verified"
-                }))
-                .expect("json"))
-            }
-            "lyraLumen.elevate" => panic!("live auth prompt should not open another visible tab"),
             other => panic!("unexpected method {other}"),
-        }
-    });
-    let thread_session_id = session_id.clone();
-    let thread_turn_id = turn_id.clone();
-    let handle = thread::spawn(move || {
-        execute_model_tool_sync(
-            &thread_session_id,
-            &thread_turn_id,
-            &Some(dispatcher),
-            &CancellationToken::new(),
-            tool_fs_run_call(
-                "tool-map-live-auth",
-                "/tools/browser/map",
-                json!({ "tabId": "browser-tab-1", "targetMode": "live" }),
-            ),
-        )
-    });
-    let clarification_id = wait_for_pending_clarification(&session_id);
-    {
-        let state = state().lock().expect("state lock");
-        let pending = state
-            .pending_clarifications
-            .get(&clarification_id)
-            .expect("pending clarification");
-        assert!(pending.question.contains("visible browser page"));
-        let labels: Vec<_> = pending
-            .options
-            .iter()
-            .filter_map(|option| option.get("label").and_then(Value::as_str))
-            .collect();
-        assert!(labels.contains(&"Resume after authentication"));
-        assert!(labels.contains(&"Cancel Task"));
-        assert!(!labels.contains(&"Open Visible Tab"));
-        assert!(!labels.contains(&"Already Completed"));
-        let values: Vec<_> = pending
-            .options
-            .iter()
-            .filter_map(|option| option.get("value").and_then(Value::as_str))
-            .collect();
-        assert!(values.contains(&"resume_authentication"));
-        assert!(values.contains(&"cancel_task"));
-    }
-    backend
-        .call_agent_method(
-            "agent.clarification.respond",
-            json!({
-                "sessionId": session_id,
-                "clarificationId": clarification_id,
-                "answer": "Resume after authentication",
-                "selectedOptionValue": "resume_authentication"
-            }),
-        )
-        .expect("respond live auth clarification");
-    let output = handle.join().expect("join live auth map");
-    assert_eq!(
-        output
-            .pointer("/raw/userActionResolution/decision")
-            .and_then(Value::as_str),
-        Some("verify")
+        });
+    let output = execute_model_tool_sync(
+        &session_id,
+        &turn_id,
+        &Some(dispatcher),
+        &CancellationToken::new(),
+        tool_fs_run_call(
+            "tool-map-live-auth",
+            "/tools/browser/map",
+            json!({ "tabId": "browser-tab-1", "targetMode": "live" }),
+        ),
     );
-    assert_eq!(
-        output
-            .pointer("/raw/userActionResolution/verification/targetMode")
-            .and_then(Value::as_str),
-        Some("live")
+    assert!(output.pointer("/raw/userActionResolution").is_none());
+    assert!(
+        state()
+            .lock()
+            .expect("state lock")
+            .pending_clarifications
+            .is_empty()
     );
 }

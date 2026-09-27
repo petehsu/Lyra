@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-const MAX_BROWSER_HOST_CALLS: usize = 2;
+const MAX_BROWSER_HOST_CALLS: usize = 1;
 
 static BROWSER_HOST_INFLIGHT: AtomicUsize = AtomicUsize::new(0);
 

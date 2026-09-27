@@ -12,6 +12,8 @@ use crate::{
 use reqwest::{blocking::RequestBuilder, header::HeaderName};
 use serde_json::{Value, json};
 
+pub(crate) mod routing;
+
 pub(crate) const PAY_AS_YOU_GO_ROUTE_ID: &str = "mimo";
 pub(crate) const TOKEN_PLAN_CN_ROUTE_ID: &str = "mimo_token_plan_cn";
 pub(crate) const TOKEN_PLAN_SGP_ROUTE_ID: &str = "mimo_token_plan_sgp";
@@ -60,6 +62,15 @@ pub(crate) fn route_descriptors() -> Vec<ProviderRouteDescriptor> {
     .into_iter()
     .map(descriptor_for)
     .collect()
+}
+
+fn is_official_base_url(base: &str) -> bool {
+    let base = base.trim().trim_end_matches('/');
+    route_descriptors().iter().any(|route| {
+        route.default_base_url.as_deref().is_some_and(|url| {
+            base == url || (is_anthropic_route(&route.id) && Some(base) == url.strip_suffix("/v1"))
+        })
+    })
 }
 
 pub(crate) fn hook(route_id: &str) -> Option<&'static dyn HostedOpenAiRouteHook> {
@@ -273,6 +284,7 @@ impl RouteModelDiscoveryHook for MimoModelDiscoveryHook {
     ) -> AgentRuntimeResult<Vec<NativeProviderModel>> {
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
         let discovered = if is_anthropic_route(&provider.route_id) {
@@ -309,13 +321,22 @@ fn discover_openai_models_with_mimo_auth(
         .send()
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
     let status = response.status();
-    let body: Value = response
-        .json()
+    let body_text = response
+        .text()
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
     if !status.is_success() {
-        return Err(AgentRuntimeError::Core(format!(
-            "MiMo model discovery failed with status {status}: {body}"
-        )));
+        return Err(
+            crate::native_backend::provider::provider_response_error_text(
+                provider, status, &body_text, None,
+            ),
+        );
+    }
+    let body: Value = serde_json::from_str(&body_text)
+        .map_err(|error| AgentRuntimeError::Core(format!("Invalid MiMo model list: {error}")))?;
+    if !body.get("data").is_some_and(Value::is_array) {
+        return Err(AgentRuntimeError::Core(
+            "MiMo model list is missing data".to_string(),
+        ));
     }
     Ok(body
         .get("data")
@@ -357,10 +378,26 @@ fn openai_model_discovery_profile(provider: &NativeProviderProfile) -> NativePro
             provider.base_url.as_deref().unwrap_or(""),
         ),
     };
+    // A manually supplied gateway must never be replaced by an official host.
+    let base_url = provider
+        .base_url
+        .as_deref()
+        .filter(|base| !is_official_base_url(base))
+        .map(|base| {
+            let base = base.trim_end_matches('/');
+            base.strip_suffix("/anthropic/v1")
+                .or_else(|| base.strip_suffix("/anthropic"))
+                .map(|root| format!("{root}/v1"))
+                .unwrap_or_else(|| base.to_string())
+        })
+        .unwrap_or_else(|| base_url.to_string());
     NativeProviderProfile {
         route_id: route_id.to_string(),
-        base_url: Some(base_url.to_string()),
-        auth_header: Some("api-key".to_string()),
+        base_url: Some(base_url),
+        auth_header: provider
+            .auth_header
+            .clone()
+            .or_else(|| Some("api-key".to_string())),
         ..provider.clone()
     }
 }
@@ -523,6 +560,64 @@ mod tests {
         assert_eq!(discovery.route_id, TOKEN_PLAN_SGP_ROUTE_ID);
         assert_eq!(discovery.base_url.as_deref(), Some(TOKEN_PLAN_SGP_BASE_URL));
         assert_eq!(discovery.auth_header.as_deref(), Some("api-key"));
+    }
+
+    #[test]
+    fn anthropic_custom_gateway_discovery_stays_on_the_configured_host() {
+        let discovery = openai_model_discovery_profile(&provider(
+            ANTHROPIC_TOKEN_PLAN_SGP_ROUTE_ID,
+            "https://my-gateway.example/anthropic/v1",
+        ));
+        assert_eq!(
+            discovery.base_url.as_deref(),
+            Some("https://my-gateway.example/v1")
+        );
+    }
+
+    #[test]
+    fn model_discovery_checks_http_status_before_parsing_models() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        for (status, body) in [
+            (200, r#"{"data":[{"id":"mimo-v2.5-pro"}]}"#),
+            (401, r#"{"error":{"message":"Invalid API Key"}}"#),
+            (502, "Bad gateway"),
+            (200, r#"{"error":"not a model list"}"#),
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let base_url = format!("http://{}/v1", listener.local_addr().unwrap());
+            let server = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                    .unwrap();
+                let mut bytes = [0; 4096];
+                let size = stream.read(&mut bytes).unwrap();
+                let request = String::from_utf8_lossy(&bytes[..size]).to_ascii_lowercase();
+                assert!(request.starts_with("get /v1/models http/1.1"));
+                assert!(request.contains("api-key: tp-test"));
+                write!(stream, "HTTP/1.1 {status} Test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+            });
+            let client = reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_secs(2))
+                .no_proxy()
+                .build()
+                .unwrap();
+            let result = discover_openai_models_with_mimo_auth(
+                &client,
+                &provider(TOKEN_PLAN_SGP_ROUTE_ID, &base_url),
+            );
+            server.join().unwrap();
+            if status != 200 {
+                assert!(
+                    matches!(result, Err(AgentRuntimeError::ProviderFailure { failure }) if failure.http_status == Some(status))
+                );
+            } else if body.contains("data") {
+                assert_eq!(result.unwrap()[0].id, "mimo-v2.5-pro");
+            } else {
+                assert!(result.is_err());
+            }
+        }
     }
 
     #[test]

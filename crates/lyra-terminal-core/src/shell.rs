@@ -300,7 +300,9 @@ fn find_git_bash() -> Option<String> {
     }
     if let Some(path) = where_exe("bash") {
         let lower = path.to_lowercase();
-        if !lower.contains("system32") && !lower.contains("windowsapps") && Path::new(&path).is_file()
+        if !lower.contains("system32")
+            && !lower.contains("windowsapps")
+            && Path::new(&path).is_file()
         {
             return Some(path);
         }
@@ -345,7 +347,10 @@ fn find_git_bash() -> Option<String> {
 
 #[cfg(windows)]
 fn where_exe(name: &str) -> Option<String> {
-    let output = std::process::Command::new("where.exe").arg(name).output().ok()?;
+    let output = std::process::Command::new("where.exe")
+        .arg(name)
+        .output()
+        .ok()?;
     if !output.status.success() {
         return None;
     }
@@ -407,8 +412,8 @@ pub fn shell_exists(candidate: &str) -> bool {
 mod tests {
     use super::{
         configure_shell_command, configure_shell_environment, make_shell_candidates,
-        push_windows_shells,
-        shell_environment, shell_exists, shell_startup_args, shell_startup_args_for_platform,
+        push_windows_shells, shell_environment, shell_exists, shell_startup_args,
+        shell_startup_args_for_platform,
     };
     use portable_pty::CommandBuilder;
 

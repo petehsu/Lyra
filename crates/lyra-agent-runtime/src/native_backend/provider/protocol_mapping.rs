@@ -921,11 +921,7 @@ pub(crate) fn parse_streaming_response_with_commit<R: BufRead>(
     } else {
         TurnStopSignal::from_raw(state.finish_reason.as_deref())
     };
-    let provider_replay_items = state
-        .reasoning_replay_field
-        .zip(state.reasoning_replay_value)
-        .map(|(field, value)| vec![json!({ "field": field, "value": value })])
-        .unwrap_or_default();
+    let provider_replay_items = state.reasoning_replay.into_items();
     let mut reply = ModelReply {
         content: (!state.content.trim().is_empty()).then_some(state.content),
         reasoning_content: (!state.reasoning_content.trim().is_empty())
@@ -1084,11 +1080,7 @@ pub(crate) async fn parse_streaming_response_with_commit_async(
     } else {
         TurnStopSignal::from_raw(state.finish_reason.as_deref())
     };
-    let provider_replay_items = state
-        .reasoning_replay_field
-        .zip(state.reasoning_replay_value)
-        .map(|(field, value)| vec![json!({ "field": field, "value": value })])
-        .unwrap_or_default();
+    let provider_replay_items = state.reasoning_replay.into_items();
     let mut reply = ModelReply {
         content: (!state.content.trim().is_empty()).then_some(state.content),
         reasoning_content: (!state.reasoning_content.trim().is_empty())
@@ -1211,9 +1203,7 @@ pub(crate) fn map_provider_stream_chunk(
                 state.content.push_str(&scrubbed.visible);
             }
         }
-        if let Some((field, value)) = openai_chat::message_reasoning_field(delta) {
-            merge_openai_reasoning_replay(state, field, value);
-        }
+        state.reasoning_replay.push(delta);
         if let Some(reasoning) = openai_chat::message_reasoning_text(delta) {
             state.reasoning_chars = state
                 .reasoning_chars
@@ -1262,31 +1252,6 @@ pub(crate) fn map_provider_stream_chunk(
         }
     }
     Ok(())
-}
-
-fn merge_openai_reasoning_replay(state: &mut ProviderStreamState, field: &str, incoming: Value) {
-    if state.reasoning_replay_field.as_deref() != Some(field) {
-        state.reasoning_replay_field = Some(field.to_string());
-        state.reasoning_replay_value = Some(incoming);
-        return;
-    }
-    match incoming {
-        Value::String(delta) => {
-            if let Some(Value::String(current)) = state.reasoning_replay_value.as_mut() {
-                current.push_str(&delta);
-            } else {
-                state.reasoning_replay_value = Some(Value::String(delta));
-            }
-        }
-        Value::Array(mut delta) => {
-            if let Some(Value::Array(current)) = state.reasoning_replay_value.as_mut() {
-                current.append(&mut delta);
-            } else {
-                state.reasoning_replay_value = Some(Value::Array(delta));
-            }
-        }
-        value => state.reasoning_replay_value = Some(value),
-    }
 }
 
 pub(crate) fn normalize_model_reply_protocol(
@@ -1569,6 +1534,10 @@ mod tests {
         effort: &str,
         body: impl FnOnce() -> T,
     ) -> T {
+        static CONFIG_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = CONFIG_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let model_id = provider.models[0].id.clone();
         let mut locked = state().lock().expect("state lock");
         let previous_effort = locked.config.reasoning_effort.clone();
@@ -1679,5 +1648,81 @@ mod tests {
                 assert_eq!(options.reasoning_effort, None);
             },
         );
+    }
+
+    #[test]
+    fn mimo_chat_wire_preserves_reasoning_tool_history_and_explicit_thinking_toggle() {
+        let provider = sample_provider(
+            "test-mimo-wire-history",
+            providers::routes::mimo::TOKEN_PLAN_CN_ROUTE_ID,
+            sample_model("mimo-v2.6-flash", Some(true)),
+        );
+        let control = NativeReasoningControl {
+            kind: NativeReasoningKind::Toggle,
+            values: vec!["none".to_string(), "high".to_string()],
+            budget_min: None,
+            budget_max: None,
+        };
+        let messages = vec![
+            json!({"role":"user", "content":"Make the selected phrase bold"}),
+            json!({"role":"assistant", "content":null, "reasoning_content":"fixture reasoning 1",
+                "tool_calls":[{"id":"call-1","type":"function","function":{"name":"browser_press","arguments":"{}"}}]}),
+            json!({"role":"tool", "tool_call_id":"call-1", "content":"target_not_visible", "lyraToolStatus":"failed"}),
+            json!({"role":"assistant", "content":"Retrying the editor", "reasoning_content":"fixture reasoning 2",
+                "tool_calls":[{"id":"call-2","type":"function","function":{"name":"browser_press","arguments":"{}"}}]}),
+            json!({"role":"tool", "tool_call_id":"call-2", "content":"formats.bold: true"}),
+            json!({"role":"assistant", "content":"Evidence: the editor reported formats.bold: true", "reasoning_content":"fixture final reasoning"}),
+            json!({"role":"user", "content":"Continue"}),
+        ];
+        let tools = vec![
+            json!({"type":"function","function":{"name":"browser_press","parameters":{"type":"object","properties":{}}}}),
+        ];
+        for (effort, thinking) in [("none", "disabled"), ("high", "enabled")] {
+            with_selected_effort(&provider, control.clone(), effort, || {
+                let request = build_openai_compatible_request(
+                    &provider,
+                    "mimo-v2.6-flash",
+                    &messages,
+                    &tools,
+                    &ModelToolChoice::Auto,
+                    true,
+                )
+                .expect("MiMo sync request")
+                .build()
+                .expect("request body");
+                let body: Value =
+                    serde_json::from_slice(request.body().unwrap().as_bytes().unwrap()).unwrap();
+                let async_request = build_openai_compatible_request_async(
+                    &provider,
+                    "mimo-v2.6-flash",
+                    &messages,
+                    &tools,
+                    &ModelToolChoice::Auto,
+                    true,
+                )
+                .expect("MiMo async request")
+                .build()
+                .expect("async request body");
+                let async_body: Value =
+                    serde_json::from_slice(async_request.body().unwrap().as_bytes().unwrap())
+                        .unwrap();
+                assert_eq!(body, async_body);
+                assert_eq!(body["thinking"]["type"], thinking);
+                assert_eq!(body["tool_choice"], "auto");
+                assert!(body.get("reasoning_effort").is_none());
+                for index in [1, 3, 5] {
+                    assert_eq!(
+                        body["messages"][index]["reasoning_content"],
+                        messages[index]["reasoning_content"]
+                    );
+                    assert_eq!(
+                        body["messages"][index]["content"],
+                        messages[index]["content"].as_str().unwrap_or_default()
+                    );
+                }
+                assert_eq!(body["messages"][1]["tool_calls"], messages[1]["tool_calls"]);
+                assert!(body["messages"][2].get("lyraToolStatus").is_none());
+            });
+        }
     }
 }

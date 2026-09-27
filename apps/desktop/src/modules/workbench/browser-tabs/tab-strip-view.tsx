@@ -261,6 +261,11 @@ export const BrowserTabStripView = ({
               className={tabModel.tabClassName}
               style={tabModel.tabStyle}
               data-lyra-tab-id={tabModel.tab.id}
+              data-lyra-tab-width={
+                typeof tabModel.tabStyle?.width === "string"
+                  ? tabModel.tabStyle.width.replace(/px$/, "")
+                  : undefined
+              }
               data-agent-active={tabModel.isAgentActive ? "true" : "false"}
               data-lyra-allow-web-drag="true"
               draggable

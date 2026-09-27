@@ -39,7 +39,7 @@ pub(crate) async fn synthesize_after_progress_guard_async(
         "tool_progress_guard_final_synthesis",
     );
     let clarification_tools = progress_guard_clarification_tools(request);
-    let reply = call_progress_guard_reply_async(
+    let (reply, final_text) = call_progress_guard_reply_async(
         session_id,
         turn_id,
         request,
@@ -50,6 +50,7 @@ pub(crate) async fn synthesize_after_progress_guard_async(
         commit_assistant_text,
         &mut observations,
         &mut attempt_local_overlay_start,
+        &mut deferred_provider_protocol_steps,
     )
     .await?;
     let protocol_id = provider_protocol_id(request);
@@ -59,28 +60,14 @@ pub(crate) async fn synthesize_after_progress_guard_async(
             .then(|| retained_provider_replay_items(&reply.provider_replay_items, &[]))
             .unwrap_or_default();
         provider_replay_items.extend(response_replay_items.clone());
-        let final_text = reply.content.clone().unwrap_or_default();
         let mut assistant_message = json!({
             "role": "assistant",
-            "content": final_text,
+            "content": reply.content.clone().unwrap_or_default(),
         });
         if !response_replay_items.is_empty() {
             assistant_message["openaiResponsesShadow"] = Value::Bool(true);
-        } else if reply.provider_replay_protocol.as_deref() == Some(protocol_id.as_str())
-            && !reply.provider_replay_items.is_empty()
-        {
-            assistant_message["lyraProviderReplay"] = json!({
-                "protocol": protocol_id,
-                "items": reply.provider_replay_items.clone(),
-            });
         }
-        if let Some(reasoning_content) = reply
-            .reasoning_content
-            .as_ref()
-            .filter(|value| !value.trim().is_empty())
-        {
-            assistant_message["reasoning_content"] = Value::String(reasoning_content.clone());
-        }
+        attach_assistant_replay(&mut assistant_message, &reply);
         provider_transcript.push(assistant_message);
         let mut final_protocol_step = provider_protocol_step(
             request,
@@ -171,21 +158,8 @@ pub(crate) async fn synthesize_after_progress_guard_async(
     let mut assistant_message = assistant_message;
     if !response_replay_items.is_empty() {
         assistant_message["openaiResponsesShadow"] = Value::Bool(true);
-    } else if reply.provider_replay_protocol.as_deref() == Some(protocol_id.as_str())
-        && !reply.provider_replay_items.is_empty()
-    {
-        assistant_message["lyraProviderReplay"] = json!({
-            "protocol": protocol_id,
-            "items": reply.provider_replay_items.clone(),
-        });
     }
-    if let Some(reasoning_content) = reply
-        .reasoning_content
-        .as_ref()
-        .filter(|value| !value.trim().is_empty())
-    {
-        assistant_message["reasoning_content"] = Value::String(reasoning_content.clone());
-    }
+    attach_assistant_replay(&mut assistant_message, &reply);
     messages.push(assistant_message.clone());
     provider_transcript.push(assistant_message);
     let tool_step_message_id = reply.ui_message_id.clone();
@@ -288,7 +262,7 @@ pub(crate) async fn synthesize_after_progress_guard_async(
         "tool_progress_guard_after_clarification",
     );
     let no_tools = Vec::new();
-    let final_reply = call_progress_guard_reply_async(
+    let (final_reply, final_text) = call_progress_guard_reply_async(
         session_id,
         turn_id,
         request,
@@ -299,6 +273,7 @@ pub(crate) async fn synthesize_after_progress_guard_async(
         commit_assistant_text,
         &mut observations,
         &mut attempt_local_overlay_start,
+        &mut deferred_provider_protocol_steps,
     )
     .await?;
     if !final_reply.tool_calls.is_empty() {
@@ -319,28 +294,14 @@ pub(crate) async fn synthesize_after_progress_guard_async(
         .then(|| retained_provider_replay_items(&final_reply.provider_replay_items, &[]))
         .unwrap_or_default();
     provider_replay_items.extend(response_replay_items.clone());
-    let final_text = final_reply.content.clone().unwrap_or_default();
     let mut final_assistant = json!({
         "role": "assistant",
-        "content": final_text,
+        "content": final_reply.content.clone().unwrap_or_default(),
     });
     if !response_replay_items.is_empty() {
         final_assistant["openaiResponsesShadow"] = Value::Bool(true);
-    } else if final_reply.provider_replay_protocol.as_deref() == Some(protocol_id.as_str())
-        && !final_reply.provider_replay_items.is_empty()
-    {
-        final_assistant["lyraProviderReplay"] = json!({
-            "protocol": protocol_id,
-            "items": final_reply.provider_replay_items.clone(),
-        });
     }
-    if let Some(reasoning_content) = final_reply
-        .reasoning_content
-        .as_ref()
-        .filter(|value| !value.trim().is_empty())
-    {
-        final_assistant["reasoning_content"] = Value::String(reasoning_content.clone());
-    }
+    attach_assistant_replay(&mut final_assistant, &final_reply);
     provider_transcript.push(final_assistant);
     let mut final_protocol_step = provider_protocol_step(
         request,
@@ -392,7 +353,8 @@ async fn call_progress_guard_reply_async(
     commit_assistant_text: bool,
     observations: &mut ModelLoopObservations,
     attempt_local_overlay_start: &mut Option<usize>,
-) -> AgentRuntimeResult<ModelReply> {
+    deferred_provider_protocol_steps: &mut Vec<Value>,
+) -> AgentRuntimeResult<(ModelReply, String)> {
     let mut reasoning_only_retries = 0_u8;
     let mut terminal_empty_retries = 0_u8;
     let mut truncated_tool_retries = 0_u8;
@@ -405,6 +367,7 @@ async fn call_progress_guard_reply_async(
     };
     let mut effective_tool_choice = tool_choice.clone();
     loop {
+        seal_tool_result_groups(messages);
         let attempt_result = call_model_once_for_loop_async(
             session_id,
             turn_id,
@@ -445,10 +408,18 @@ async fn call_progress_guard_reply_async(
             if !response_replay_items.is_empty() {
                 messages.extend(response_replay_items);
             }
-            messages.push(json!({
-                "role": "assistant",
-                "content": segment,
-            }));
+            let mut assistant = json!({ "role": "assistant", "content": segment });
+            attach_assistant_replay(&mut assistant, &reply);
+            messages.push(assistant);
+            deferred_provider_protocol_steps.push(provider_protocol_step(
+                request,
+                turn_id,
+                &reply,
+                &[],
+                "complete",
+                Vec::new(),
+                Vec::new(),
+            ));
             let input_start = messages.len();
             advance_stateful_responses(
                 messages,
@@ -584,12 +555,11 @@ async fn call_progress_guard_reply_async(
                     } else {
                         clear_failed_assistant_draft(session_id, turn_id);
                     }
-                    reply.content = Some(std::mem::take(&mut truncated_prefix));
-                    reply.reasoning_content = None;
-                    reply.provider_replay_items.clear();
                     reply.ui_message_id = None;
+                    return Ok((reply, std::mem::take(&mut truncated_prefix)));
                 }
-                return Ok(reply);
+                let text = reply.content.clone().unwrap_or_default();
+                return Ok((reply, text));
             }
             RecoveryAction::ContinueVisibleText => {
                 unreachable!("handled before semantic recovery")
@@ -764,10 +734,10 @@ pub(crate) fn is_retryable_provider_error(error: &AgentRuntimeError) -> bool {
 /// predicates — never its message text — so the category stays correct across
 /// reqwest versions and wording changes.
 pub(crate) fn classify_reqwest_transport(error: &reqwest::Error) -> ProviderTransportKind {
-    if error.is_timeout() {
-        ProviderTransportKind::Timeout
-    } else if error.is_connect() {
+    if error.is_connect() {
         ProviderTransportKind::Connect
+    } else if error.is_timeout() {
+        ProviderTransportKind::Timeout
     } else if error.is_decode() || error.is_body() {
         ProviderTransportKind::StreamInterrupted
     } else {
@@ -779,10 +749,27 @@ pub(crate) fn classify_reqwest_transport(error: &reqwest::Error) -> ProviderTran
 /// failure is always a transport failure (HTTP error *responses* never fail
 /// these calls — they are inspected via the status code instead).
 pub(crate) fn reqwest_transport_error(error: reqwest::Error) -> AgentRuntimeError {
-    AgentRuntimeError::ProviderTransport {
-        kind: classify_reqwest_transport(&error),
-        detail: error.to_string(),
+    use std::error::Error;
+    let kind = classify_reqwest_transport(&error);
+    let error = error.without_url();
+    let mut causes = vec![error.to_string()];
+    let mut source = error.source();
+    while let Some(cause) = source {
+        let text = cause.to_string();
+        if causes.last() != Some(&text) {
+            causes.push(text);
+        }
+        if causes.len() >= 8 {
+            break;
+        }
+        source = cause.source();
     }
+    // Proxies and nested errors can also contain credential-bearing URLs.
+    let urls = regex::Regex::new(r#"https?://[^\s\"<>]+"#).expect("static URL pattern");
+    let detail = urls
+        .replace_all(&causes.join(": "), "[endpoint]")
+        .into_owned();
+    AgentRuntimeError::ProviderTransport { kind, detail }
 }
 
 /// Classify a failure that occurs while reading lines from the streamed SSE

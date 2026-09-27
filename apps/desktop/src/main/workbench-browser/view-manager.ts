@@ -63,6 +63,7 @@ import {
   type BrowserContextMenuLabels
 } from "../../shared/browser-context-menu-labels";
 import { readBrowserContextMenuLocaleFromPreferences } from "./view-manager-runtime/page-context-menu-native";
+import { createWorkspaceFocusIsolation } from "./workspace-focus-isolation";
 
 export const createWorkbenchBrowserViewManager = ({
   getWindow,
@@ -138,15 +139,9 @@ export const createWorkbenchBrowserViewManager = ({
   };
   const readBrowserAgentShadow = (tabId: string): BrowserAgentShadowEntry | undefined =>
     agentShadowController.readShadow(tabId);
-  const fileChooserHooks: {
-    onOpened?: (tabId: string, targetMode: WorkbenchBrowserAgentTargetMode) => void;
-    onClosed?: (tabId: string, targetMode: WorkbenchBrowserAgentTargetMode) => void;
-  } = {};
   const cdpDiagnostics = createCdpDiagnosticsController({
     resolveBrowserAgentTarget: async (tabId, request, timeoutMs) =>
-      await resolveBrowserAgentTarget(tabId, request, timeoutMs),
-    onFileChooserOpened: (tabId, targetMode) => fileChooserHooks.onOpened?.(tabId, targetMode),
-    onFileChooserClosed: (tabId, targetMode) => fileChooserHooks.onClosed?.(tabId, targetMode)
+      await resolveBrowserAgentTarget(tabId, request, timeoutMs)
   });
   const {
     auditAgentPageDiagnostics,
@@ -158,6 +153,7 @@ export const createWorkbenchBrowserViewManager = ({
     recordPageDiagnostic,
     startCdpAuditSessionForEntry
   } = cdpDiagnostics;
+  const focusIsolation = createWorkspaceFocusIsolation();
   const pageRegistry = createPageRegistryController({
     getWindow,
     publishEvent,
@@ -231,6 +227,7 @@ export const createWorkbenchBrowserViewManager = ({
   agentShadowController = createAgentShadowController({
     getWindow,
     getEntry: (tabId) => pageRegistry.getEntry(tabId),
+    ensureLiveEntry: (tabId) => pageRegistry.ensureAgentEntry(tabId),
     liveElectronSession,
     isolatedElectronSession,
     cancelPendingAgentPageLoad,
@@ -298,6 +295,12 @@ export const createWorkbenchBrowserViewManager = ({
     updateRuntimeState: (entry, patch) => updateRuntimeState(entry, patch),
     disposeCdpAuditSession,
     startCdpAuditSessionForEntry,
+    syncFocusIsolation: (window, visibleEntries) => {
+      void focusIsolation.sync(window, visibleEntries.map(entry => ({
+        webContents: entry.webContents,
+        acquire: () => openDebuggerSessionForTarget(liveAgentTarget(entry))
+      })));
+    },
     cancelTombstoneTimer,
     scheduleTombstone,
     evictExcessHiddenPages,
@@ -504,7 +507,7 @@ export const createWorkbenchBrowserViewManager = ({
     axExplainNode,
     axResolveAxRefBbox,
     captureAgentPage,
-    captureAgentPreviewPage,
+    readAgentPreviewPage,
     detectAgentPageQr,
     completeElevationSession,
     elevateAgentPage,
@@ -521,10 +524,12 @@ export const createWorkbenchBrowserViewManager = ({
     replayWorkflowOnPage,
     scrollAgentPage,
     showAgentActivity,
+    uploadAgentFiles,
+    dragAgentElement,
+    handleAgentDialog,
+    peekAgentDialog,
     typeIntoAgentElement
   } = agentController;
-  fileChooserHooks.onOpened = agentController.markCdpFileChooserOpen;
-  fileChooserHooks.onClosed = agentController.markCdpFileChooserClosed;
 
   const readSessionSnapshot = (): BrowserSessionSnapshot | null => persistBrowserSessionSnapshot();
 
@@ -680,6 +685,7 @@ export const createWorkbenchBrowserViewManager = ({
 
   return {
     dispose: () => {
+      void focusIsolation.dispose();
       void elementPickerController.dispose();
       cdpDiagnostics.dispose();
       restoreTombstoneController.dispose();
@@ -714,6 +720,36 @@ export const createWorkbenchBrowserViewManager = ({
     readPageDomSummary,
     extractPageText,
     capturePage,
+    captureVisiblePageLayers: async () => {
+      const layers: Array<{
+        readonly x: number;
+        readonly y: number;
+        readonly width: number;
+        readonly height: number;
+        readonly imageBase64: string;
+      }> = [];
+      for (const entry of entries.values()) {
+        const layout = entry.layout;
+        if (
+          entry.isDestroyed
+          || entry.webContents.isDestroyed()
+          || layout === undefined
+          || layout === null
+          || layout.visible !== true
+        ) {
+          continue;
+        }
+        const image = await entry.webContents.capturePage();
+        layers.push({
+          x: layout.x,
+          y: layout.y,
+          width: layout.width,
+          height: layout.height,
+          imageBase64: image.toPNG().toString("base64")
+        });
+      }
+      return layers;
+    },
     readRenderedSnapshot,
     searchInPage,
     setChromePopover,
@@ -738,6 +774,10 @@ export const createWorkbenchBrowserViewManager = ({
     axResolveAxRefBbox,
     focusAgentPage,
     scrollAgentPage,
+    uploadAgentFiles,
+    dragAgentElement,
+    handleAgentDialog,
+    peekAgentDialog,
     typeIntoAgentElement,
     pressAgentKey,
     navigateAgentPage,
@@ -747,7 +787,7 @@ export const createWorkbenchBrowserViewManager = ({
     findAgentPage,
     locateAgentPage,
     captureAgentPage,
-    captureAgentPreviewPage,
+    readAgentPreviewPage,
     detectAgentPageQr,
     showAgentActivity,
     readAgentFollowAudit,

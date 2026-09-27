@@ -25,18 +25,6 @@ pub(crate) fn user_action_tab_id(
         .to_string()
 }
 
-fn user_action_target_mode(
-    input: &Value,
-    value: &Value,
-    action: &serde_json::Map<String, Value>,
-) -> String {
-    user_action_string(action, "targetMode")
-        .or_else(|| value.get("targetMode").and_then(Value::as_str))
-        .or_else(|| input.get("targetMode").and_then(Value::as_str))
-        .unwrap_or("isolated")
-        .to_string()
-}
-
 pub(crate) async fn wait_for_automatic_user_action(
     session_id: &str,
     turn_id: &str,
@@ -112,47 +100,6 @@ async fn shared_control_clarification(
         responded_at: None,
     })
     .await
-}
-
-pub(crate) async fn permission_for_automatic_elevation(
-    session_id: &str,
-    turn_id: &str,
-    tool_call_id: &str,
-    cancellation: &CancellationToken,
-    tab_id: &str,
-    reason: &str,
-) -> Result<Value, String> {
-    let input = json!({
-        "tabId": tab_id,
-        "targetMode": "isolated",
-        "reason": reason,
-        "permissionRequired": true,
-        "permissionRisk": "dangerous",
-    });
-    let Some(permission) = permission_request_for_tool(
-        session_id,
-        turn_id,
-        tool_call_id,
-        "lyra_lumen",
-        "elevate",
-        &input,
-    ) else {
-        return Ok(auto_approval_policy_decision(
-            "lyra_lumen",
-            "elevate",
-            &input,
-        ));
-    };
-    let permission_record = permission.clone();
-    wait_for_permission_with_cancellation_async(permission, cancellation)
-        .await
-        .map(|allowed| {
-            policy_decision_from_permission(
-                &permission_record,
-                if allowed { "approved" } else { "denied" },
-            )
-        })
-        .map_err(|error| error.to_string())
 }
 
 pub(crate) async fn invoke_optional_host(
@@ -232,192 +179,11 @@ pub(crate) async fn resolve_shared_control_user_action(
     }
 }
 
-pub(crate) async fn resolve_auth_challenge_user_action(
-    session_id: &str,
-    turn_id: &str,
-    tool_call_id: &str,
-    cancellation: &CancellationToken,
-    input: &Value,
-    value: &Value,
-    action: &serde_json::Map<String, Value>,
-    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
-) -> Value {
-    let tab_id = user_action_tab_id(input, value, action);
-    let target_mode = user_action_target_mode(input, value, action);
-    let reason = user_action_string(action, "reason").unwrap_or("auth_challenge");
-    let is_live = target_mode == "live";
-    let request = wait_for_automatic_user_action(
-        session_id,
-        turn_id,
-        tool_call_id,
-        if is_live {
-            "The visible browser page hit an authentication or verification challenge that may require user action."
-        } else {
-            "The isolated browser hit an authentication or verification challenge that requires user action."
-        },
-        if is_live {
-            "decision.auth.visible.question"
-        } else {
-            "decision.auth.isolated.question"
-        },
-        if is_live {
-            vec![
-                json!({ "value": "resume_authentication", "label": "Resume after authentication", "i18nKey": "decision.auth.resume", "description": "Verify the visible page and continue automatically.", "descriptionI18nKey": "decision.auth.resume.description" }),
-                json!({ "value": "cancel_task", "label": "Cancel Task", "i18nKey": "decision.auth.cancelTask", "description": "Cancel this browser task.", "descriptionI18nKey": "decision.auth.cancelTask.description" }),
-            ]
-        } else {
-            vec![
-                json!({ "value": "open_visible_tab", "label": "Open Visible Tab", "i18nKey": "decision.auth.openVisible", "description": "Open a visible tab for the identity step, then continue automatically.", "descriptionI18nKey": "decision.auth.openVisible.description" }),
-                json!({ "value": "resume_authentication", "label": "Resume after authentication", "i18nKey": "decision.auth.resume", "description": "Verify the page and continue automatically.", "descriptionI18nKey": "decision.auth.resume.description" }),
-                json!({ "value": "cancel_task", "label": "Cancel Task", "i18nKey": "decision.auth.cancelTask", "description": "Cancel this browser task.", "descriptionI18nKey": "decision.auth.cancelTask.description" }),
-            ]
-        },
-        Some(format!("AuthChallengeSignal: {reason}")),
-        Some("decision.auth.detail"),
-    )
-    .await;
-    let request = match request {
-        Ok(request) => request,
-        Err(error) => {
-            return json!({
-                "kind": "auth_challenge_resolution_failed",
-                "error": {
-                    "code": "clarification_failed",
-                    "message": error.to_string(),
-                }
-            });
-        }
-    };
-    let label = selected_answer_label(&request);
-    if label == "cancel_task" || label == "Cancel Task" {
-        return json!({
-            "kind": "auth_challenge_resolution",
-            "clarificationId": request.id,
-            "answer": request.answer,
-            "selectedOption": request.selected_option,
-            "decision": "cancel_task",
-        });
-    }
-
-    let mut elevation = Value::Null;
-    let mut elevation_policy_decision = None;
-    if label == "open_visible_tab" || label == "Open Visible Tab" {
-        match permission_for_automatic_elevation(
-            session_id,
-            turn_id,
-            tool_call_id,
-            cancellation,
-            &tab_id,
-            reason,
-        )
-        .await
-        {
-            Ok(policy_decision)
-                if policy_decision
-                    .get("outcome")
-                    .and_then(Value::as_str)
-                    .is_some_and(|outcome| outcome == "approved") =>
-            {
-                elevation_policy_decision = Some(policy_decision);
-                elevation = invoke_optional_host(
-                    dispatcher,
-                    "lyraLumen.elevate",
-                    json!({
-                        "tabId": tab_id,
-                        "targetMode": "isolated",
-                        "reason": reason,
-                    }),
-                )
-                .await;
-            }
-            Ok(policy_decision) => {
-                return json!({
-                    "kind": "auth_challenge_resolution",
-                    "clarificationId": request.id,
-                    "answer": request.answer,
-                    "selectedOption": request.selected_option,
-                    "decision": "permission_denied",
-                    "policyDecision": policy_decision,
-                });
-            }
-            Err(error) => {
-                return json!({
-                    "kind": "auth_challenge_resolution_failed",
-                    "clarificationId": request.id,
-                    "error": {
-                        "code": "permission_failed",
-                        "message": error,
-                    }
-                });
-            }
-        }
-        let completion_request = wait_for_automatic_user_action(
-            session_id,
-            turn_id,
-            tool_call_id,
-            "Complete the browser challenge in the visible tab, then confirm Lyra can verify and continue.",
-            "decision.auth.complete.question",
-            vec![
-                json!({ "value": "resume_authentication", "label": "Resume after authentication", "i18nKey": "decision.auth.resume", "description": "Verify that the challenge is gone and continue.", "descriptionI18nKey": "decision.auth.resume.description" }),
-                json!({ "value": "cancel_task", "label": "Cancel Task", "i18nKey": "decision.auth.cancelTask", "description": "Cancel this browser task.", "descriptionI18nKey": "decision.auth.cancelTask.description" }),
-            ],
-            Some("Lyra will not solve CAPTCHA or MFA itself; it only resumes after user confirmation.".to_string()),
-            Some("decision.auth.userBoundary.detail"),
-        )
-        .await;
-        if let Ok(done) = completion_request {
-            if matches!(
-                selected_answer_label(&done).as_str(),
-                "cancel_task" | "Cancel Task"
-            ) {
-                return json!({
-                    "kind": "auth_challenge_resolution",
-                    "clarificationId": done.id,
-                    "answer": done.answer,
-                    "selectedOption": done.selected_option,
-                    "decision": "cancel_task",
-                    "elevation": elevation,
-                });
-            }
-        }
-    }
-
-    let live_tab_id = elevation
-        .get("liveTabId")
-        .and_then(Value::as_str)
-        .map(str::to_string);
-    let elevation_session_id = elevation
-        .pointer("/elevationSession/sessionId")
-        .and_then(Value::as_str)
-        .map(str::to_string);
-    let verification = invoke_optional_host(
-        dispatcher,
-        "lyraLumen.completeElevation",
-        json!({
-            "tabId": tab_id,
-            "targetMode": target_mode,
-            "liveTabId": live_tab_id,
-            "elevationSessionId": elevation_session_id,
-        }),
-    )
-    .await;
-    json!({
-        "kind": "auth_challenge_resolution",
-        "clarificationId": request.id,
-        "answer": request.answer,
-        "selectedOption": request.selected_option,
-        "decision": if matches!(label.as_str(), "resume_authentication" | "Already Completed") { "verify" } else { "elevate_and_verify" },
-        "elevation": elevation,
-        "policyDecision": elevation_policy_decision,
-        "verification": verification,
-    })
-}
-
 pub(crate) async fn resolve_host_needs_user_action(
     session_id: &str,
     turn_id: &str,
     tool_call_id: &str,
-    cancellation: &CancellationToken,
+    _cancellation: &CancellationToken,
     _display_name: &str,
     _tool_action: &str,
     input: &Value,
@@ -426,18 +192,7 @@ pub(crate) async fn resolve_host_needs_user_action(
 ) -> Option<Value> {
     let action = needs_user_action_object(value)?;
     let kind = user_action_string(action, "kind").unwrap_or("user_action");
-    let reason = user_action_string(action, "reason");
-    if kind == "auth_challenge"
-        && reason != Some("active_file_chooser")
-        && (user_action_string(action, "actionability") != Some("user_only")
-            || user_action_string(action, "confidence") != Some("high")
-            || action.get("taskBlocking").and_then(Value::as_bool) != Some(true)
-            || action
-                .get("stableObservationCount")
-                .and_then(Value::as_u64)
-                .unwrap_or(0)
-                < 3)
-    {
+    if kind == "auth_challenge" {
         return None;
     }
     Some(match kind {
@@ -446,19 +201,6 @@ pub(crate) async fn resolve_host_needs_user_action(
                 session_id,
                 turn_id,
                 tool_call_id,
-                input,
-                value,
-                action,
-                dispatcher,
-            )
-            .await
-        }
-        "auth_challenge" => {
-            resolve_auth_challenge_user_action(
-                session_id,
-                turn_id,
-                tool_call_id,
-                cancellation,
                 input,
                 value,
                 action,

@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./agent-cursor": {
+      "types": "./src/agent-cursor.ts",
+      "default": "./src/agent-cursor.ts"
+    },
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"

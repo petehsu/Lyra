@@ -25,10 +25,15 @@ const WorkbenchGeometryReporter = () => {
     let dragFrame: number | null = null;
     let syncFrame: number | null = null;
 
+    const workspaceTarget = () => {
+      const page = document.querySelector<HTMLElement>('.lyra-page-host[data-tab-id="lyra-site-tab"]');
+      return page && !page.closest('[data-lyra-surface-hidden="true"]')
+        ? page
+        : document.querySelector<HTMLElement>(".lyra-workspace-surface-single, .lyra-workspace-surface-split");
+    };
+
     const report = () => {
-      workspace ??= document.querySelector<HTMLElement>(
-        ".lyra-workspace-surface-single"
-      );
+      workspace ??= workspaceTarget();
       if (workspace === null) return;
 
       const bounds = workspace.getBoundingClientRect();
@@ -37,6 +42,15 @@ const WorkbenchGeometryReporter = () => {
       const activeTabId = document
         .querySelector<HTMLElement>(".lyra-browser-tab-item-active[data-lyra-tab-id]")
         ?.dataset.lyraTabId ?? null;
+      const aiPanelSide = document
+        .querySelector<HTMLElement>(".lyra-main")
+        ?.classList.contains("lyra-main-ai-panel-right")
+        ? "right"
+        : "left";
+      const themeTone = document.documentElement.dataset.lyraThemeTone === "dark"
+        ? "dark"
+        : "light";
+      const locale = document.documentElement.lang || "en-US";
       const state = {
         bounds: {
           left: bounds.left,
@@ -45,6 +59,10 @@ const WorkbenchGeometryReporter = () => {
           bottom: Math.max(0, document.documentElement.clientHeight - bounds.bottom)
         },
         activeTabId,
+        aiPanelSide,
+        themeTone,
+        locale,
+        resizing: document.body.classList.contains("lyra-layout-resizing"),
         siteActive: activeTabId === "lyra-site-tab"
       };
       const signature = JSON.stringify(state);
@@ -60,9 +78,7 @@ const WorkbenchGeometryReporter = () => {
     resizeObserver.observe(document.documentElement);
 
     const syncWorkspace = () => {
-      const nextWorkspace = document.querySelector<HTMLElement>(
-        ".lyra-workspace-surface-single"
-      );
+      const nextWorkspace = workspaceTarget();
       if (nextWorkspace !== workspace) {
         if (workspace !== null) resizeObserver.unobserve(workspace);
         workspace = nextWorkspace;
@@ -75,6 +91,15 @@ const WorkbenchGeometryReporter = () => {
         syncFrame = null;
       }
     };
+    // Panel side changes can move a page without changing its dimensions.
+    // Rebind after tab/split replacement and include live CSS-variable drags.
+    const preferenceObserver = new MutationObserver(syncWorkspace);
+    preferenceObserver.observe(document.documentElement, {
+      attributes: true,
+      childList: true,
+      subtree: true,
+      attributeFilter: ["class", "style", "data-tab-id", "data-lyra-tab-id", "data-lyra-surface-hidden", "data-lyra-theme-tone", "lang"]
+    });
     const queueWorkspaceSync = () => {
       if (syncFrame !== null) window.cancelAnimationFrame(syncFrame);
       syncFrame = window.requestAnimationFrame(syncWorkspace);
@@ -95,19 +120,35 @@ const WorkbenchGeometryReporter = () => {
       if (dragFrame !== null) window.cancelAnimationFrame(dragFrame);
       dragFrame = window.requestAnimationFrame(followResizeDrag);
     };
+    const handleStateRequest = (event: MessageEvent<unknown>) => {
+      if (
+        event.origin !== window.location.origin
+        || event.source !== window.parent
+        || event.data === null
+        || typeof event.data !== "object"
+        || (event.data as { readonly type?: unknown }).type !== "lyra:workbench-state-request"
+      ) {
+        return;
+      }
+      lastState = "";
+      syncWorkspace();
+    };
     document.addEventListener("pointerdown", beginResizeDrag, true);
     document.addEventListener("mousedown", beginResizeDrag, true);
     document.addEventListener("click", queueWorkspaceSync, true);
     document.addEventListener("keydown", queueWorkspaceSync, true);
+    window.addEventListener("message", handleStateRequest);
 
     syncWorkspace();
 
     return () => {
       resizeObserver.disconnect();
+      preferenceObserver.disconnect();
       document.removeEventListener("pointerdown", beginResizeDrag, true);
       document.removeEventListener("mousedown", beginResizeDrag, true);
       document.removeEventListener("click", queueWorkspaceSync, true);
       document.removeEventListener("keydown", queueWorkspaceSync, true);
+      window.removeEventListener("message", handleStateRequest);
       if (dragFrame !== null) window.cancelAnimationFrame(dragFrame);
       if (syncFrame !== null) window.cancelAnimationFrame(syncFrame);
     };

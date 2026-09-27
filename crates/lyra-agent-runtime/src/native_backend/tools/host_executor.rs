@@ -26,7 +26,17 @@ fn browser_action_requires_effect(display_name: &str, action: &str) -> bool {
         (display_name, action),
         (
             "lyra_lumen",
-            "act" | "vact" | "type" | "press" | "submit" | "navigate" | "reload" | "elevate"
+            "act"
+                | "vact"
+                | "type"
+                | "press"
+                | "submit"
+                | "navigate"
+                | "reload"
+                | "elevate"
+                | "upload"
+                | "drag"
+                | "dialog"
         ) | ("lyra_ax", "act" | "press")
     )
 }
@@ -72,22 +82,34 @@ fn parse_browser_action_effect(
 }
 
 fn browser_press_is_observational(input: &Value) -> bool {
-    matches!(
-        input.get("key").and_then(Value::as_str),
-        Some(
-            "Tab"
-                | "Shift+Tab"
-                | "ArrowUp"
-                | "ArrowDown"
-                | "ArrowLeft"
-                | "ArrowRight"
-                | "Escape"
-                | "Home"
-                | "End"
-                | "PageUp"
-                | "PageDown"
+    let key = input.get("key").and_then(Value::as_str).unwrap_or_default();
+    let normalized = key.to_ascii_lowercase();
+    let mut parts: Vec<&str> = normalized.split('+').collect();
+    let base = parts.pop().unwrap_or_default();
+    let selection_modifiers = parts.iter().all(|part| {
+        matches!(
+            *part,
+            "shift" | "control" | "ctrl" | "meta" | "command" | "cmd" | "super"
         )
-    )
+    });
+    selection_modifiers
+        && matches!(
+            base,
+            "arrowup"
+                | "up"
+                | "arrowdown"
+                | "down"
+                | "arrowleft"
+                | "left"
+                | "arrowright"
+                | "right"
+                | "home"
+                | "end"
+                | "pageup"
+                | "pagedown"
+        )
+        || base == "tab" && parts.iter().all(|part| *part == "shift")
+        || matches!(base, "escape" | "esc") && parts.is_empty()
 }
 
 pub(crate) fn validate_browser_action_effect(
@@ -104,8 +126,30 @@ pub(crate) fn validate_browser_action_effect(
         .and_then(Value::as_str)
         .unwrap_or_default();
     let valid = match (display_name, action) {
+        ("lyra_lumen", "upload") => effect == BrowserActionEffect::Upload,
         ("lyra_lumen", "navigate" | "reload") => effect == BrowserActionEffect::Navigate,
-        ("lyra_lumen", "type") => effect == BrowserActionEffect::EditDraft,
+        ("lyra_lumen", "type") => {
+            // The declared effect belongs to the final click when typing and
+            // submission are one operation. Do not downgrade its permission.
+            if input
+                .get("thenClick")
+                .and_then(Value::as_str)
+                .is_some_and(|target| !target.trim().is_empty())
+            {
+                matches!(
+                    effect,
+                    BrowserActionEffect::Communicate
+                        | BrowserActionEffect::SubmitExternal
+                        | BrowserActionEffect::Authorize
+                        | BrowserActionEffect::Purchase
+                        | BrowserActionEffect::Delete
+                        | BrowserActionEffect::Upload
+                        | BrowserActionEffect::Download
+                )
+            } else {
+                effect == BrowserActionEffect::EditDraft
+            }
+        }
         ("lyra_lumen", "elevate") => effect == BrowserActionEffect::Authorize,
         ("lyra_lumen", "submit") => matches!(
             effect,
@@ -127,7 +171,14 @@ pub(crate) fn validate_browser_action_effect(
             matches!(interaction, "hover" | "focus") == (effect == BrowserActionEffect::Observe)
         }
         ("lyra_lumen" | "lyra_ax", "press") => {
-            browser_press_is_observational(input) == (effect == BrowserActionEffect::Observe)
+            if browser_press_is_observational(input) {
+                matches!(
+                    effect,
+                    BrowserActionEffect::Observe | BrowserActionEffect::EditDraft
+                )
+            } else {
+                effect != BrowserActionEffect::Observe
+            }
         }
         _ => effect != BrowserActionEffect::Observe,
     };
@@ -169,7 +220,8 @@ pub(crate) async fn execute_host_tool_adapter(
         action,
     );
     strip_untrusted_ax_authorization(display_name, action, &mut input);
-    coerce_lumen_type_to_edit_draft(display_name, action, &mut input);
+    default_lumen_type_effect(display_name, action, &mut input);
+    default_browser_interaction(display_name, action, &mut input);
     let (mut input, timeout_ms) = apply_tool_timeout_policy(input, display_name, action);
     let mut policy_decision = None;
     record_tool_activity(
@@ -371,7 +423,15 @@ pub(crate) async fn execute_host_tool_adapter(
             .as_ref()
             .ok_or_else(|| "Lyra host capability bridge is not available".to_string())?;
         let _concurrency_guard = if display_name == "lyra_lumen" || display_name == "lyra_ax" {
-            Some(BrowserConcurrencyGuard::try_acquire()?)
+            loop {
+                if cancellation.is_cancelled() || turn_was_cancelled(session_id, turn_id) {
+                    return Err("cancelled".to_string());
+                }
+                if let Ok(acquired) = BrowserConcurrencyGuard::try_acquire() {
+                    break Some(acquired);
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            }
         } else {
             None
         };
@@ -543,13 +603,72 @@ pub(crate) fn host_adapter_arguments(arguments: Value, action: &str) -> Value {
     Value::Object(input)
 }
 
-fn coerce_lumen_type_to_edit_draft(display_name: &str, action: &str, input: &mut Value) {
+// Resolve only an omitted gesture. A caller's declared consequence is never
+// rewritten: policy and the desktop must see the same action the model requested.
+fn default_browser_interaction(display_name: &str, action: &str, input: &mut Value) {
+    if !matches!(
+        (display_name, action),
+        ("lyra_lumen", "act" | "vact") | ("lyra_ax", "act")
+    ) {
+        return;
+    }
+    let Some(object) = input.as_object_mut() else {
+        return;
+    };
+    if !object.contains_key("interaction") {
+        // Effect describes a consequence, never a gesture. Legacy omitted
+        // gestures mean click; observe consequently fails validation instead
+        // of silently becoming an unrelated hover.
+        let gesture = "click";
+        object.insert("interaction".into(), json!(gesture));
+    }
+}
+
+fn default_lumen_type_effect(display_name: &str, action: &str, input: &mut Value) {
     if display_name != "lyra_lumen" || action != "type" {
         return;
     }
-    if let Some(object) = input.as_object_mut() {
-        object.insert("effect".to_string(), Value::String("editDraft".to_string()));
+    // A compound operation includes a real click. Keep that effect all the
+    // way through validation and permission checks; only the host's fill
+    // substep is an editDraft.
+    if input
+        .get("thenClick")
+        .and_then(Value::as_str)
+        .is_some_and(|target| !target.trim().is_empty())
+    {
+        return;
     }
+    if let Some(object) = input.as_object_mut() {
+        object.entry("effect").or_insert_with(|| json!("editDraft"));
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn browser_type_submit_does_not_downgrade_the_click_before_policy() {
+    for effect in [
+        "communicate",
+        "submitExternal",
+        "purchase",
+        "delete",
+        "authorize",
+    ] {
+        let mut input = json!({"thenClick":"lumen:submit", "effect":effect});
+        default_lumen_type_effect("lyra_lumen", "type", &mut input);
+        assert_eq!(input["effect"], effect);
+        assert!(
+            validate_browser_action_effect("lyra_lumen", "type", &input)
+                .unwrap()
+                .is_some()
+        );
+    }
+    for effect in ["observe", "editDraft", "navigate"] {
+        let input = json!({"thenClick":"lumen:submit", "effect":effect});
+        assert!(validate_browser_action_effect("lyra_lumen", "type", &input).is_err());
+    }
+    let mut missing = json!({"thenClick":"lumen:submit"});
+    default_lumen_type_effect("lyra_lumen", "type", &mut missing);
+    assert!(validate_browser_action_effect("lyra_lumen", "type", &missing).is_err());
 }
 
 fn strip_untrusted_ax_authorization(display_name: &str, action: &str, input: &mut Value) {
@@ -673,4 +792,87 @@ pub(crate) fn strip_tool_fs_metadata(arguments: Value) -> Value {
         input.remove(key);
     }
     Value::Object(input)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explicit_gestures_never_rewrite_declared_effects() {
+        for (display, action) in [
+            ("lyra_lumen", "act"),
+            ("lyra_lumen", "vact"),
+            ("lyra_ax", "act"),
+        ] {
+            for (gesture, effect) in [("click", "observe"), ("hover", "delete")] {
+                let mut input = json!({"interaction":gesture,"effect":effect});
+                default_browser_interaction(display, action, &mut input);
+                assert_eq!(input["effect"], effect);
+                assert!(validate_browser_action_effect(display, action, &input).is_err());
+            }
+            let mut input = json!({"effect":"observe"});
+            default_browser_interaction(display, action, &mut input);
+            assert_eq!(input["interaction"], "click");
+            assert!(validate_browser_action_effect(display, action, &input).is_err());
+        }
+        let mut input = json!({"effect":"observe"});
+        default_lumen_type_effect("lyra_lumen", "type", &mut input);
+        assert_eq!(input["effect"], "observe");
+        assert!(validate_browser_action_effect("lyra_lumen", "type", &input).is_err());
+    }
+}
+
+#[test]
+fn browser_selection_keys_allow_draft_navigation_but_never_downgrade_submit_keys() {
+    for key in [
+        "ArrowUp",
+        "Shift+ArrowLeft",
+        "Shift+Left",
+        "shift+left",
+        "CTRL+HOME",
+        "super+right",
+        "esc",
+        "SHIFT+TAB",
+    ] {
+        for effect in ["observe", "editDraft"] {
+            assert!(
+                validate_browser_action_effect(
+                    "lyra_lumen",
+                    "press",
+                    &json!({"key": key, "effect": effect})
+                )
+                .is_ok()
+            );
+        }
+    }
+    for key in [
+        "Enter",
+        "Control+Enter",
+        "Control+b",
+        "Backspace",
+        "Alt+ArrowLeft",
+        "alt+left",
+        "ctrl+tab",
+        "shift+escape",
+        "return",
+        "SPACE",
+    ] {
+        assert!(
+            validate_browser_action_effect(
+                "lyra_lumen",
+                "press",
+                &json!({"key": key, "effect": "observe"})
+            )
+            .is_err()
+        );
+    }
+    assert!(
+        validate_browser_action_effect(
+            "lyra_lumen",
+            "press",
+            &json!({"key": "Control+Enter", "effect": "communicate"})
+        )
+        .is_ok()
+    );
 }

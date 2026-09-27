@@ -17,6 +17,9 @@ export default defineConfig({
       name: "lyra-promo-browser-adapters",
       enforce: "pre",
       resolveId(source, importer) {
+        if (isSiteBuild && source === "./service" && importer?.endsWith("/modules/workbench/preferences/index.ts")) {
+          return resolve(studioRoot, "src/adapters/preferences.ts");
+        }
         if (isSiteBuild && source === "/src/bootstrap.ts") {
           return resolve(studioRoot, "src/site-bootstrap.ts");
         }

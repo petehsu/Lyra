@@ -365,6 +365,18 @@ pub(crate) fn cached_api_npm(provider_id: &str, model_id: &str) -> Option<String
     cached_scoped_api_npm(provider_id, model_id)
 }
 
+pub(crate) fn cached_reasoning_replay_field(
+    provider_id: &str,
+    model_id: &str,
+) -> Option<ReasoningReplayField> {
+    // A gateway may reject fields accepted by the upstream vendor. Use its own
+    // catalogue entry, not a cross-provider model-name consensus.
+    with_catalog_memo(|memo| {
+        ensure_provider_map(memo, provider_id);
+        capability_entry(memo.maps.get(provider_id)?, model_id)?.reasoning_replay_field
+    })?
+}
+
 pub(crate) fn cached_capability(
     provider_id: &str,
     model_id: &str,
@@ -758,6 +770,7 @@ mod tests {
                 "models": {
                     "z-ai/glm-5.3-flash": {
                         "tool_call": true,
+                        "interleaved": { "field": "reasoning_details" },
                         "modalities": { "input": ["text"], "output": ["text"] }
                     }
                 }
@@ -766,6 +779,7 @@ mod tests {
                 "models": {
                     "orphan-id": {
                         "tool_call": true,
+                        "interleaved": { "field": "reasoning_content" },
                         "modalities": { "input": ["text"], "output": ["text"] }
                     }
                 }
@@ -774,6 +788,15 @@ mod tests {
         crate::native_backend::state::write_json(&catalog_cache_path(), &catalog)
             .expect("write catalog");
         for _ in 0..40 {
+            assert_eq!(
+                cached_reasoning_replay_field("nvidia", "z-ai/glm-5.3-flash"),
+                Some(ReasoningReplayField::ReasoningDetails)
+            );
+            assert_eq!(
+                cached_reasoning_replay_field("custom_openai_compatible", "orphan-id"),
+                None,
+                "upstream metadata must not enable fields on a different gateway"
+            );
             assert_eq!(
                 cached_capability("nvidia", "z-ai/glm-5.3-flash", FEATURE_TOOL_CALLING),
                 Some(CapabilitySupport::Supported)

@@ -1,5 +1,11 @@
+import { sensitiveFieldRuntime } from "../../sensitive-values/browser-boundary";
 import type { WorkbenchBrowserAgentObserveStrategy, WorkbenchBrowserFrameGlobalBounds } from "../types";
 import { coerceFrameBounds } from "./normalizers";
+import { browserMapSemanticsScript } from "./agent-page-semantics";
+import { surfaceNameRuntime } from "./surface-name-runtime";
+import { CURSOR_RUNTIME } from "./agent-cursor-semantics";
+import { browserTargetVisibilityRuntime } from "./agent-target-visibility";
+import { browserEditingHostRuntime } from "./agent-editable-runtime";
 
 export {
   authSignalsFromPageDiagnostics,
@@ -51,7 +57,8 @@ const buildBrowserAgentObservationScript = ({
   strategy,
   includeChildFrames,
   isMainFrame = false,
-  activeFileChooserPending = false
+  activeFileChooserPending = false,
+  followCursor = false
 }: {
   readonly frameTreeNodeId: number;
   readonly frameRef: string;
@@ -60,8 +67,9 @@ const buildBrowserAgentObservationScript = ({
   readonly includeChildFrames: boolean;
   readonly isMainFrame?: boolean;
   readonly activeFileChooserPending?: boolean;
+  readonly followCursor?: boolean;
 }): string => `
-  (() => {
+  (async () => {
     const FRAME_TREE_NODE_ID = ${JSON.stringify(frameTreeNodeId)};
     const FRAME_REF = ${JSON.stringify(frameRef)};
     const FRAME_BOUNDS = ${JSON.stringify(frameBounds)};
@@ -69,12 +77,24 @@ const buildBrowserAgentObservationScript = ({
     const INCLUDE_CHILD_FRAMES = ${JSON.stringify(includeChildFrames)};
     const IS_MAIN_FRAME = ${JSON.stringify(isMainFrame)};
     const ACTIVE_FILE_CHOOSER_PENDING = ${JSON.stringify(activeFileChooserPending)};
+    const FOLLOW_CURSOR = ${JSON.stringify(followCursor === true)};
     const LIGHTWEIGHT_STRATEGY = STRATEGY === "interactiveOnly" || STRATEGY === "picker" || STRATEGY === "focus";
     const MAX_LIGHTWEIGHT_SCAN_NODES = 3000;
     const MAX_LIGHTWEIGHT_CANDIDATES = 220;
     const MAX_LIGHTWEIGHT_SHADOW_HOSTS = 180;
+    const semantics = ${browserMapSemanticsScript};
+    const surfaceNames = ${surfaceNameRuntime};
+    const cursorSemantics = ${CURSOR_RUNTIME};
+    const editingHost = ${browserEditingHostRuntime};
+    const isEditingHost = element => editingHost(element) === element;
     const warnings = [];
     const blockedRegions = [];
+    const surfaceRegistry = window.__lyraSurfaceNodeRegistry ??= {
+      nodes: new WeakMap(), serial: 0,
+      prefix: (window.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)).slice(0, 8)
+    };
+    surfaceRegistry.byRef ??= new Map();
+    for (const [ref, weak] of surfaceRegistry.byRef) if (!weak.deref()?.isConnected) surfaceRegistry.byRef.delete(ref);
 
     const normalizeText = (value, maxLength = 160) => {
       if (typeof value !== "string") return "";
@@ -83,27 +103,58 @@ const buildBrowserAgentObservationScript = ({
     };
 
     const isDisabled = (element) =>
-      element.disabled === true
-      || element.getAttribute?.("disabled") !== null
-      || element.getAttribute?.("aria-disabled") === "true";
+      semantics.disabled(element);
 
+    const isTypedField = (element) => {
+      const tag = String(element.tagName || "").toLowerCase();
+      const role = String(element.getAttribute?.("role") || "").toLowerCase();
+      if (tag === "textarea" || tag === "select" || role === "textbox" || role === "searchbox") return true;
+      if (isEditingHost(element)) return true;
+      return tag === "input" && String(element.getAttribute?.("type") || element.type || "text").toLowerCase() !== "hidden";
+    };
     const isFileInputElement = (element, win = window) =>
       element instanceof (win.HTMLInputElement || HTMLInputElement) && element.type === "file";
 
     const isVisible = (element, win = window) => {
       const ElementCtor = win.Element || Element;
-      if (!(element instanceof ElementCtor) || !element.isConnected) return false;
-      const rect = element.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return false;
+      if (!(element instanceof ElementCtor) || !(${browserTargetVisibilityRuntime})(element)) return false;
       const style = win.getComputedStyle(element);
-      if (style.display === "none" || style.visibility === "hidden") return false;
       if (Number.parseFloat(style.opacity || "1") <= 0) {
-        return isFileInputElement(element, win);
+        return isFileInputElement(element, win) || isTypedField(element);
       }
-      if ((style.pointerEvents || "").toLowerCase() === "none") {
+      if ((style.pointerEvents || "").toLowerCase() === "none" && !isTypedField(element)) {
         return false;
       }
       return true;
+    };
+
+    const hoverPlacedControl = (element, win = window) => {
+      const rect = element.getBoundingClientRect();
+      if (rect.width < 8 || rect.height < 8 || rect.width > 48 || rect.height > 48) return false;
+      const viewportWidth = win.innerWidth || 0;
+      const viewportHeight = win.innerHeight || 0;
+      if (rect.bottom <= 0 || rect.right <= 0 || rect.top >= viewportHeight || rect.left >= viewportWidth) return false;
+      let faded = false;
+      let node = element;
+      while (node instanceof win.Element) {
+        const style = win.getComputedStyle(node);
+        if (style.display === "none") return false;
+        if (Number.parseFloat(style.opacity || "1") <= 0
+          || style.visibility === "hidden"
+          || (style.pointerEvents || "").toLowerCase() === "none") {
+          faded = true;
+        }
+        if (node !== element) {
+          const box = node.getBoundingClientRect();
+          if (box.width > rect.width * 2 && box.width > rect.width + 24) return faded;
+        }
+        const parentRect = node.getBoundingClientRect();
+        if (parentRect.bottom > 0 && parentRect.right > 0 && parentRect.top < viewportHeight && parentRect.left < viewportWidth && faded) {
+          return true;
+        }
+        node = node.parentElement;
+      }
+      return false;
     };
 
     const visibilityState = (element, win = window) => {
@@ -113,27 +164,33 @@ const buildBrowserAgentObservationScript = ({
       const visible = isVisible(element, win);
       const offscreen = rect.right < 0 || rect.bottom < 0 || rect.left > viewportWidth || rect.top > viewportHeight;
       const ariaHidden = element.closest?.("[aria-hidden='true']") !== null;
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
+      const inPopup = element.closest?.("[role='dialog'], [role='alertdialog'], [role='menu'], [aria-modal='true']") !== null;
       let covered = false;
-      if (visible && !offscreen && centerX >= 0 && centerY >= 0 && centerX <= viewportWidth && centerY <= viewportHeight) {
-        const hit = element.ownerDocument?.elementFromPoint?.(centerX, centerY) ?? null;
-        covered = hit !== null && hit !== element && !element.contains(hit) && !hit.contains(element);
+      if (visible && !offscreen && rect.width > 0 && rect.height > 0) {
+        const samples = [0.2, 0.5, 0.8];
+        let hitOwn = false;
+        for (const xRatio of samples) {
+          for (const yRatio of samples) {
+            const x = rect.left + rect.width * xRatio;
+            const y = rect.top + rect.height * yRatio;
+            if (x < 0 || y < 0 || x > viewportWidth || y > viewportHeight) continue;
+            let hit = element.ownerDocument?.elementFromPoint?.(x, y) ?? null;
+            while (hit?.shadowRoot?.elementFromPoint) {
+              const inner = hit.shadowRoot.elementFromPoint(x, y);
+              if (!inner || inner === hit) break;
+              hit = inner;
+            }
+            if (hit === element || (hit !== null && element.contains(hit))
+              || (hit !== null && hit.contains(element) && isTypedField(element))) {
+              hitOwn = true;
+              break;
+            }
+          }
+          if (hitOwn) break;
+        }
+        covered = typeof element.ownerDocument?.elementFromPoint === "function" && !hitOwn;
       }
-      return { visible, offscreen, ariaHidden, covered };
-    };
-
-    const associatedLabel = (element, doc = document) => {
-      if (element.id) {
-        const label = doc.querySelector("label[for=" + JSON.stringify(element.id) + "]");
-        if (label) return label.innerText || label.textContent || "";
-      }
-      let parent = element.parentElement;
-      while (parent) {
-        if (parent.tagName === "LABEL") return parent.innerText || parent.textContent || "";
-        parent = parent.parentElement;
-      }
-      return "";
+      return { visible, offscreen, ariaHidden, covered, inPopup };
     };
 
     const describedByText = (element, doc = document) => String(element.getAttribute?.("aria-describedby") || "")
@@ -177,26 +234,24 @@ const buildBrowserAgentObservationScript = ({
 
     const buildElementXPath = (element) => {
       if (!(element instanceof Element)) return "";
-      if (element.id) {
-        return '//*[@id="' + cssEscape(element.id) + '"]';
-      }
       const segments = [];
       let current = element;
       while (current instanceof Element) {
+        // An ID anchor must retain the descendant path. IDs containing quotes
+        // use the absolute path, rather than CSS escaping inside XPath syntax.
+        if (current.id && !current.id.includes('"')) {
+          segments.unshift('//*[@id="' + current.id + '"]');
+          break;
+        }
         const tag = current.tagName.toLowerCase();
         const parent = current.parentElement;
         if (parent === null) {
-          segments.unshift("/" + tag);
+          segments.unshift(tag);
           break;
         }
         const siblings = Array.from(parent.children).filter((child) => child.tagName === current.tagName);
         const index = siblings.indexOf(current) + 1;
         segments.unshift(siblings.length > 1 ? tag + "[" + index + "]" : tag);
-        if (current.id) {
-          segments.length = 0;
-          segments.push('//*[@id="' + cssEscape(current.id) + '"]');
-          break;
-        }
         current = parent;
       }
       return segments.join("/").startsWith("//*")
@@ -217,14 +272,8 @@ const buildBrowserAgentObservationScript = ({
       return normalizeText(element.getAttribute?.("data-state") || "", 32);
     };
 
-    const checkedState = (element) => {
-      const checked = element.getAttribute?.("aria-checked");
-      if (checked === "true") return true;
-      if (checked === "false") return false;
-      return element.checked === true ? true : undefined;
-    };
-
     const expandedState = (element) => {
+      if (element.tagName === "SUMMARY" && element.parentElement?.tagName === "DETAILS") return element.parentElement.open;
       const expanded = element.getAttribute?.("aria-expanded");
       if (expanded === "true") return true;
       if (expanded === "false") return false;
@@ -233,13 +282,11 @@ const buildBrowserAgentObservationScript = ({
 
     const isEditable = (element) => {
       const win = element?.ownerDocument?.defaultView || window;
-      const contentEditable = String(element.getAttribute?.("contenteditable") || "").toLowerCase();
       const role = String(element.getAttribute?.("role") || "").toLowerCase();
       return element instanceof win.HTMLInputElement
         || element instanceof win.HTMLTextAreaElement
         || element instanceof win.HTMLSelectElement
-        || (element instanceof win.HTMLElement && element.isContentEditable)
-        || (contentEditable.length > 0 && contentEditable !== "false")
+        || isEditingHost(element)
         || role === "textbox"
         || role === "searchbox";
     };
@@ -268,20 +315,33 @@ const buildBrowserAgentObservationScript = ({
       return "";
     };
 
-    const labelFor = (element, doc = document) => {
-      const label = normalizeText(
-        element.getAttribute?.("aria-label")
-          || element.getAttribute?.("placeholder")
-          || element.getAttribute?.("title")
-          || element.getAttribute?.("alt")
-          || associatedLabel(element, doc)
-          || element.innerText
-          || element.textContent
-          || element.value
-          || "",
-        120
-      );
-      return label || "(no label)";
+    const labelFor = (element) => surfaceNames.label(element) || "(no label)";
+
+    const panelCornerLabel = (element) => {
+      const tag = String(element.tagName || "").toLowerCase();
+      const role = String(element.getAttribute?.("role") || "").toLowerCase();
+      if (tag !== "button" && role !== "button") return "";
+      const box = element.getBoundingClientRect();
+      if (box.width > 48 || box.height > 48 || box.width < 8 || box.height < 8) return "";
+      const view = element.ownerDocument?.defaultView || window;
+      let node = element.parentElement;
+      while (node instanceof Element && node !== element.ownerDocument?.body) {
+        const panel = node.getBoundingClientRect();
+        const style = view.getComputedStyle(node);
+        const dialog = node.getAttribute("role") === "dialog" || node.getAttribute("aria-modal") === "true";
+        const floating = style.position === "fixed" || style.position === "absolute" || dialog;
+        const sized = panel.width > box.width + 48
+          && panel.height > box.height + 48
+          && panel.width < (view.innerWidth || 0) * 0.95
+          && panel.height < (view.innerHeight || 0) * 0.95;
+        if (floating && sized) {
+          const top = Math.abs(box.top - panel.top) <= 28;
+          const end = Math.abs(box.right - panel.right) <= 28 || Math.abs(box.left - panel.left) <= 28;
+          return top && end ? "icon at the top corner of this panel" : "";
+        }
+        node = node.parentElement;
+      }
+      return "";
     };
 
     const collectLimitedElements = (root, limit, warning) => {
@@ -465,15 +525,15 @@ const buildBrowserAgentObservationScript = ({
       }
       const fileInputs = Array.from(doc.querySelectorAll("input[type='file']"))
         .filter((element) => isVisible(element, win) && !isDisabled(element));
-      if (fileInputs.length > 0) {
-        if (ACTIVE_FILE_CHOOSER_PENDING) {
+      if (fileInputs.length > 0 || ACTIVE_FILE_CHOOSER_PENDING) {
+        if (ACTIVE_FILE_CHOOSER_PENDING && IS_MAIN_FRAME && doc === document) {
           pushSignal({
             kind: "active_file_chooser",
             confidence: "high",
-            source: "attribute",
-            label: "system file picker or active upload dialog",
-            scope: "frame",
-            actionability: "user_only",
+            source: "browser",
+            label: "webpage awaiting files; use browser_upload, no system dialog is open",
+            scope: "main_document",
+            actionability: "automatic",
             reasonCode: "active_file_chooser",
             stableObservationCount: 1,
             url: frameUrl
@@ -586,11 +646,15 @@ const buildBrowserAgentObservationScript = ({
     };
 
     const items = [];
+    const cursorNotes = [];
+    const cursorContextSeen = new WeakSet();
+    const itemNodes = [];
     const seen = new Set();
     const authChallengeSignals = [];
     let activeElementId = null;
 
-    const crawl = (doc, win, offsetX = 0, offsetY = 0, frameUrl = "") => {
+    const crawl = async (doc, win, offsetX = 0, offsetY = 0, frameUrl = "") => {
+      semantics.observeRoot(doc);
       const selector = [
         "a[href]",
         "button",
@@ -602,6 +666,9 @@ const buildBrowserAgentObservationScript = ({
         "[contenteditable]",
         "[tabindex]",
         "[onclick]",
+        "[draggable='true']",
+        "[ondrop]",
+        "[ondragover]",
         "[role='button']",
         "[role='link']",
         "[role='checkbox']",
@@ -616,6 +683,7 @@ const buildBrowserAgentObservationScript = ({
         "input[role='combobox']"
       ].join(",");
       const collectCandidates = (root, scope = "document", hostChain = []) => {
+        semantics.observeRoot(root);
         const collected = collectInteractiveCandidates(root, selector, scope, hostChain);
         const descendants = collectShadowHosts(root);
         for (const element of descendants) {
@@ -647,9 +715,232 @@ const buildBrowserAgentObservationScript = ({
         }
         return collected;
       };
-      const candidates = collectCandidates(doc, "document");
+      const cursorKeyword = element => cursorSemantics.read(element)?.keyword || "auto";
+      const REAL_CONTROL_SELECTOR = "button, a[href], input:not([type='hidden']), select, textarea, summary, label, [contenteditable='true'], [contenteditable=''], [contenteditable='plaintext-only']";
+      const ROLE_CONTROL_SELECTOR = "[role='button'], [role='link'], [role='textbox'], [role='searchbox'], [role='checkbox'], [role='radio'], [role='switch'], [role='tab'], [role='menuitem'], [role='combobox'], [role='option'], [role='menuitemcheckbox'], [role='menuitemradio'], [role='treeitem'], [role='slider'], [role='spinbutton'], [aria-pressed], [aria-checked], [aria-expanded], [aria-haspopup]";
+      const DRAG_CONTROL_SELECTOR = "[draggable='true'], [ondrop], [ondragover]";
+      const CONTROL_SELECTOR = REAL_CONTROL_SELECTOR + ", " + ROLE_CONTROL_SELECTOR + ", " + DRAG_CONTROL_SELECTOR;
+      const isNativeControl = (element) =>
+        element.matches?.(CONTROL_SELECTOR) === true
+        || isEditingHost(element);
+      const isDeclaredControl = element => isNativeControl(element)
+        || (element.hasAttribute?.("tabindex") && element.getAttribute("tabindex") !== "-1")
+        || element.hasAttribute?.("onclick") || typeof element.onclick === "function"
+        || typeof element.ondrop === "function" || typeof element.ondragover === "function";
+      const addCursorContext = (element, cursor) => {
+        if (!cursor || cursorContextSeen.has(element)) return;
+        if ((cursor.keyword === "auto" || cursor.keyword === "default") && !cursor.customImage) return;
+        cursorContextSeen.add(element);
+        if (cursorNotes.length >= 16) { if (!warnings.includes("cursor_context_limited")) warnings.push("cursor_context_limited"); return; }
+        cursorNotes.push(semantics.cursorNote(element, cursorSemantics.describe(cursor), element === doc.body || element === doc.documentElement));
+      };
+      const keepSurfaceControl = (element) => {
+        return isDeclaredControl(element) || cursorSemantics.discover(cursorSemantics.read(element));
+      };
+      const muchTaller = (outer, inner) => {
+        const outerBox = outer.getBoundingClientRect();
+        const innerBox = inner.getBoundingClientRect();
+        return outerBox.height > innerBox.height * 1.6 && outerBox.height > innerBox.height + 24;
+      };
+      const isSurfaceControl = (element) => {
+        const tabIndex = element.getAttribute?.("tabindex");
+        return keepSurfaceControl(element)
+          || (tabIndex !== null && tabIndex !== "-1")
+          || element.matches?.(CONTROL_SELECTOR) === true;
+      };
+      const controlRoot = (hit) => {
+        if (hit.matches?.(DRAG_CONTROL_SELECTOR) || typeof hit.ondrop === "function" || typeof hit.ondragover === "function") return hit;
+        const graphic = new Set(["path", "g", "circle", "rect", "line", "polyline", "polygon", "use", "tspan"]);
+        let start = hit;
+        while (start.parentElement && graphic.has(String(start.tagName || "").toLowerCase())) {
+          start = start.parentElement;
+        }
+        const editor = editingHost(start);
+        if (editor && editor !== start && !isDeclaredControl(start)) {
+          const control = start.closest?.(CONTROL_SELECTOR + ", [tabindex]:not([tabindex='-1']), [onclick]");
+          if (control && control !== editor && editor.contains(control)) return control;
+          // Preserve a separately styled handle; inherited text cursors and
+          // formatting nodes belong to the editor, regardless of their size.
+          if (cursorKeyword(start) === cursorKeyword(editor)
+            || !cursorSemantics.discover(cursorSemantics.read(start))) return editor;
+        }
+        const real = start.closest?.(REAL_CONTROL_SELECTOR);
+        // A differently styled resize/drag handle is distinct from its enclosing
+        // clickable control even when both inherit the same event listener.
+        const cursorOwner = real && real !== start ? real : start.parentElement;
+        if (cursorOwner && cursorKeyword(start) !== cursorKeyword(cursorOwner)
+          && cursorSemantics.discover(cursorSemantics.read(start)) && cursorKeyword(start) !== "pointer") return start;
+        if (real && real !== start && real.tagName === "BUTTON" && start.matches?.(CONTROL_SELECTOR) !== true) return real;
+        if (real && real !== start && !muchTaller(real, start) && !distinctSmallControl(start)) return real;
+        const role = start.closest?.(ROLE_CONTROL_SELECTOR);
+        if (role && role !== start && !muchTaller(role, start) && !distinctSmallControl(start)) return role;
+        // CSS cursor is inherited. Collapse a graphic/text child onto its tight
+        // cursor owner; keep distinct row-end controls and semantic children.
+        if (start.matches?.(CONTROL_SELECTOR) !== true && !start.hasAttribute?.("tabindex")) {
+          let owner = start;
+          for (let parent = owner.parentElement; parent && parent !== doc.body; parent = owner.parentElement) {
+            if (cursorKeyword(parent) !== cursorKeyword(owner)) break;
+            const a = owner.getBoundingClientRect(), b = parent.getBoundingClientRect();
+            if (b.width > a.width + 24 || b.height > a.height + 24) {
+              // A leading graphic inherits its labelled, compact control's
+              // cursor. Keep separately declared controls and trailing actions.
+              if (!distinctSmallControl(start) && b.height <= 48 && b.width <= 360 && surfaceNames.label(parent)) owner = parent;
+              break;
+            }
+            owner = parent;
+            if (owner.matches?.(CONTROL_SELECTOR)) break;
+          }
+          return owner;
+        }
+        return start;
+      };
+      const distinctSmallControl = (element) => {
+        const tag = String(element.tagName || "").toLowerCase();
+        if (tag === "path" || tag === "g" || tag === "circle" || tag === "rect" || tag === "line" || tag === "polyline" || tag === "polygon" || tag === "use" || tag === "tspan") return false;
+        const box = element.getBoundingClientRect();
+        if (box.width > 48 || box.height > 48 || box.width < 8 || box.height < 8) return false;
+        let wide = false;
+        let trailing = false;
+        let ancestor = element.parentElement;
+        while (ancestor) {
+          const ancestorBox = ancestor.getBoundingClientRect();
+          if (ancestorBox.width > box.width * 2 && ancestorBox.width > box.width + 24) {
+            wide = true;
+            trailing = box.x + box.width >= ancestorBox.x + ancestorBox.width - 48;
+            break;
+          }
+          ancestor = ancestor.parentElement;
+        }
+        if (!wide) return false;
+        if (element.style?.cursor || (ancestor && !surfaceNames.label(ancestor))) return isSurfaceControl(element);
+        // Inherited pointer cursors do not make a leading decorative icon a
+        // second control. Explicit controls and trailing row actions stay distinct.
+        if (element.matches?.(CONTROL_SELECTOR) || element.hasAttribute?.("tabindex") || hoverPlacedControl(element, win)) return true;
+        if (trailing && isSurfaceControl(element)) return true;
+        const role = String(element.getAttribute?.("role") || "").toLowerCase();
+        return trailing && (tag === "svg" || tag === "button" || role === "button");
+      };
+      const collectSurfaceCandidates = async () => {
+        const roots = [];
+        const seenRoots = new Set();
+        const surfaceRoots = new Map();
+        const tightToggle = (element) => {
+          let node = element;
+          const box = element.getBoundingClientRect();
+          let parent = element.parentElement;
+          while (parent && parent !== doc.body && parent !== doc.documentElement) {
+            if (cursorKeyword(parent) !== cursorKeyword(node) && cursorSemantics.discover(cursorSemantics.read(node)) && cursorKeyword(node) !== "pointer") break;
+            const parentBox = parent.getBoundingClientRect();
+            if (parentBox.width > box.width + 80 || parentBox.height > box.height + 28) break;
+            const pressed = parent.getAttribute?.("aria-pressed");
+            const checked = parent.getAttribute?.("aria-checked");
+            const role = String(parent.getAttribute?.("role") || "").toLowerCase();
+            const data = String(parent.getAttribute?.("data-state") || "").toLowerCase();
+            const tokens = String(parent.className || "").toLowerCase().split(/\s+/);
+            const classOn = tokens.some((token) => token === "active" || token === "selected" || token === "on" || token.endsWith("-active") || token.endsWith("--on"));
+            if (pressed === "true" || pressed === "false" || checked === "true" || checked === "false" || role === "switch" || role === "button" || data === "on" || data === "off" || data === "checked" || data === "unchecked" || classOn) node = parent;
+            parent = parent.parentElement;
+          }
+          return node;
+        };
+        const pushRoot = async (element, follow) => {
+          if (!(element instanceof win.Element) || seenRoots.has(element)) return;
+          const native = element.matches?.(REAL_CONTROL_SELECTOR) === true;
+          const picked = native ? element : controlRoot(element);
+          const root = picked instanceof win.Element ? tightToggle(picked) : picked;
+          if (!(root instanceof win.Element) || seenRoots.has(root)) return;
+          if (!isSurfaceControl(root) && !distinctSmallControl(root)) return;
+          seenRoots.add(root);
+          const context = surfaceRoots.get(root.getRootNode()) || { scope: "document", hostChain: [] };
+          roots.push({ element: root, ...context });
+
+        };
+        if (STRATEGY === "interactiveOnly") {
+          const width = win.innerWidth || 0;
+          const height = win.innerHeight || 0;
+          const inView = (rect) => rect.width > 0 && rect.height > 0
+            && rect.bottom > 0 && rect.right > 0
+            && rect.top < height && rect.left < width;
+          const visibleSelector = CONTROL_SELECTOR + ", [tabindex]:not([tabindex='-1']), [onclick]";
+          const visitSelector = async (root, scope = "document", hostChain = []) => {
+            if (surfaceRoots.has(root)) return;
+            surfaceRoots.set(root, { scope, hostChain });
+            semantics.observeRoot(root);
+            for (const element of root.querySelectorAll?.(visibleSelector) ?? []) {
+              if (isVisible(element, win)) await pushRoot(element, FOLLOW_CURSOR);
+            }
+            for (const host of collectShadowHosts(root)) {
+              if (host.shadowRoot) await visitSelector(host.shadowRoot, "shadow", [...hostChain, selectorPreview(host)]);
+            }
+          };
+          await visitSelector(doc);
+          const focusSelector = "a[href], button, input:not([type='hidden']), select, textarea, summary, [contenteditable='true'], [contenteditable=''], [contenteditable='plaintext-only'], [tabindex]:not([tabindex='-1'])";
+          const positive = [];
+          const rest = [];
+          const visitFocus = (root) => {
+            for (const element of root.querySelectorAll?.(focusSelector) ?? []) {
+              if (element.disabled === true) continue;
+              if (!isVisible(element, win)) continue;
+              const index = Number(element.tabIndex || 0);
+              if (index > 0) positive.push(element);
+              else rest.push(element);
+            }
+            for (const host of collectShadowHosts(root)) {
+              if (host.shadowRoot) visitFocus(host.shadowRoot);
+            }
+          };
+          visitFocus(doc);
+          positive.sort((left, right) => left.tabIndex - right.tabIndex);
+          let focusAdded = 0;
+          for (const element of [...positive, ...rest]) {
+            if (focusAdded >= 48) break;
+            const before = roots.length;
+            await pushRoot(element, FOLLOW_CURSOR);
+            if (roots.length > before) focusAdded += 1;
+          }
+          let cursorScanRemaining = MAX_LIGHTWEIGHT_SCAN_NODES;
+          for (const scanRoot of surfaceRoots.keys()) {
+            if (cursorScanRemaining <= 0) break;
+            const scanned = collectLimitedElements(scanRoot.nodeType === 9 ? scanRoot.body || scanRoot.documentElement : scanRoot, cursorScanRemaining, "cursor_scan_limited");
+            cursorScanRemaining -= scanned.length;
+            for (const element of scanned) {
+              if (!(element instanceof win.Element) || element.matches?.(visibleSelector) === true) continue;
+              if (isDeclaredControl(element)) {
+                if (inView(element.getBoundingClientRect()) && isVisible(element, win)) await pushRoot(element, false);
+                continue;
+              }
+              const cursor = cursorSemantics.read(element);
+              if (!cursor) continue;
+              if (element === doc.body || element === doc.documentElement) continue;
+              if (cursor.sameAsParent && !distinctSmallControl(element)) continue;
+              if (!inView(element.getBoundingClientRect()) || !isVisible(element, win)) continue;
+              if (!cursorSemantics.discover(cursor)) { addCursorContext(element, cursor); continue; }
+              if (element.querySelector?.(CONTROL_SELECTOR) && ["text", "vertical-text"].includes(cursor.keyword)) continue;
+              await pushRoot(element, false);
+            }
+          }
+          let hoverAdded = 0;
+          for (const element of collectLimitedElements(doc.body || doc.documentElement, MAX_LIGHTWEIGHT_SCAN_NODES, "hover_control_scan_limited")) {
+            if (hoverAdded >= 40 || !(element instanceof win.Element)) continue;
+            if (!hoverPlacedControl(element, win)) continue;
+            pushRoot(element, false);
+            hoverAdded += 1;
+          }
+          // Native/ARIA targets from every visited DOM root are indexed above,
+          // including offscreen nodes. Only presentation is viewport-prioritized.
+          return roots;
+        }
+        return null;
+      };
+      for (const element of [doc.documentElement, doc.body].filter(Boolean)) {
+        const cursor = cursorSemantics.read(element);
+        if (element === doc.body && cursor?.sameAsParent) continue;
+        addCursorContext(element, cursor);
+      }
+      const surfaceCandidates = await collectSurfaceCandidates();
+      const candidates = surfaceCandidates ?? collectCandidates(doc, "document");
       const pointerStyledCandidates = [];
-      if (LIGHTWEIGHT_STRATEGY) {
+      if (surfaceCandidates === null && LIGHTWEIGHT_STRATEGY) {
         for (const element of collectLimitedElements(doc, MAX_LIGHTWEIGHT_SCAN_NODES, "pointer_scan_limited")) {
           if (!(element instanceof win.Element) || element.matches?.(selector)) {
             continue;
@@ -659,7 +950,7 @@ const buildBrowserAgentObservationScript = ({
             continue;
           }
           const style = win.getComputedStyle(element);
-          if ((style.cursor || "").toLowerCase() !== "pointer") {
+          if (!cursorSemantics.discover(cursorSemantics.parse(style.cursor))) {
             continue;
           }
           pointerStyledCandidates.push({ element, scope: "document", hostChain: [] });
@@ -675,17 +966,19 @@ const buildBrowserAgentObservationScript = ({
         if (!(element instanceof win.Element) || seen.has(element)) continue;
         seen.add(element);
         const visibility = visibilityState(element, win);
-        if (!visibility.visible && !isFileInputElement(element, win)) continue;
+        const hoverOnly = !visibility.visible && hoverPlacedControl(element, win);
+        if (!visibility.visible && !hoverOnly && !isFileInputElement(element, win)) continue;
         if (element instanceof win.HTMLInputElement && element.type === "hidden") continue;
         const focusable = isFocusable(element);
         if (STRATEGY === "focus" && !focusable) continue;
         const rect = element.getBoundingClientRect();
         const style = win.getComputedStyle(element);
-        const cursor = normalizeText(style.cursor || "", 32);
+        const cursor = cursorSemantics.read(element);
         const editable = isEditable(element);
         const tabIndex = element instanceof win.HTMLElement ? element.tabIndex : -1;
         const id = items.length + 1;
-        if (element === doc.activeElement) activeElementId = id;
+        if (element === semantics.focusIn(doc)) activeElementId = id;
+        const controlSemantics = semantics.control(element);
         const hostChainFingerprint = hostChain.length > 0
           ? hostChain.join(">")
           : "";
@@ -693,12 +986,15 @@ const buildBrowserAgentObservationScript = ({
         const ownerForm = "form" in element && element.form instanceof win.HTMLFormElement
           ? element.form
           : element.closest?.("form");
-        const formAction = normalizeText(
-          ("formAction" in element && typeof element.formAction === "string" && element.formAction)
-            || ownerForm?.action
-            || "",
-          600
+        // A field belonging to a form is not itself a submission action.
+        // formAction feeds the activation guard, so only publish it on submitters.
+        const submitsForm = ownerForm && (
+          element instanceof win.HTMLButtonElement && element.type === "submit"
+          || element instanceof win.HTMLInputElement && ["submit", "image"].includes(element.type)
         );
+        const formAction = submitsForm ? normalizeText(
+          element.hasAttribute("formaction") ? element.formAction : ownerForm.action, 600
+        ) : "";
         const formMethod = normalizeText(ownerForm?.method || "", 16).toLowerCase();
         const href = element instanceof win.HTMLAnchorElement ? element.href : "";
         const autocompleteTokens = normalizeText(element.getAttribute?.("autocomplete") || "", 200)
@@ -725,15 +1021,39 @@ const buildBrowserAgentObservationScript = ({
           tagName,
           role: normalizeText(element.getAttribute?.("role") || tagName, 40),
           label: labelFor(element, doc),
-          actionHint: actionHint(element, cursor),
+          cursor,
+          cursorOnly: !isDeclaredControl(element),
+          actionHint: actionHint(element, cursor?.customImage ? "" : cursor?.keyword || ""),
           stateHint: stateHint(element),
-          tooltipText: normalizeText(element.getAttribute?.("title") || describedByText(element, doc), 80),
+          semantics: {
+            ...controlSemantics,
+            ...(panelCornerLabel(element) && !surfaceNames.label(element)
+              ? { context: [...(controlSemantics.context || []), panelCornerLabel(element)] } : {})
+          },
+          tooltipProbe: surfaceNames.cached(element) ? (surfaceNames.cached(element).text ? "found" : "empty") : undefined,
+          tooltipText: normalizeText(element.getAttribute?.("title") || describedByText(element, doc) || surfaceNames.tooltip(element) || surfaceNames.cached(element)?.text, 160),
+          sensitiveValue: (${sensitiveFieldRuntime})(element),
           textSnippet: normalizeText(
-            element instanceof win.HTMLInputElement || element instanceof win.HTMLTextAreaElement
-              ? element.value || ""
-              : element.innerText || element.textContent || "",
+            element instanceof win.HTMLSelectElement
+              ? (element.selectedOptions?.[0]?.textContent || element.value || "")
+              : element instanceof win.HTMLInputElement || element instanceof win.HTMLTextAreaElement
+                ? element.value || ""
+                : element.innerText || element.textContent || "",
             80
           ),
+          formGroup: "",
+          existingRef: (() => {
+            // Stamp the node we collected, not a later hit test at its center.
+            // Keep identity across layout changes; replacement nodes get new refs.
+            let ref = surfaceRegistry.nodes.get(element);
+            if (!ref) {
+              ref = "lumen:s" + surfaceRegistry.prefix + (++surfaceRegistry.serial).toString(36);
+              surfaceRegistry.nodes.set(element, ref);
+            }
+            surfaceRegistry.byRef.set(ref, new WeakRef(element));
+            if (element.getAttribute("data-lyra-surface") !== ref) element.setAttribute("data-lyra-surface", ref);
+            return ref;
+          })(),
           selectorPreview: selectorPreview(element),
           xpath: buildElementXPath(element),
           bounds: {
@@ -750,7 +1070,8 @@ const buildBrowserAgentObservationScript = ({
           },
           frameBounds: FRAME_BOUNDS,
           visibility,
-          checked: checkedState(element),
+          hoverOnly,
+          checked: typeof controlSemantics.checked === "boolean" ? controlSemantics.checked : undefined,
           expanded: expandedState(element),
           focusable,
           tabIndex,
@@ -775,6 +1096,7 @@ const buildBrowserAgentObservationScript = ({
           hostChain,
           hostChainFingerprint
         });
+        itemNodes.push(element);
       }
 
       authChallengeSignals.push(...detectAuthChallengeSignals(doc, win, frameUrl, offsetX, offsetY));
@@ -789,7 +1111,7 @@ const buildBrowserAgentObservationScript = ({
           const childWin = frame.contentWindow;
           if (!childDoc || !childWin) continue;
           const frameRect = frame.getBoundingClientRect();
-          crawl(
+          await crawl(
             childDoc,
             childWin,
             offsetX + frameRect.left,
@@ -802,13 +1124,73 @@ const buildBrowserAgentObservationScript = ({
       }
     };
 
-    crawl(
+    await crawl(
       document,
       window,
       Number(FRAME_BOUNDS.x) || 0,
       Number(FRAME_BOUNDS.y) || 0,
       normalizeText(String(window.location.href || ""), 400)
     );
+
+    const groupTokens = new WeakMap();
+    const mappedNodes = new Map(itemNodes.map((node, index) => [node, items[index].existingRef]));
+    for (let index = 0; index < items.length; index += 1) {
+      const refs = [];
+      let ancestor = itemNodes[index]?.parentElement || itemNodes[index]?.getRootNode()?.host;
+      while (ancestor) {
+        const ref = mappedNodes.get(ancestor);
+        if (ref) refs.push(ref);
+        ancestor = ancestor.parentElement || ancestor.getRootNode()?.host;
+      }
+      items[index].ancestorTargetRefs = refs;
+    }
+    let groupSerial = 0;
+    const tokenFor = (node) => {
+      const existing = groupTokens.get(node);
+      if (existing !== undefined) return existing;
+      groupSerial += 1;
+      const token = "group:" + groupSerial;
+      groupTokens.set(node, token);
+      return token;
+    };
+    const isValueField = (element) => {
+      const tag = String(element.tagName || "").toLowerCase();
+      if (tag === "textarea" || tag === "select") return true;
+      if (tag === "input") {
+        const type = String(element.type || "").toLowerCase();
+        return type !== "hidden" && type !== "button" && type !== "submit" && type !== "reset" && type !== "file";
+      }
+      return String(element.getAttribute?.("contenteditable") || "").toLowerCase() === "true";
+    };
+    for (let index = 0; index < items.length; index += 1) {
+      const node = itemNodes[index];
+      const form = node?.form instanceof HTMLFormElement ? node.form : node?.closest?.("form");
+      if (form instanceof Element) items[index].formGroup = tokenFor(form);
+    }
+    for (let index = 0; index < items.length; index += 1) {
+      if (items[index].disabled !== true || items[index].formGroup) continue;
+      let ancestor = itemNodes[index]?.parentElement ?? null;
+      while (ancestor instanceof Element) {
+        const fields = [];
+        for (let fieldIndex = 0; fieldIndex < itemNodes.length; fieldIndex += 1) {
+          const field = itemNodes[fieldIndex];
+          if (field !== itemNodes[index] && ancestor.contains(field) && isValueField(field)) fields.push(fieldIndex);
+        }
+        if (fields.length > 0) {
+          const token = tokenFor(ancestor);
+          items[index].formGroup = token;
+          for (const fieldIndex of fields) {
+            if (!items[fieldIndex].formGroup) items[fieldIndex].formGroup = token;
+          }
+          break;
+        }
+        ancestor = ancestor.parentElement;
+      }
+    }
+
+    for (const node of itemNodes) {
+      if (node instanceof Element) node.setAttribute("data-lyra-collected", "1");
+    }
 
     const focusOrder = items
       .filter((item) => item.focusable)
@@ -827,6 +1209,7 @@ const buildBrowserAgentObservationScript = ({
       elements: items,
       focusOrder,
       activeElementId,
+      pageNotes: [...semantics.pageNotes(), ...cursorNotes],
       authChallengeSignals,
       blockedRegions,
       warnings

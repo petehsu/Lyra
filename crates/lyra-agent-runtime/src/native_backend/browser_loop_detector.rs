@@ -171,7 +171,7 @@ impl BrowserLoopDetector {
 
         if REPETITION_NUDGE_AT.contains(&self.max_repetition_count) {
             nudges.push(format!(
-                "Automation loop hint: a similar browser/computer action repeated {} times in the last {} automation steps. If each attempt is making progress, continue. Otherwise remap and act/type a Needs scroll targetRef, or change strategy with browser_ax/map then act, or see then vact.",
+                "Automation loop hint: a similar browser/computer action repeated {} times in the last {} automation steps. If each attempt is making progress, continue. Otherwise map the visible surface again and act or type a targetRef from that map.",
                 self.max_repetition_count,
                 self.recent_action_hashes.len()
             ));
@@ -183,7 +183,7 @@ impl BrowserLoopDetector {
         }
         if self.consecutive_stagnant_pages >= STAGNANT_PAGE_THRESHOLD {
             nudges.push(format!(
-                "Automation stagnation hint: the surface evidence (URL/node count/status) has not changed across {} consecutive browser/computer tool results. Remap and act on a Needs scroll targetRef, escalate with browser_ax/map then act, or see then vact.",
+                "Automation stagnation hint: the surface evidence (URL/node count/status) has not changed across {} consecutive browser/computer tool results. Map the visible surface again and act on a targetRef from that map.",
                 self.consecutive_stagnant_pages
             ));
         }

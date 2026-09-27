@@ -11,7 +11,7 @@ Last verified: 2026-07-28
 
 This is a private Electron/preload inventory, not an extension API.
 
-Total channels: **293**.
+Total channels: **299**.
 
 ## Groups
 
@@ -32,13 +32,15 @@ Total channels: **293**.
 | `location` | 3 |
 | `login-manager` | 8 |
 | `lsp` | 11 |
+| `office` | 3 |
 | `persona` | 4 |
 | `product-announcements` | 2 |
 | `screenshot-preview` | 3 |
 | `search` | 1 |
-| `sensitive-values` | 3 |
+| `sensitive-values` | 5 |
 | `shell` | 11 |
 | `software-capabilities` | 2 |
+| `sqlite` | 1 |
 | `system-notifications` | 4 |
 | `terminal` | 16 |
 | `uiux` | 8 |
@@ -259,6 +261,9 @@ Total channels: **293**.
 | `lspInspectTypeScriptConfig` | `lyra:lsp/inspect-typescript-config` | `lsp` |
 | `lspOpenDocument` | `lyra:lsp/open-document` | `lsp` |
 | `lspSaveDocument` | `lyra:lsp/save-document` | `lsp` |
+| `officeApply` | `lyra:office/apply` | `office` |
+| `officePreview` | `lyra:office/preview` | `office` |
+| `officeRead` | `lyra:office/read` | `office` |
 | `personaConsentRead` | `lyra:persona/consent/read` | `persona` |
 | `personaConsentWrite` | `lyra:persona/consent/write` | `persona` |
 | `personaRefresh` | `lyra:persona/refresh` | `persona` |
@@ -270,7 +275,9 @@ Total channels: **293**.
 | `screenshotPreviewPresent` | `lyra:screenshot-preview/present` | `screenshot-preview` |
 | `resolveWebSearchEngine` | `lyra:search/resolve-web-engine` | `search` |
 | `sensitiveValuesDelete` | `lyra:sensitive-values/delete` | `sensitive-values` |
+| `sensitiveValuesReadStatus` | `lyra:sensitive-values/read-status` | `sensitive-values` |
 | `sensitiveValuesRevealToUser` | `lyra:sensitive-values/reveal-to-user` | `sensitive-values` |
+| `sensitiveValuesStatusChanged` | `lyra:sensitive-values/status-changed` | `sensitive-values` |
 | `sensitiveValuesStore` | `lyra:sensitive-values/store` | `sensitive-values` |
 | `readAppMeta` | `lyra:shell/app/meta` | `shell` |
 | `readAppMetaSync` | `lyra:shell/app/meta-sync` | `shell` |
@@ -285,6 +292,7 @@ Total channels: **293**.
 | `toggleWindowMaximize` | `lyra:shell/window/toggle-maximize` | `shell` |
 | `softwareCapabilitiesQuery` | `lyra:software-capabilities/query` | `software-capabilities` |
 | `softwareCapabilitiesQueryResult` | `lyra:software-capabilities/query-result` | `software-capabilities` |
+| `sqliteInspect` | `lyra:sqlite/inspect` | `sqlite` |
 | `systemNotificationsActivated` | `lyra:system-notifications/activated` | `system-notifications` |
 | `systemNotificationsOpenSettings` | `lyra:system-notifications/open-settings` | `system-notifications` |
 | `systemNotificationsReadStatus` | `lyra:system-notifications/read-status` | `system-notifications` |

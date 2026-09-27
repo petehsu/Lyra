@@ -366,11 +366,12 @@ fn non_stream_tool_call_parser_preserves_invalid_arguments_as_evidence() {
             }
         }),
         &allowed_tool_names,
+        0,
     )
     .expect("tool call");
 
     assert_eq!(parsed.name, "tool_fs_run");
-    assert!(parsed.id.starts_with("tool-"));
+    assert_eq!(parsed.id, "call-0");
     assert_eq!(parsed.arguments["rawArguments"], "{\"scope\":");
     assert!(parsed.arguments["parseError"].as_str().is_some());
 }
@@ -1439,15 +1440,12 @@ fn lumen_map_formats_two_affordance_lists_instead_of_a_flat_dump() {
             "elements": [
                 { "id": 1, "role": "button", "label": "Save", "targetRef": "lumen:save" }
             ],
-            "mapAppendix": "Now clickable:\n[1 targetRef=lumen:save] button: \"Save\"\nNeeds scroll (act on these; do not call scroll, find, or ensure_visible):\n[2 targetRef=lumen:footer] link: \"Footer\""
+            "mapAppendix": "Now operable:\n[1 targetRef=lumen:save] button: \"Save\"\nAlso on this page:\n[2 targetRef=lumen:footer] link: \"Footer\""
         }),
     );
 
-    assert!(formatted.contains("Now clickable:"));
-    assert!(
-        formatted
-            .contains("Needs scroll (act on these; do not call scroll, find, or ensure_visible):")
-    );
+    assert!(formatted.contains("Now operable:"));
+    assert!(formatted.contains("Also on this page:"));
     assert!(formatted.contains("[2 targetRef=lumen:footer] link: \"Footer\""));
     assert!(
         !formatted.contains("observation-local"),

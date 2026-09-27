@@ -51,6 +51,7 @@ import {
   type LanguagePacksIpcBridge
 } from "./language-packs";
 import { createLinuxCompatBridge } from "./linux-compat";
+import { configureLinuxSecretStore } from "./sensitive-values/linux-secret-store";
 import {
   createLyraPerformanceResourceScheduler,
   createLyraWorkspaceSurfacePerformanceSync
@@ -311,6 +312,7 @@ const linuxCompatBridge = createLinuxCompatBridge({
 
 linuxCompatBridge.applyToProcessEnv();
 linuxCompatBridge.applyToElectronApp(app);
+configureLinuxSecretStore(app);
 configureBrowserIdentityCompatibility(app);
 
 if (linuxCompatBridge.status.enabled) {
@@ -1240,6 +1242,7 @@ const registerIpcHandlers = async (): Promise<void> => {
   const agentBridge = createAgentIpcBridge({
     runtimeClient,
     storageRoot: storageRoots.modules.agent,
+    loginManagerStorageRoot: storageRoots.modules.loginManager,
     terminalBridge,
     getWindow: () => mainWindow,
     getBrowserBridge: () => workbenchBrowserBridge,

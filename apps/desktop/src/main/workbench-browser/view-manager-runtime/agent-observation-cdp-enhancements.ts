@@ -1,3 +1,4 @@
+import { isNestedAffordance, isRowEdgeIcon } from "./agent-affordance-lists";
 import type { WorkbenchBrowserDebuggerSession } from "../types";
 import type {
   WorkbenchBrowserAgentElement,
@@ -577,6 +578,7 @@ const shouldExcludeContainedChild = (
   child: WorkbenchBrowserAgentElement,
   parent: WorkbenchBrowserAgentElement
 ): boolean => {
+  if (!isNestedAffordance(child, parent) || isRowEdgeIcon(child, parent)) return false;
   const childRect = boundsToRect(child.bounds);
   const parentRect = boundsToRect(parent.bounds);
   const overlap = intersectionArea(childRect, parentRect);

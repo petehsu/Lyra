@@ -143,6 +143,7 @@ fn normalize_page_citation(raw: Value) -> Option<Value> {
         "excerptKind": excerpt_kind,
         "preview": raw.get("preview").and_then(Value::as_str).unwrap_or(&preview),
         "quotedText": quoted_text,
+        "surfaceMap": truncate_surface_map(raw.get("surfaceMap").and_then(Value::as_str).unwrap_or("")),
         "truncated": raw.get("truncated").and_then(Value::as_bool).unwrap_or(truncated),
         "sourceCapturedAt": raw.get("sourceCapturedAt").cloned().unwrap_or(Value::Null),
         "sourceKind": raw.get("sourceKind").cloned().unwrap_or(Value::Null),
@@ -226,9 +227,196 @@ pub(crate) fn format_page_cite_xml(citation: &Value) -> Option<String> {
         .get("quotedText")
         .and_then(Value::as_str)
         .unwrap_or_default();
+    let surface_map = citation
+        .get("surfaceMap")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let body = if surface_map.is_empty() {
+        quoted.to_string()
+    } else if quoted.is_empty() {
+        surface_map.to_string()
+    } else {
+        format!("{quoted}\n{surface_map}")
+    };
     Some(format!(
-        "<lyra-page-cite id=\"{id}\" tabId=\"{tab_id}\" tabTitle=\"{tab_title}\" pageUrl=\"{page_url}\" pageTitle=\"{page_title}\" excerptKind=\"{excerpt_kind}\" truncated=\"{truncated}\"{link_url}{link_text}{src_url}{element_selector}{element_tag}{source_kind}{capture_fidelity}>\n{quoted}\n</lyra-page-cite>"
+        "<lyra-page-cite id=\"{id}\" tabId=\"{tab_id}\" tabTitle=\"{tab_title}\" pageUrl=\"{page_url}\" pageTitle=\"{page_title}\" excerptKind=\"{excerpt_kind}\" truncated=\"{truncated}\"{link_url}{link_text}{src_url}{element_selector}{element_tag}{source_kind}{capture_fidelity}>\n{body}\n</lyra-page-cite>"
     ))
+}
+
+const SURFACE_MAP_CHARS: usize = 8_000;
+
+pub(crate) fn citation_needs_live_map(citation: &Value) -> bool {
+    if citation.get("excerptKind").and_then(Value::as_str) != Some("page") {
+        return false;
+    }
+    if citation.get("sourceKind").and_then(Value::as_str) == Some("terminal-tab") {
+        return false;
+    }
+    let url = citation
+        .get("pageUrl")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if url.starts_with("lyra://terminal/") {
+        return false;
+    }
+    let tab_id = citation.get("tabId").and_then(Value::as_str).unwrap_or("");
+    if tab_id.is_empty() {
+        return false;
+    }
+    citation
+        .get("surfaceMap")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .is_empty()
+}
+
+pub(crate) async fn show_attached_page_maps(session_id: &str, turn_id: &str) {
+    let pending = attached_pages_missing_maps(session_id);
+    if pending.is_empty() {
+        return;
+    }
+    let Some(dispatcher) = super::state::host_dispatcher() else {
+        return;
+    };
+    for (citation_id, tab_id, title) in pending {
+        let tool_id = format!("page-map-{citation_id}");
+        let started = super::helpers::now();
+        super::activity::record_tool_activity(
+            session_id,
+            turn_id,
+            super::activity::tool_activity(
+                &tool_id,
+                "browser_map",
+                "Map the attached page",
+                "running",
+                json!({ "tabId": tab_id, "pageTitle": title }),
+                None,
+                &started,
+                None,
+            ),
+            "toolStarted",
+        );
+        let mapped = super::tools::invoke_host_capability_with_timeout_async(
+            dispatcher.clone(),
+            "lyraLumen.map".to_string(),
+            json!({ "tabId": tab_id, "strategy": "interactiveOnly", "mapScope": "document" }),
+            15_000,
+        )
+        .await;
+        let map = mapped
+            .as_ref()
+            .ok()
+            .and_then(|value| value.get("mapAppendix").and_then(Value::as_str))
+            .map(truncate_surface_map)
+            .filter(|text| !text.trim().is_empty());
+        if let Some(map) = map.as_deref() {
+            write_surface_map(session_id, &citation_id, map);
+            super::tools::tool_search::record_browser_follow_tools(session_id, "browser_map");
+        }
+        let failed = map.is_none();
+        super::activity::record_tool_activity(
+            session_id,
+            turn_id,
+            super::activity::tool_activity(
+                &tool_id,
+                "browser_map",
+                "Map the attached page",
+                if failed { "failed" } else { "completed" },
+                json!({ "tabId": tab_id, "pageTitle": title }),
+                Some(json!({
+                    "content": map.clone().unwrap_or_else(|| "The attached page had no map.".to_string())
+                })),
+                &started,
+                Some(super::helpers::now()),
+            ),
+            "toolFinished",
+        );
+    }
+}
+
+fn attached_pages_missing_maps(session_id: &str) -> Vec<(String, String, String)> {
+    let Ok(state) = super::state::state().lock() else {
+        return Vec::new();
+    };
+    let Some(session) = state.sessions.get(session_id) else {
+        return Vec::new();
+    };
+    let Some(messages) = session.snapshot.get("messages").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    let Some(citations) = messages.iter().rev().find_map(|message| {
+        if message.get("role").and_then(Value::as_str) != Some("user") {
+            return None;
+        }
+        message
+            .pointer("/metadata/pageCitations")
+            .and_then(Value::as_array)
+    }) else {
+        return Vec::new();
+    };
+    citations
+        .iter()
+        .filter(|citation| citation_needs_live_map(citation))
+        .filter_map(|citation| {
+            Some((
+                citation.get("id")?.as_str()?.to_string(),
+                citation.get("tabId")?.as_str()?.to_string(),
+                citation
+                    .get("pageTitle")
+                    .or_else(|| citation.get("tabTitle"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("page")
+                    .to_string(),
+            ))
+        })
+        .collect()
+}
+
+fn write_surface_map(session_id: &str, citation_id: &str, map: &str) {
+    let Ok(mut state) = super::state::state().lock() else {
+        return;
+    };
+    let Some(session) = state.sessions.get_mut(session_id) else {
+        return;
+    };
+    let Some(messages) = session
+        .snapshot
+        .get_mut("messages")
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+    let Some(index) = messages.iter().rposition(|message| {
+        message.get("role").and_then(Value::as_str) == Some("user")
+            && message
+                .pointer("/metadata/pageCitations")
+                .and_then(Value::as_array)
+                .is_some_and(|citations| {
+                    citations.iter().any(|citation| {
+                        citation.get("id").and_then(Value::as_str) == Some(citation_id)
+                    })
+                })
+    }) else {
+        return;
+    };
+    let Some(citations) = messages[index]
+        .pointer_mut("/metadata/pageCitations")
+        .and_then(Value::as_array_mut)
+    else {
+        return;
+    };
+    for citation in citations {
+        if citation.get("id").and_then(Value::as_str) == Some(citation_id) {
+            citation["surfaceMap"] = json!(map);
+        }
+    }
+    super::helpers::mark_dialog_dirty_from(session, index);
+}
+
+fn truncate_surface_map(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    chars.into_iter().take(SURFACE_MAP_CHARS).collect()
 }
 
 #[cfg(test)]
@@ -273,6 +461,44 @@ mod tests {
         assert!(xml.contains("pageUrl=\"https://example.com/docs\""));
         assert!(xml.contains("linkUrl=\"https://example.com/a\""));
         assert!(xml.contains("Read more"));
+    }
+
+    #[test]
+    fn citation_needs_live_map_only_for_a_whole_page_without_one() {
+        let page = json!({
+            "id": "page-cite-1",
+            "tabId": "tab-1",
+            "pageUrl": "https://example.com",
+            "excerptKind": "page"
+        });
+        assert!(citation_needs_live_map(&page));
+        let mut carried = page.clone();
+        carried["surfaceMap"] = json!("Now operable:");
+        assert!(!citation_needs_live_map(&carried));
+        let mut selection = page.clone();
+        selection["excerptKind"] = json!("selection");
+        assert!(!citation_needs_live_map(&selection));
+        let mut terminal = page.clone();
+        terminal["sourceKind"] = json!("terminal-tab");
+        assert!(!citation_needs_live_map(&terminal));
+    }
+
+    #[test]
+    fn format_page_cite_xml_includes_surface_map() {
+        let citation = json!({
+            "id": "page-cite-1",
+            "tabId": "tab-1",
+            "tabTitle": "Docs",
+            "pageUrl": "https://example.com",
+            "pageTitle": "Docs",
+            "excerptKind": "page",
+            "truncated": false,
+            "quotedText": "Docs",
+            "surfaceMap": "Now operable:\n[1 targetRef=lumen:a] button: \"Save\""
+        });
+        let xml = format_page_cite_xml(&citation).expect("xml");
+        assert!(xml.contains("Now operable:"));
+        assert!(xml.contains("lumen:a"));
     }
 
     #[test]

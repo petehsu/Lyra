@@ -20,6 +20,9 @@ import {
 const LUMEN_SEE_CONTENT_CHAR_BUDGET = 8_000;
 const LUMEN_MAP_JSON_CHAR_BUDGET = 8_000;
 const UNCERTAIN_TIMEOUT_METHODS = [
+  "lyraLumen.upload",
+  "lyraLumen.drag",
+  "lyraLumen.dialog",
   "lyraLumen.act",
   "lyraLumen.vact",
   "lyraLumen.scroll",
@@ -226,10 +229,16 @@ export const readLumenStrategy = (
 
 export const readLumenInteraction = (payload: Record<string, unknown>) => {
   const value = payload.interaction;
+  if (payload.effect === "observe" && value !== "hover") throw new Error("Specify interaction=hover to observe, or interaction=click with the actual effect to activate. No gesture was inferred from effect=observe.");
   if (value === "double_click" || value === "doubleClick") return "doubleClick";
   if (value === "right_click" || value === "rightClick") return "rightClick";
   if (value === "select") return "select";
-  return value === "hover" || value === "click" ? value : "click";
+  if (payload.effect === "observe") {
+    return "hover";
+  }
+  if (value === undefined) return "click";
+  if (value === "hover" || value === "click") return value;
+  throw new Error("Unsupported interaction. Specify click, hover, doubleClick, rightClick or select. No action was dispatched.");
 };
 
 export const readOptionalLumenActionEffect = (
@@ -305,8 +314,11 @@ export const readLumenWaitUntil = (payload: Record<string, unknown>) => {
     || value === "textChanged"
     || value === "textStable"
     || value === "textContains"
+    || value === "targetHidden"
+    || value === "targetEnabled"
+    || value === "responseComplete"
     ? value
-    : "textStable";
+    : value === undefined ? "textStable" : (() => { throw new Error(`Unknown browser wait condition: ${String(value)}`); })();
 };
 
 export const readLumenVerification = (
@@ -344,8 +356,16 @@ export const readWorkflowFields = (
 export const nextRecommendedActionAfterFastLumenAction = (
   result: Record<string, unknown>
 ): string => {
+  if (result.status === "dialogPending") return "browser_dialog";
+  if (result.selectionOptions !== undefined) return "browser_act";
+  if (isRecord(result.fileChooser) && result.fileChooser.supported === true) return "browser_upload";
+  if (result.status === "uncertain" || result.outcome === "uncertain") return "lyra_lumen.read";
   if (result.ok === false) {
-    return "lyra_lumen.map";
+    return typeof result.nextRecommendedAction === "string" ? result.nextRecommendedAction : "lyra_lumen.map";
+  }
+  if (isRecord(result.surfaceChange)) {
+    if (result.navigationStarted === true || result.surfaceChange.settled === false) return "lyra_lumen.wait";
+    if (result.surfaceChange.changed === true && typeof result.afterObservationId === "string") return "continue_with_cached_targets";
   }
   const elementDiff = isRecord(result.elementDiff) ? result.elementDiff : null;
   const changed = Array.isArray(elementDiff?.changed) ? elementDiff.changed : [];
@@ -386,6 +406,13 @@ export const readOptionalLumenElementId = (
     const parsed = Number(trimmed);
     if (Number.isFinite(parsed) && /^\d+$/u.test(trimmed)) {
       return Math.round(parsed);
+    }
+    if (trimmed.startsWith("lumen:")) {
+      if (payload.targetRef === undefined) {
+        payload.targetRef = trimmed;
+      }
+      delete payload[fieldName];
+      return undefined;
     }
     throw new InvalidLumenElementIdError(trimmed);
   }

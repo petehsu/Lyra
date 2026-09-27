@@ -120,6 +120,7 @@ describe("linux compat resolver", () => {
     expect(plan.profile).toBe("native");
     expect(plan.backend).toBe("wayland");
     expect(plan.profileSource).toBe("config");
+    expect(plan.appliedSwitches["enable-wayland-ime"]).toBe("true");
   });
 
   test("supports explicit backend override via argv", () => {

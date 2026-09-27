@@ -55,12 +55,18 @@ afterEach(() => {
 });
 
 describe("axRef hashing", () => {
-  test("axRef format is ax:<snapshotHash>:<nodeHash>", () => {
+  test("axRef format is ax:<documentHash>:<nodeHash>", () => {
     const snapshotHash = browserAxSnapshotHash("tab", "live", 1000, 2);
     const nodeHash = browserAxNodeHash({ backendDOMNodeId: 12, role: "button", name: "Continue" });
     const axRef = `ax:${snapshotHash}:${nodeHash}`;
     expect(axRef.split(":")).toHaveLength(3);
     expect(axRef.startsWith("ax:")).toBe(true);
+  });
+
+  test("physical identity survives a rename, move, and state change", () => {
+    const node = { backendDOMNodeId: 42, frameRef: "main", role: "button", name: "First", boundsX: 1 };
+    expect(browserAxNodeHash(node)).toBe(browserAxNodeHash({ ...node, name: "Second", role: "checkbox", boundsX: 300 }));
+    expect(browserAxNodeHash(node)).not.toBe(browserAxNodeHash({ ...node, frameRef: "child" }));
   });
 
   test("snapshot hash is stable for identical inputs and varies by epoch", () => {
@@ -76,8 +82,9 @@ describe("axRef hashing", () => {
 describe("snapshot store", () => {
   test("remembers and resolves a node by axRef", () => {
     const store = createBrowserAxSnapshotStore();
-    const snapshot = makeSnapshot();
-    store.rememberSnapshot(snapshot);
+    const snapshot = makeSnapshot({ snapshotHash: store.referenceScopeFor("browser-tab-1", "live").hash });
+    const scope = store.referenceScopeFor(snapshot.tabId, snapshot.targetMode);
+    store.rememberSnapshot(snapshot, scope);
     const axRef = [...snapshot.nodesByAxRef.keys()][0]!;
     const resolution = store.resolveAxRef(axRef);
     expect(resolution.kind).toBe("ok");
@@ -91,8 +98,9 @@ describe("snapshot store", () => {
     const now = Date.now();
     const first = makeSnapshot({ createdAt: now, mapEpoch: 1 });
     const second = makeSnapshot({ createdAt: now + 1, mapEpoch: 2 });
-    store.rememberSnapshot(first);
-    store.rememberSnapshot(second);
+    const scope = store.referenceScopeFor(first.tabId, first.targetMode);
+    store.rememberSnapshot(first, scope);
+    store.rememberSnapshot(second, scope);
     expect(store.getLatest("browser-tab-1", "live")?.snapshotId).toBe(second.snapshotId);
   });
 
@@ -104,38 +112,78 @@ describe("snapshot store", () => {
 
   test("unknown node within a live snapshot resolves to unknownNode", () => {
     const store = createBrowserAxSnapshotStore();
-    const snapshot = makeSnapshot();
-    store.rememberSnapshot(snapshot);
+    const snapshot = makeSnapshot({ snapshotHash: store.referenceScopeFor("browser-tab-1", "live").hash });
+    const scope = store.referenceScopeFor(snapshot.tabId, snapshot.targetMode);
+    store.rememberSnapshot(snapshot, scope);
     const resolution = store.resolveAxRef(`ax:${snapshot.snapshotHash}:does-not-exist`);
     expect(resolution.kind).toBe("unknownNode");
   });
 
-  test("a snapshot stays usable until a newer map or navigation replaces it", () => {
+  test("a node reference survives time and subsequent filtered maps until navigation", () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
     const store = createBrowserAxSnapshotStore();
-    const snapshot = makeSnapshot({ createdAt: 0, ttlMs: 1000 });
-    store.rememberSnapshot(snapshot);
+    const snapshot = makeSnapshot({ snapshotHash: store.referenceScopeFor("browser-tab-1", "live").hash, createdAt: 0, ttlMs: 1000 });
+    const scope = store.referenceScopeFor(snapshot.tabId, snapshot.targetMode);
+    store.rememberSnapshot(snapshot, scope);
     const axRef = [...snapshot.nodesByAxRef.keys()][0]!;
     expect(store.resolveAxRef(axRef).kind).toBe("ok");
     vi.setSystemTime(60_000_000);
     expect(store.resolveAxRef(axRef).kind).toBe("ok");
     expect(store.getLatest("browser-tab-1", "live")?.snapshotId).toBe(snapshot.snapshotId);
-    const newer = makeSnapshot({ createdAt: 60_000_000, mapEpoch: 2 });
-    store.rememberSnapshot(newer);
-    expect(store.resolveAxRef(axRef).kind).toBe("stale");
-    const newerRef = [...newer.nodesByAxRef.keys()][0]!;
-    expect(store.resolveAxRef(newerRef).kind).toBe("ok");
+    const newer = makeSnapshot({ createdAt: 60_000_000, mapEpoch: 2, nodes: [] });
+    store.rememberSnapshot(newer, scope);
+    expect(store.resolveAxRef(axRef).kind).toBe("ok");
+    expect(store.getLatest("browser-tab-1", "live")?.nodesByAxRef.size).toBe(0);
   });
 
   test("invalidate drops snapshots for the tab", () => {
     const store = createBrowserAxSnapshotStore();
-    const snapshot = makeSnapshot();
-    store.rememberSnapshot(snapshot);
+    const snapshot = makeSnapshot({ snapshotHash: store.referenceScopeFor("browser-tab-1", "live").hash });
+    const scope = store.referenceScopeFor(snapshot.tabId, snapshot.targetMode);
+    store.rememberSnapshot(snapshot, scope);
     store.invalidate("browser-tab-1", "live", "navigation");
     const axRef = [...snapshot.nodesByAxRef.keys()][0]!;
     expect(store.resolveAxRef(axRef).kind).toBe("stale");
     expect(store.getLatest("browser-tab-1", "live")).toBeUndefined();
+  });
+
+  test("query history eviction does not evict node refs or grow them per read", () => {
+    const store = createBrowserAxSnapshotStore();
+    const scope = store.referenceScopeFor("browser-tab-1", "live");
+    const node = makeNode(`ax:${scope.hash}:original`);
+    const initial = makeSnapshot({ nodes: [node] });
+    store.rememberSnapshot(initial, scope);
+    for (let i = 2; i <= 40; i++) {
+      store.rememberSnapshot(makeSnapshot({ mapEpoch: i, nodes: i % 2 ? [node] : [] }), scope);
+    }
+    expect(store.getSnapshot(initial.snapshotId)).toBeUndefined();
+    expect(store.resolveAxRef(node.axRef).kind).toBe("ok");
+    expect(scope.nodes.size).toBe(1);
+  });
+
+  test("a map finishing after navigation cannot revive refs", () => {
+    const store = createBrowserAxSnapshotStore();
+    const scope = store.referenceScopeFor("browser-tab-1", "live");
+    const snapshot = makeSnapshot({ nodes: [makeNode(`ax:${scope.hash}:original`)] });
+    store.invalidate("browser-tab-1", "live", "frameReload");
+    expect(store.rememberSnapshot(snapshot, scope)).toBe(false);
+    expect(store.getLatest("browser-tab-1", "live")).toBeUndefined();
+    expect(store.referenceScopeFor("browser-tab-1", "live").hash).not.toBe(scope.hash);
+    expect(store.resolveAxRef(`ax:${scope.hash}:original`).kind).toBe("stale");
+  });
+
+  test("out-of-order queries cannot overwrite fresher state or remove each other's refs", () => {
+    const store = createBrowserAxSnapshotStore();
+    const scope = store.referenceScopeFor("browser-tab-1", "live");
+    const ref = `ax:${scope.hash}:original`;
+    const newer = makeSnapshot({ mapEpoch: 3, nodes: [makeNode(ref, { name: "Latest" })] });
+    const older = makeSnapshot({ mapEpoch: 2, nodes: [makeNode(ref), makeNode(`ax:${scope.hash}:second`)] });
+    store.rememberSnapshot(newer, scope);
+    store.rememberSnapshot(older, scope);
+    expect(store.getLatest("browser-tab-1", "live")).toBe(newer);
+    expect(scope.nodes.get(ref)?.name).toBe("Latest");
+    expect(store.resolveAxRef(`ax:${scope.hash}:second`).kind).toBe("ok");
   });
 });
 

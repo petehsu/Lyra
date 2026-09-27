@@ -45,6 +45,7 @@ export const resolveGrantedBrowserActEffect = (
   pageUrl: string | undefined,
   tabId?: string
 ): BrowserActionEffect | undefined => {
+  if (effect === "observe") return effect;
   if (
     hasBrowserAuthorizeActGrant(pageUrl, tabId) === false
     && hasBrowserAuthorizeActGrant(element.frameUrl, tabId) === false

@@ -123,6 +123,13 @@ fn scene_changes_sorting_and_pins_without_hiding_tools() {
         );
     }
     assert!(registry.pinned_handles(ToolScene::ProjectCode).is_empty());
+    let browser_pins = registry
+        .pinned_handles(ToolScene::Browser)
+        .into_iter()
+        .map(|handle| handle.handle)
+        .collect::<Vec<_>>();
+    assert!(browser_pins.contains(&"browser_type".to_string()));
+    assert!(browser_pins.contains(&"browser_act".to_string()));
 }
 
 #[test]
@@ -334,4 +341,64 @@ fn memory_search_and_write_replace_list_and_crud_verbs() {
             "{gone} must not remain in the catalog"
         );
     }
+}
+
+#[test]
+fn browser_upload_manifest_is_a_mutating_browser_operation() {
+    let registry = ToolFsRegistry::default();
+    let upload = registry
+        .manifests()
+        .iter()
+        .find(|manifest| manifest.path == "/tools/browser/upload")
+        .unwrap();
+    assert_eq!(upload.risk_level, "browser");
+    assert_eq!(
+        upload.input_schema["properties"]["effect"]["enum"],
+        serde_json::json!(["upload"])
+    );
+    assert!(
+        upload.input_schema["required"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("effect"))
+    );
+}
+
+#[test]
+fn browser_gestures_expose_the_correct_public_arguments() {
+    let registry = ToolFsRegistry::builtin();
+    let schema = |operation: &str| {
+        &registry
+            .manifests()
+            .iter()
+            .find(|m| m.path == format!("/tools/browser/{operation}"))
+            .unwrap()
+            .input_schema
+    };
+    for field in ["repeat", "selectText", "occurrence"] {
+        assert!(
+            schema("press")["properties"].get(field).is_some(),
+            "{field}"
+        );
+        assert!(schema("act")["properties"].get(field).is_none(), "{field}");
+    }
+    for field in [
+        "modifiers",
+        "button",
+        "holdMs",
+        "position",
+        "optionLabel",
+        "selectValue",
+        "selectValues",
+    ] {
+        assert!(schema("act")["properties"].get(field).is_some(), "{field}");
+    }
+    assert_eq!(
+        schema("drag")["required"],
+        serde_json::json!(["targetRef", "toTargetRef", "effect"])
+    );
+    assert_eq!(
+        schema("dialog")["required"],
+        serde_json::json!(["dialogId", "accept", "effect"])
+    );
 }

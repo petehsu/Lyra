@@ -42,9 +42,20 @@ describe("agent-element-probe", () => {
     expect(diffElementStates(before, after)).toEqual(["checked: false -> true"]);
   });
 
+  test("reads a pressed hint as the checked bit so a toggle click is a change", () => {
+    const before = elementStateFromCached({ ...sampleElement(), checked: undefined, stateHint: "unpressed" });
+    const after = { ...before, checked: true };
+    expect(before.checked).toBe(false);
+    expect(diffElementStates(before, after)).toEqual(["checked: false -> true"]);
+  });
+
   test("buildElementDiff marks noObservableChange when unchanged", () => {
     const before = elementStateFromCached(sampleElement());
     const diff = buildElementDiff(before, before);
     expect("noObservableChange" in diff && diff.noObservableChange).toBe(true);
+  });
+  test("an empty button value is not a state transition", () => {
+    const before = { role: "button", label: "Open menu", disabled: false };
+    expect(diffElementStates(before, { ...before, value: "" })).toEqual([]);
   });
 });

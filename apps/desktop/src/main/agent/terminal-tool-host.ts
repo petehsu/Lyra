@@ -313,7 +313,10 @@ export const createTerminalToolHost = ({
     if (requestedSessionId !== undefined) {
       const entry = findPrivateTerminalEntry(requestedSessionId, agentSessionId);
       if (entry === null) {
-        throw new Error(`Private terminal session not found: ${requestedSessionId}`);
+        const current = latestPrivateTerminalEntry(agentSessionId);
+        throw new Error(`Private terminal session not found: ${requestedSessionId}. `
+          + (current ? `This task's current terminal sessionId is ${current.sessionId}. ` : "This task has no private terminal yet. ")
+          + "Omit sessionId to reuse/create this task's terminal; use createNew=true without sessionId for a new one. Never invent session IDs.");
       }
       entry.lastUsedAt = new Date().toISOString();
       return targetFromPrivateEntry(entry);
@@ -829,6 +832,10 @@ export const createTerminalToolHost = ({
         : undefined;
       if (data === undefined && text === undefined && (keys === undefined || keys.length === 0)) {
         throw new Error("terminal_write requires data, text, or keys");
+      }
+      if ((data !== undefined || text !== undefined) && !(data ?? text)?.length
+        && !keys?.length && request.appendNewline !== true) {
+        return terminalToolResult(target, await readTerminalOutput(target, request, 250), {wrote:"0 bytes (read only)"});
       }
       const commandText = request.appendNewline === true && keys === undefined
         ? text ?? data

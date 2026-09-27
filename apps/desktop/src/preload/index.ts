@@ -207,6 +207,7 @@ import {
   type LoginManagerSnapshot,
   type LoginManagerUpdateSessionRequest,
   type LyraSensitiveValueDeleteRequest,
+  type LyraSensitiveStorageStatus,
   type LyraSensitiveValueRevealRequest,
   type LyraSensitiveValueRevealResponse,
   type LyraSensitiveValueStoreRequest,
@@ -1188,6 +1189,12 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
     }
   },
   sensitiveValues: {
+    readStatus: () => ipcRenderer.invoke(LYRA_CHANNELS.sensitiveValuesReadStatus) as Promise<LyraSensitiveStorageStatus>,
+    onStatusChanged: (listener: (status: LyraSensitiveStorageStatus) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, status: LyraSensitiveStorageStatus): void => listener(status);
+      ipcRenderer.on(LYRA_CHANNELS.sensitiveValuesStatusChanged, handler);
+      return () => { ipcRenderer.removeListener(LYRA_CHANNELS.sensitiveValuesStatusChanged, handler); };
+    },
     store: async (
       request: LyraSensitiveValueStoreRequest
     ): Promise<LyraSensitiveValueStoreResponse> =>

@@ -90,7 +90,7 @@ describe("agent-workflow-replay", () => {
     }
   });
 
-  test("executeWorkflowReplay records resolvedSteps and succeeds", async () => {
+  test.each([false, true])("executeWorkflowReplay records resolvedSteps and accepts a changed surface (unchanged button=%s)", async unchangedButton => {
     tempHome = mkdtempSync(join(tmpdir(), "lyra-workflow-replay-"));
     const {
       appendWorkflowCacheStep,
@@ -122,10 +122,12 @@ describe("agent-workflow-replay", () => {
       tabId: "tab-1",
       inputMode: "chromium" as const,
       targetMode: "live" as const,
+      surfaceChange: { changed: true, settled: true, addedTargetRefs: ["lumen:next"], removedTargetRefs: [], updatedTargetRefs: [], contextChanged: false },
       elementDiff: {
         before: { role: "button", label: "Continue", disabled: false },
         after: { role: "button", label: "Continue", disabled: false, checked: true },
-        changed: ["checked"]
+        changed: unchangedButton ? [] : ["checked"],
+        noObservableChange: unchangedButton
       }
     }));
 
@@ -152,4 +154,18 @@ describe("agent-workflow-replay", () => {
       expect.objectContaining({ targetRef: "lumen:fresh", matchLevel: "stable" })
     );
   });
+});
+
+
+test("a pending dialog stops replay before the following action",async()=>{
+  tempHome=mkdtempSync(join(tmpdir(),"lyra-workflow-dialog-"));
+  const {appendWorkflowCacheStep,setWorkflowCacheRootForTests}=await import("../view-manager-runtime/lumen-workflow-cache");
+  setWorkflowCacheRootForTests(join(tempHome,"workflows"));
+  const url="https://example.test/";
+  for(const targetRef of ["lumen:first","lumen:second"]) appendWorkflowCacheStep("wf-dialog",{normalizedUrl:url,targetMode:"live"},{targetRef,interaction:"click"});
+  const actStep=vi.fn(async()=>({ok:true,kind:"lyraLumenActionResult" as const,tabId:"tab-1",inputMode:"chromium" as const,
+    status:"dialogPending",dialog:{id:"dialog:1"}}));
+  const result=await executeWorkflowReplay({tabId:"tab-1",targetMode:"live",workflowId:"wf-dialog",normalizedUrl:url,actStep});
+  expect(result).toMatchObject({status:"dialogPending",dialog:{id:"dialog:1"}});
+  expect(actStep).toHaveBeenCalledTimes(1);
 });

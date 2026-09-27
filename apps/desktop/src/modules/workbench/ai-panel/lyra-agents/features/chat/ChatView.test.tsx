@@ -581,7 +581,7 @@ describe("ChatView render-budget message window", () => {
     expect(container.querySelector(".lyra-agents-composer-browser-preview")).toBeNull();
   });
 
-  test("opens a live browser preview into the current workspace tab", async () => {
+  test("opens a live browser capsule during a running turn into the current workspace tab", async () => {
     const setActiveBrowserTab = vi.fn(() => true);
     const openUrlInWorkbench = vi.fn(async () => undefined);
     const data = createDataProviderValue({
@@ -597,11 +597,7 @@ describe("ChatView render-budget message window", () => {
           tabId: "tab-live",
           targetMode: "live" as const,
           url: "https://example.com",
-          title: "Example",
-          mimeType: "image/png",
-          imageBase64: "AAAA",
-          width: 80,
-          height: 50
+          title: "Example"
         }])
       }
     };
@@ -615,13 +611,17 @@ describe("ChatView render-budget message window", () => {
       </DataContextProvider>
     );
     const preview = await screen.findByRole("button", { name: "Open in workspace" });
-    expect(preview).toHaveClass("lyra-agents-composer-browser-preview");
+    expect(preview).toHaveClass("lyra-agents-composer-browser-capsule");
+    expect(preview).toHaveTextContent("Example");
+    expect(document.querySelector(".lyra-agents-composer-browser-preview")).toBeNull();
+    expect(document.querySelector(".lyra-agents-composer-browser-capsule-dismiss")).toBeNull();
+    expect(preview.querySelector('img[src^="data:image/"]')).toBeNull();
     fireEvent.click(preview);
     expect(setActiveBrowserTab).toHaveBeenCalledWith("tab-live");
     expect(openUrlInWorkbench).not.toHaveBeenCalled();
   });
 
-  test("opens an isolated browser preview as a workspace URL", async () => {
+  test("opens an isolated browser capsule during a running turn as a workspace URL", async () => {
     const setActiveBrowserTab = vi.fn(() => false);
     const openUrlInWorkbench = vi.fn(async () => undefined);
     const data = createDataProviderValue({
@@ -637,11 +637,7 @@ describe("ChatView render-budget message window", () => {
           tabId: "tab-isolated",
           targetMode: "isolated" as const,
           url: "https://example.com/app",
-          title: "App",
-          mimeType: "image/png",
-          imageBase64: "AAAA",
-          width: 80,
-          height: 50
+          title: "App"
         }])
       }
     };
@@ -655,7 +651,7 @@ describe("ChatView render-budget message window", () => {
       </DataContextProvider>
     );
     const preview = await screen.findByRole("button", { name: "Open in workspace" });
-    expect(preview).toHaveClass("lyra-agents-composer-browser-preview");
+    expect(preview).toHaveClass("lyra-agents-composer-browser-capsule");
     fireEvent.click(preview);
     expect(setActiveBrowserTab).not.toHaveBeenCalled();
     expect(openUrlInWorkbench).toHaveBeenCalledWith("https://example.com/app", "App");
@@ -693,11 +689,7 @@ describe("ChatView render-budget message window", () => {
                     targetMode: "live" as const,
                     url,
                     title,
-                    ...(faviconUrl === undefined ? {} : { faviconUrl }),
-                    mimeType: "image/png" as const,
-                    imageBase64: "AAAA",
-                    width: 80,
-                    height: 50
+                    ...(faviconUrl === undefined ? {} : { faviconUrl })
                   }]
                 }
               } as never}

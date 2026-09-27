@@ -1,3 +1,16 @@
+import { focusBrowserPageForInput } from "../workspace-focus-isolation";
+import type { StampedSurfacePoint } from "./surface-control-names";
+import { nativeSelectScript, type NativeSelectResult } from "./native-select";
+import { beginSurfaceScrollScript, finishSurfaceScrollScript, revealSurfaceTargetScript } from "./surface-scroll";
+import { createSurfaceFrameInput } from "./surface-frame-input";
+import { randomUUID } from "node:crypto";
+import { BoundPointerError, dispatchBoundPointer, cdpPointerModifiers, validatePointerOptions, type PointerOptions, type PointerReceipt } from "./bound-pointer";
+import { beginSurfaceNameProbeScript, finishSurfaceNameProbeScript } from "./surface-name-runtime";
+import { compactMapObservation } from "./agent-map-compaction";
+import { compareSurface, observeActionSurface } from "./agent-surface-change";
+import { settleSurfaceRevision } from "./agent-surface-revision";
+import { armResponseWatch, cancelResponseWatch } from "./agent-response-watch";
+import { formatAffordanceLine } from "./agent-affordance-lists";
 import type { WorkbenchLumenStaleTarget } from "../../../shared/desktop-bridge";
 import type { WorkbenchVisualCaptureResult } from "../../../shared/workbench-observation";
 import type { BrowserAgentCursorOverlayAction } from "../agent-cursor-overlay";
@@ -24,6 +37,7 @@ import { browserElementEffectConflict, resolveGrantedBrowserActEffect } from "./
 import {
   agentPointInsideViewport,
   centerOfAgentElement,
+  humanClickPoint,
   clampAgentPointToViewport,
   normalizeAgentScrollBlock,
   scrollDeltaForDirection,
@@ -36,6 +50,7 @@ import {
   probeElementState
 } from "./agent-element-probe";
 import { agentTargetAddress, agentTargetIsLoading } from "./agent-target-runtime";
+import { armStampedPointerScript, finishStampedPointerScript, activateStampedSurfaceScript, clickPointFromStamp, refreshStampedElement } from "./surface-control-names";
 import { buildWorkflowElementIdentity } from "./agent-element-matcher";
 import {
   appendWorkflowCacheStep,
@@ -71,6 +86,7 @@ type BrowserAgentInteractionExecutorDeps = Pick<
   | "cssPointFromVisualFrame"
   | "findFrameInWebContents"
   | "markSyntheticInput"
+  | "openDebuggerSessionForTarget"
   | "publishBrowserAgentActivity"
   | "readAgentViewportState"
   | "readVisualFrame"
@@ -99,6 +115,7 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
     findAgentElement,
     findFrameInWebContents,
     markSyntheticInput,
+    openDebuggerSessionForTarget,
     observeAgentPage,
     publishBrowserAgentActivity,
     readAgentViewportState,
@@ -114,7 +131,6 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
     cacheBrowserAgentInputTarget,
     consumePendingSettle,
     isAgentEditableElement,
-    markPendingFileChooser,
     markPendingSettle,
     readBrowserAgentCacheEntry
   } = stateStore;
@@ -130,6 +146,7 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
     const after = await probeElementState(frame, element, timeoutMs);
     return buildElementDiff(before, after);
   };
+
 
   const performAgentPointerInteraction = async ({
     tabId,
@@ -160,7 +177,7 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
     });
     await delay(20);
 
-    target.webContents.focus();
+    await focusBrowserPageForInput(target.webContents);
     sendAgentInputEvent(target, { type: "mouseMove", x, y, button: "left", clickCount: 1 });
     if (interaction === "hover") {
       publishBrowserAgentActivity({
@@ -219,6 +236,71 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
       cursor,
       durationMs: 2_400
     });
+  };
+
+  const performBoundSurfacePointer = async (
+    tabId: string, target: BrowserAgentPageTarget, targetRef: string,
+    interaction: "click" | "doubleClick" | "rightClick" | "hover",
+    frame = target.webContents.mainFrame,
+    pointer: PointerOptions = {}
+  ) => {
+    validatePointerOptions(pointer);
+    const token = randomUUID();
+    const execute = (script: string) => frame.executeJavaScript(script, true);
+    const frameInput = createSurfaceFrameInput(frame);
+    let parentBlocked = false;
+    let point: { x: number; y: number };
+    let receipt: PointerReceipt | null = null;
+    // Following the page and focusing can resize it. Finish these before the
+    // final node lookup; mouseover-induced changes are checked again below.
+    await publishBrowserAgentActivity({ tabId, targetMode: target.targetMode, action: "act", interaction,
+      cursorPhase: "move", inputActive: true, visibleFollow: target.browserMode.visibleFollow, durationMs: 2400 });
+    await focusBrowserPageForInput(target.webContents);
+    await execute(revealSurfaceTargetScript(targetRef));
+    await frameInput.revealOwners();
+    // Electron sendInputEvent targets the main RenderWidget and can stop at an
+    // OOPIF owner. CDP dispatch goes through Chromium's frame hit-test router.
+    const routed = frame.processId !== target.webContents.mainFrame.processId
+      ? await openDebuggerSessionForTarget(target) : undefined;
+    try {
+      point = await dispatchBoundPointer({ interaction, options: pointer, send: async event => {
+        if (event.type !== "mouseUp") assertSharedControlCanContinue(tabId);
+        if (!routed) { sendAgentInputEvent(target, event); return; }
+        markSyntheticInput(tabId);
+        await routed.sendCommand("Input.dispatchMouseEvent", {
+          type: event.type === "mouseDown" ? "mousePressed" : event.type === "mouseUp" ? "mouseReleased" : "mouseMoved",
+          x: event.x, y: event.y, button: event.type === "mouseMove" ? "none" : event.button,
+          clickCount: event.type === "mouseMove" ? 0 : event.clickCount,
+          buttons: event.type === "mouseDown" ? (event.button === "right" ? 2 : event.button === "middle" ? 4 : 1) : 0,
+          modifiers: cdpPointerModifiers(pointer.modifiers)
+        });
+      },
+        beforeMove: async cursor => { await publishBrowserAgentActivity({ tabId, targetMode: target.targetMode,
+          action: "act", interaction, cursorPhase: "move", inputActive: true,
+          visibleFollow: target.browserMode.visibleFollow, cursor, durationMs: 2400 }); },
+        prepare: async () => {
+          assertSharedControlCanContinue(tabId);
+          const result = await execute(activateStampedSurfaceScript(targetRef, 300, interaction === "hover", pointer.position)).catch(() => null);
+          if (!result || typeof result !== "object" || (result as { trusted?: boolean }).trusted !== true) {
+            const reason = (result as { reason?: string } | null)?.reason ?? "detached";
+            throw new BoundPointerError(`Target is ${reason}. No activation was sent.`, reason);
+          }
+          if (interaction !== "hover" && !await execute(armStampedPointerScript(targetRef, token))) return null;
+          const local = clickPointFromStamp(result);
+          return local ? frameInput.translate(local, interaction === "hover" ? undefined : token) : null;
+        }
+      });
+    } finally {
+      receipt = await execute(finishStampedPointerScript(token)).catch(() => null) as PointerReceipt | null;
+      parentBlocked = await frameInput.finish(token);
+      await routed?.close().catch(() => undefined);
+    }
+    if (parentBlocked || receipt && (receipt.blocked || !receipt.accepted)) {
+      throw new BoundPointerError(receipt?.accepted
+        ? "The target received part of the gesture, then moved or became blocked. Inspect the outcome; do not repeat the action."
+        : "Chromium did not deliver activation to the bound target. Any wrong-target event was blocked. Inspect the current map before another action.");
+    }
+    return { ...point!, inputDelivery: (receipt?.accepted ? "targetReceived" : "unconfirmed") as "targetReceived" | "unconfirmed" };
   };
 
   const readFocusedElementSignature = async (
@@ -282,56 +364,33 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
       };
     }
 
-    publishBrowserAgentActivity({
-      tabId,
-      targetMode: target.targetMode,
-      action: "scroll",
-      inputActive: true,
-      visibleFollow: target.browserMode.visibleFollow,
-      cursor,
-      durationMs: 1_600
+    await publishBrowserAgentActivity({
+      tabId, targetMode: target.targetMode, action: "scroll", inputActive: true,
+      visibleFollow: target.browserMode.visibleFollow, cursor, durationMs: 1_600
     });
-    target.webContents.focus();
-    sendAgentInputEvent(target, {
-      type: "mouseWheel",
-      x: cursor.x,
-      y: cursor.y,
-      deltaX,
-      deltaY
-    });
-    await delay(90);
-    let afterViewport = await readAgentViewportState(target, timeoutMs);
-    let actualDeltaX = Math.round(afterViewport.scrollX - beforeViewport.scrollX);
-    let actualDeltaY = Math.round(afterViewport.scrollY - beforeViewport.scrollY);
-    let method: WorkbenchBrowserAgentScrollEffect["method"] = "wheel";
-
-    if (Math.abs(actualDeltaX) < 1 && Math.abs(actualDeltaY) < 1) {
-      if (target.targetMode === "live") {
-        assertSharedControlCanContinue(target.tabId);
-      }
-      markSyntheticInput(target.tabId);
-      await runFrameScriptWithTimeout(
-        () => target.webContents.executeJavaScript(`
-          (() => {
-            window.scrollBy({
-              left: ${JSON.stringify(deltaX)},
-              top: ${JSON.stringify(deltaY)},
-              behavior: "instant"
-            });
-            return {
-              scrollX: Number(window.scrollX || window.pageXOffset || 0),
-              scrollY: Number(window.scrollY || window.pageYOffset || 0)
-            };
-          })()
-        `, true),
-        normalizeExecuteScriptTimeoutMs(timeoutMs, 1_500)
-      ).catch(() => null);
-      await delay(70);
-      afterViewport = await readAgentViewportState(target, timeoutMs);
-      actualDeltaX = Math.round(afterViewport.scrollX - beforeViewport.scrollX);
-      actualDeltaY = Math.round(afterViewport.scrollY - beforeViewport.scrollY);
-      method = Math.abs(actualDeltaX) < 1 && Math.abs(actualDeltaY) < 1 ? "none" : "scrollBy";
+    await focusBrowserPageForInput(target.webContents);
+    const token = randomUUID();
+    const execute = (script: string) => runFrameScriptWithTimeout(
+      () => target.webContents.executeJavaScript(script, true), normalizeExecuteScriptTimeoutMs(timeoutMs, 1_500)
+    );
+    sendAgentInputEvent(target, { type: "mouseMove", ...cursor });
+    await delay(20);
+    await execute(beginSurfaceScrollScript(token, cursor));
+    let change: { deltaX: number; deltaY: number; method: WorkbenchBrowserAgentScrollEffect["method"] };
+    try {
+      // DOM/CDP deltas describe document displacement; Electron's native
+      // wheel delta describes wheel motion and uses the opposite sign.
+      sendAgentInputEvent(target, { type: "mouseWheel", ...cursor, deltaX: -deltaX, deltaY: -deltaY });
+      await delay(120);
+      assertSharedControlCanContinue(tabId);
+      markSyntheticInput(tabId);
+      change = await execute(finishSurfaceScrollScript(token, deltaX, deltaY));
+    } catch (error) {
+      await execute(finishSurfaceScrollScript(token, 0, 0)).catch(() => undefined);
+      throw error;
     }
+    const actualDeltaX = Math.round(change.deltaX), actualDeltaY = Math.round(change.deltaY);
+    const method = change.method;
 
     const afterPoint = {
       x: Math.round(point.x - actualDeltaX),
@@ -407,50 +466,24 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
     readonly block: WorkbenchBrowserAgentScrollBlock | undefined;
     readonly timeoutMs: number | undefined;
   }): Promise<BrowserAgentAutoScrollResult> => {
-    const point = centerOfAgentElement(element);
-    const scrolled = await autoScrollPointIntoViewport({
-      tabId,
-      target,
-      point,
-      reason,
-      block: block ?? "center",
-      timeoutMs
-    });
-    if (scrolled.effect === undefined || scrolled.effect.scrolled === false) {
-      return {
-        element,
-        point,
-        ...(scrolled.effect === undefined ? {} : { effect: {
-          ...scrolled.effect,
-          targetRef: element.targetRef,
-          elementId: element.id,
-          ...(observationId === undefined ? {} : { beforeObservationId: observationId })
-        } })
-      };
-    }
-    const observed = await observeAgentPage(tabId, {
-      strategy: "interactiveOnly",
-      targetMode: target.targetMode,
-      suppressActivity: true,
-      ...(timeoutMs === undefined ? {} : { timeoutMs })
-    });
-    const rebound = await findAgentElement(
-      tabId,
-      { targetRef: element.targetRef },
-      target.targetMode,
-      timeoutMs
-    );
-    const nextElement = rebound.element ?? element;
+    const frame = findFrameInWebContents(target.webContents, element.frameTreeNodeId) ?? target.webContents.mainFrame;
+    assertSharedControlCanContinue(tabId);
+    markSyntheticInput(tabId);
+    const result = await runFrameScriptWithTimeout(
+      () => frame.executeJavaScript(revealSurfaceTargetScript(element.targetRef, normalizeAgentScrollBlock(block ?? "center")), true),
+      normalizeExecuteScriptTimeoutMs(timeoutMs, 1_500)
+    ).catch(() => null) as { before: WorkbenchBrowserAgentElement["bounds"]; after: WorkbenchBrowserAgentElement["bounds"] } | null;
+    await createSurfaceFrameInput(frame).revealOwners();
+    const nextElement = await refreshStampedElement(element, script => frame.executeJavaScript(script, true));
+    const point = centerOfAgentElement(nextElement);
+    if (!result) return { element: nextElement, point };
+    const deltaX = Math.round(result.before.x - result.after.x), deltaY = Math.round(result.before.y - result.after.y);
     return {
-      element: nextElement,
-      point: centerOfAgentElement(nextElement),
-      effect: {
-        ...scrolled.effect,
-        targetRef: element.targetRef,
-        elementId: element.id,
-        ...(observationId === undefined ? {} : { beforeObservationId: observationId }),
-        afterObservationId: rebound.observationId ?? observed.observationId
-      }
+      element: nextElement, point,
+      effect: { reason, scrolled: deltaX !== 0 || deltaY !== 0, method: deltaX || deltaY ? "scrollIntoView" : "none",
+        before: { x: result.before.x + result.before.width / 2, y: result.before.y + result.before.height / 2 },
+        after: point, deltaX, deltaY, targetRef: element.targetRef, elementId: element.id,
+        ...(observationId === undefined ? {} : { beforeObservationId: observationId }) }
     };
   };
 
@@ -530,21 +563,29 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
 
   const actOnAgentElement = async (
     tabId: string,
-    request: WorkbenchBrowserAgentModeRequest & {
+    request: WorkbenchBrowserAgentModeRequest & PointerOptions & {
       readonly elementId?: number;
       readonly targetRef?: string;
       readonly effect?: BrowserActionEffect;
+      readonly awaitResponse?: boolean;
       readonly interaction: WorkbenchBrowserAgentInteraction;
       readonly timeoutMs?: number;
       readonly verification?: WorkbenchBrowserAgentVerification;
       readonly settle?: boolean;
       readonly optionLabel?: string;
       readonly selectValue?: string;
+      readonly selectValues?: readonly string[];
+      readonly optionQuery?: string;
+      readonly optionOffset?: number;
       readonly workflowId?: string;
       readonly cacheMode?: WorkbenchBrowserWorkflowCacheMode;
       readonly matchLevel?: import("../types").WorkbenchBrowserAgentElementMatchLevel;
     }
   ): Promise<WorkbenchBrowserAgentActionResult> => {
+    validatePointerOptions(request);
+    if (request.cacheMode === "record" && [request.modifiers,request.button,request.holdMs,request.position,request.selectValues].some(value => value !== undefined)) {
+      throw new Error("Workflow recording cannot preserve these extended gesture arguments. Use cacheMode=off; no action was sent.");
+    }
     const startedAt = Date.now();
     const target = await resolveBrowserAgentTarget(tabId, request, request.timeoutMs);
     const verification = normalizeAgentVerification(request.verification);
@@ -607,10 +648,14 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
       };
     }
 
+    const locatedElement = await refreshStampedElement(
+      element,
+      (script) => target.webContents.mainFrame.executeJavaScript(script, true)
+    );
     const visibleTarget = await ensureAgentElementVisible({
       tabId,
       target,
-      element,
+      element: locatedElement,
       observationId,
       reason: "target_offscreen",
       block: "center",
@@ -625,7 +670,9 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
       beforeUrl,
       tabId
     );
-    const effectConflict = browserElementEffectConflict(interactionElement, grantedEffect);
+    const effectConflict = request.interaction === "hover" ? null
+      : request.effect === "observe" ? "effect=observe cannot activate a target. Use hover to inspect it."
+      : browserElementEffectConflict(interactionElement, grantedEffect);
     if (effectConflict !== null) {
       recordFollowAction(tabId, target.targetMode, "act", {
         visibleFollow: target.browserMode.visibleFollow,
@@ -655,68 +702,141 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
     const beforeFocus = verification === "none"
       ? ""
       : await readFocusedElementSignature(target, request.timeoutMs);
-    const { x, y } = centerOfAgentElement(interactionElement);
+    let { x, y } = humanClickPoint(interactionElement.bounds);
+    let inputDelivery: "targetReceived" | "unconfirmed" | undefined;
     let interaction = request.interaction;
     let twoPhase = false;
     if (
       interaction === "select"
+      || interaction === "click" && interactionElement.tagName === "select"
       || (
-        (request.optionLabel !== undefined || request.selectValue !== undefined)
+        (request.optionLabel !== undefined || request.selectValue !== undefined || request.selectValues !== undefined)
         && (interactionElement.role === "combobox" || interactionElement.role === "listbox" || interactionElement.tagName === "select")
       )
     ) {
       twoPhase = true;
       interaction = "click";
     }
-    await performAgentPointerInteraction({
-      tabId,
-      target,
-      x,
-      y,
-      interaction,
-    });
+    const stampRef = interactionElement.targetRef ?? "";
+    const nameFrame = findFrameInWebContents(target.webContents, interactionElement.frameTreeNodeId) ?? target.webContents.mainFrame;
+    let nativeSelected = false;
+    let nativeSelection: { changed: boolean; values: string[] } | undefined;
+    if (twoPhase) {
+      const choices = { ...(request.optionQuery === undefined ? {} : {optionQuery:request.optionQuery}),
+        ...(request.optionOffset === undefined ? {} : {optionOffset:request.optionOffset}), ...(request.optionLabel === undefined ? {} : {optionLabel: request.optionLabel}),
+        ...(request.selectValue === undefined ? {} : {selectValue: request.selectValue}),
+        ...(request.selectValues === undefined ? {} : {selectValues: request.selectValues}) };
+      const ready = await nameFrame.executeJavaScript(activateStampedSurfaceScript(stampRef, 300), true) as StampedSurfacePoint | null;
+      if (!ready?.trusted) return {ok:false, kind:"lyraLumenActionResult", tabId, inputMode:"chromium", targetRef:stampRef,
+        error:{kind:"targetNotActionable",message:`Select is ${ready?.reason ?? "detached"}. No selection changed.`}};
+      assertSharedControlCanContinue(tabId);
+      const selected = await nameFrame.executeJavaScript(nativeSelectScript(stampRef, choices), true) as NativeSelectResult;
+      if (selected.native && !selected.ok || !selected.native && request.selectValues !== undefined) return {
+        ok:false, kind:"lyraLumenActionResult", tabId, inputMode:"chromium", targetRef:stampRef,
+        error:{kind:"selectionRejected",message:selected.message ?? "selectValues requires a native multiple select. Use mapped options for a custom listbox."}};
+      if (selected.inspection) return {ok:true,kind:"lyraLumenActionResult",tabId,targetMode:target.targetMode,
+        inputMode:"chromium",targetRef:stampRef,selectionOptions:selected.inspection,
+        message:"Native select options; no popup opened and no selection changed. Use selectValue/optionLabel, or optionQuery/optionOffset to inspect more choices.",
+        nextRecommendedAction:"browser_act"};
+      nativeSelected = selected.native === true;
+      if (nativeSelected) {
+        twoPhase = false;
+        nativeSelection = {changed: selected.changed === true, values: selected.values ?? []};
+      }
+    }
+    const unnamed = !interactionElement.label.replace(/[\s\u3164\u2800\u200b\u200c\u200d\ufeff]/g, "") || interactionElement.label === "(no label)";
+    const nameProbe = interaction === "hover" && unnamed && stampRef.length > 0
+      ? await runFrameScriptWithTimeout(() => nameFrame.executeJavaScript(beginSurfaceNameProbeScript(stampRef, true), true), 1000).catch(() => null)
+      : null;
+    const responseWatch = interaction === "click" && request.effect === "communicate" && stampRef
+      ? await armResponseWatch(nameFrame, stampRef) : undefined;
+    if (nativeSelected) {
+      // Selection is already complete; do not open the native popup afterward.
+    } else if ((interaction === "click" || interaction === "doubleClick" || interaction === "rightClick" || interaction === "hover") && stampRef.length > 0) {
+      try {
+        ({ x, y, inputDelivery } = await performBoundSurfacePointer(tabId, target, stampRef, interaction, nameFrame, request));
+      } catch (error) {
+        await cancelResponseWatch(nameFrame, responseWatch);
+        if (!(error instanceof BoundPointerError)) throw error;
+        return { ok: false, kind: "lyraLumenActionResult", tabId, inputMode: "chromium",
+          targetMode: target.targetMode, browserMode: target.browserMode, targetRef: stampRef,
+          error: { kind: "targetNotActionable", message: error.message }, nextRecommendedAction: error.nextAction };
+      }
+    } else {
+      await performAgentPointerInteraction({
+        tabId,
+        target,
+        x,
+        y,
+        interaction,
+      });
+    }
     await delay(interaction === "hover" ? 40 : 30);
-    if (
-      interaction === "click"
-      && interactionElement.tagName === "input"
-      && interactionElement.inputType === "file"
-    ) {
-      markPendingFileChooser(tabId, target.targetMode);
+    if (nameProbe) {
+      await runFrameScriptWithTimeout(() => nameFrame.executeJavaScript(finishSurfaceNameProbeScript(stampRef, 1000), true), 1500).catch(() => undefined);
     }
 
     let elementDiffResult = await measureElementDiff(target, interactionElement, request.timeoutMs);
-    if (
-      twoPhase
-      && ("noObservableChange" in elementDiffResult ? elementDiffResult.noObservableChange !== true : true)
-    ) {
-      const observed = await observeAgentPage(tabId, {
+    if (twoPhase) {
+      const { after: observed } = await observeActionSurface(previousCache, () => observeAgentPage(tabId, {
         strategy: "interactiveOnly",
         targetMode: target.targetMode,
         suppressActivity: true,
         ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs })
-      });
+      }), { settle: (remaining, changed) => settleSurfaceRevision(target, remaining, changed) });
       const needle = (request.optionLabel ?? request.selectValue ?? "").trim().toLowerCase();
-      const option = observed.elements.find((candidate) => {
-        const label = `${candidate.label} ${candidate.textSnippet ?? ""}`.toLowerCase();
-        return needle.length > 0 && label.includes(needle);
+      const options = observed.elements.filter((candidate) => {
+        const label = candidate.label.trim().toLowerCase();
+        return needle.length > 0 && label === needle && candidate.frameRef === interactionElement.frameRef
+          && (candidate.role === "option" || candidate.tagName === "option"
+            || !previousCache?.elements.some(prior => prior.targetRef === candidate.targetRef));
       });
-      if (option !== undefined) {
-        const optionCenter = centerOfAgentElement(option);
-        await performAgentPointerInteraction({
-          tabId,
-          target,
-          x: optionCenter.x,
-          y: optionCenter.y,
-          interaction: "click"
-        });
+      if (options.length > 1) return {ok:false,kind:"lyraLumenActionResult",tabId,inputMode:"chromium",
+        error:{kind:"ambiguousOption",message:"Several options match. Query the resulting map and choose an exact targetRef; nothing was selected."},
+        message:observed.mapAppendix ?? ""};
+      const option = options[0];
+      const optionRef = option?.targetRef ?? "";
+      if (needle.length > 0 && option === undefined) {
+        return { ok: false, kind: "lyraLumenActionResult", tabId, inputMode: "chromium", targetMode: target.targetMode,
+          targetRef: interactionElement.targetRef, afterObservationId: observed.observationId,
+          error: { kind: "optionNotFound", message: "The control was opened, but the requested option was not found among its resulting controls. No option was selected." },
+          message: observed.mapAppendix ?? "", nextRecommendedAction: "lyra_lumen.read" };
+      }
+      if (option !== undefined && optionRef.length > 0) {
+        try {
+          await performBoundSurfacePointer(tabId, target, optionRef, "click", nameFrame);
+        } catch (error) {
+          if (!(error instanceof BoundPointerError)) throw error;
+          return { ok: false, kind: "lyraLumenActionResult", tabId, inputMode: "chromium", targetMode: target.targetMode,
+            targetRef: optionRef, error: { kind: "targetNotActionable", message: error.message }, nextRecommendedAction: error.nextAction };
+        }
         await delay(30);
         elementDiffResult = await measureElementDiff(target, interactionElement, request.timeoutMs);
       }
     }
 
-    const after = verification === "full"
-      ? await observeAfterAgentInput(tabId, target.targetMode, request.timeoutMs)
-      : null;
+    // Return the resulting controls in this call, so opening a menu/dialog does
+    // not require another model round trip just to discover its buttons.
+    const observedSurface = verification !== "fast" || responseWatch && request.awaitResponse ? null : await observeActionSurface(previousCache, () => observeAgentPage(tabId, {
+      strategy: "interactiveOnly", targetMode: target.targetMode, suppressActivity: true,
+      ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs })
+    }), {
+      settle: (remaining, changed) => settleSurfaceRevision(target, remaining, changed),
+      focusOnly: isAgentEditableElement(interactionElement),
+      acceptCursorChange: interaction === "hover",
+      ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs })
+    }).catch(() => null);
+    const after = verification === "none"
+      ? null
+      : verification === "full"
+        ? await observeAfterAgentInput(tabId, target.targetMode, request.timeoutMs)
+        : observedSurface?.after ?? null;
+    const surfaceChange = observedSurface?.surfaceChange ?? (after === null ? undefined : { ...compareSurface(previousCache, after), settled: true });
+    if (after !== null) {
+      const current = after.elements.find(element => element.targetRef === interactionElement.targetRef);
+      elementDiffResult = buildElementDiff(elementStateFromCached(interactionElement), current === undefined ? null : elementStateFromCached(current));
+    }
+    const afterMap = after === null ? "" : compactMapObservation(previousCache, after).observation.mapAppendix ?? "";
     if (isAgentEditableElement(interactionElement)) {
       cacheBrowserAgentInputTarget(
         tabId,
@@ -729,7 +849,7 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
     const afterFocus = verification === "none"
       ? ""
       : await readFocusedElementSignature(target, request.timeoutMs);
-    const pageChanged = beforeUrl !== agentTargetAddress(target);
+    const pageChanged = beforeUrl !== agentTargetAddress(target) || surfaceChange?.changed === true;
     const navigationStarted = agentTargetIsLoading(target);
     if (navigationStarted) {
       markPendingSettle(tabId, target.targetMode);
@@ -770,7 +890,9 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
     }
     const runtimeCostMs = Date.now() - startedAt;
     const noObservableChange =
-      !("diffUnavailable" in elementDiffResult)
+      !pageChanged
+      && !navigationStarted
+      && !("diffUnavailable" in elementDiffResult)
       && "noObservableChange" in elementDiffResult
       && elementDiffResult.noObservableChange === true;
     return {
@@ -785,10 +907,14 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
       x,
       y,
       verification,
+      ...(nativeSelection === undefined ? {} : { nativeSelection, method: "nativeSelect" }),
+      ...(responseWatch === undefined ? {} : { responseWatch: { ...responseWatch, targetRef: stampRef } }),
+      ...(interaction === "hover" || inputDelivery === undefined ? {} : { inputDelivery }),
       ...(observationId === undefined ? {} : { beforeObservationId: observationId }),
       ...(after === null ? {} : { afterObservationId: after.observationId }),
       ...(autoScroll === undefined ? {} : { autoScroll }),
       pageChanged,
+      ...(surfaceChange === undefined ? {} : { surfaceChange }),
       ...("diffUnavailable" in elementDiffResult
         ? { diffUnavailable: true }
         : { elementDiff: elementDiffResult }),
@@ -799,16 +925,20 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
       navigationStarted,
       runtimeCostMs,
       ...(request.workflowId === undefined ? {} : { workflowId: request.workflowId }),
-      message: `${request.interaction} sent to element ${interactionElement.id} (${interactionElement.targetRef}) with Chromium virtual input.`,
+      message: `Observed after ${request.interaction} on ${formatAffordanceLine(interactionElement, previousCache?.elements ?? [interactionElement])}.${after === null ? " Input dispatched; no resulting map available." : `\nPage: ${after.url}\n${afterMap}`}`,
       ...(noObservableChange
         ? {
           warning:
-            "Action was dispatched but no observable element state change was detected; verify with lyra_lumen.read before retrying."
+            surfaceChange?.cursorChanged
+              ? "Only CSS cursor hints changed; this does not verify an operation or its outcome."
+              : "No control or page-context change observed within the bounded wait. This does not establish failure; wait for the requested outcome before retrying the action."
         }
         : {}),
-      nextRecommendedAction: noObservableChange
-        ? "lyra_lumen.read"
-        : nextRecommendedActionAfterAgentAction({ navigationStarted, pageChanged })
+      nextRecommendedAction: navigationStarted || surfaceChange?.settled === false
+        ? "lyra_lumen.wait"
+        : noObservableChange && interaction !== "hover" ? "lyra_lumen.read"
+        : after !== null ? "continue_with_cached_targets"
+          : nextRecommendedActionAfterAgentAction({ navigationStarted, pageChanged })
     };
   };
 
@@ -850,7 +980,7 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
           : { priorElement: elementStateFromCached(cachedElement) }),
         ...(cache === undefined
           ? {}
-          : { priorObservation: { elements: cache.elements, url: cache.url } }),
+          : { priorObservation: { elements: cache.elements, url: cache.url, pageNotes: cache.pageNotes ?? [] } }),
         observation
       })
     };
@@ -921,7 +1051,7 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
       const visible = await ensureAgentElementVisible({
         tabId,
         target,
-        element: found.element,
+        element: await refreshStampedElement(found.element, script => target.webContents.mainFrame.executeJavaScript(script, true)),
         observationId: found.observationId,
         reason: ensureReason,
         block: request.block,
@@ -1201,7 +1331,7 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
     const fromY = Math.max(0, Math.round(point.y));
     const toX = Math.max(0, Math.round(to.x));
     const toY = Math.max(0, Math.round(to.y));
-    target.webContents.focus();
+    await focusBrowserPageForInput(target.webContents);
     publishBrowserAgentActivity({
       tabId,
       targetMode: target.targetMode,

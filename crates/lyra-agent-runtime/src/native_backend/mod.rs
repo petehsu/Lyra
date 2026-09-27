@@ -86,6 +86,9 @@ mod prompt_cache;
 mod provider;
 mod provider_config;
 mod providers;
+pub(crate) use providers::protocol::openai_common::{
+    reasoning_replay_items, replay_reasoning_value, valid_reasoning_value,
+};
 mod rollback;
 mod secret_guard;
 pub(crate) mod session_ledger;

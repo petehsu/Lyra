@@ -189,8 +189,8 @@ pub(super) fn compact_to_retention_policy(
     };
     let messages = output.messages.iter().skip(1).cloned().collect::<Vec<_>>();
     let mut keep = select_interleaved_provider_keep(&messages, &policy, aggressiveness);
-    normalize_tool_round_retention(&messages, &mut keep);
     apply_budget_fallback_keep(&messages, &mut keep, &policy);
+    normalize_tool_round_retention(&messages, &mut keep);
     normalize_openai_responses_replay_retention(&messages, &mut keep);
 
     let kept = messages
@@ -265,13 +265,6 @@ fn assistant_message_has_tool_calls(message: &Value) -> bool {
             .is_some_and(|tool_calls| !tool_calls.is_empty())
 }
 
-fn assistant_message_has_reasoning(message: &Value) -> bool {
-    message
-        .get("reasoning_content")
-        .and_then(Value::as_str)
-        .is_some_and(|value| !value.trim().is_empty())
-}
-
 fn normalize_tool_round_retention(messages: &[Value], keep: &mut [bool]) {
     let mut index = 0;
     while index < messages.len() {
@@ -287,15 +280,10 @@ fn normalize_tool_round_retention(messages: &[Value], keep: &mut [bool]) {
             round_end += 1;
         }
         let round_kept = (round_start..round_end).any(|slot| keep[slot]);
-        if round_kept && !assistant_message_has_reasoning(&messages[round_start]) {
-            for slot in round_start..round_end {
-                keep[slot] = false;
-            }
-        } else if !keep[round_start] {
-            for slot in round_start + 1..round_end {
-                keep[slot] = false;
-            }
-        }
+        // A tool round is atomic regardless of whether the model thinks. Keep
+        // its original assistant (including native replay) and all results, or
+        // drop the whole round. Never use reasoning presence as completeness.
+        keep[round_start..round_end].fill(round_kept);
         index = round_end;
     }
 }

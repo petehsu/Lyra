@@ -1,4 +1,4 @@
-import { desktopCapturer, screen, type BrowserWindow } from "electron";
+import { desktopCapturer, nativeImage, screen, type BrowserWindow } from "electron";
 
 import type {
   WorkbenchBrowserClearSiteDataRequest,
@@ -22,9 +22,9 @@ import {
   runHostCapabilityWithTimeout,
   isRecord
 } from "./host-payload";
-import { pickDesktopCaptureSource } from "./desktop-capture";
+import { pickDesktopCaptureSource, waylandSession } from "./desktop-capture";
+import { paintWorkspaceLayers } from "./workspace-capture-blit";
 import { resolveVisualEvidenceTarget } from "./visual-evidence-target";
-import { readAgentBrowserPreviewTarget } from "./agent-browser-preview-target";
 
 export const readTabId = (payload: unknown): string | null => {
   const value = normalizePayload(payload).tabId;
@@ -122,37 +122,48 @@ export type WorkbenchBrowserTabResolver = {
   readonly activateWorkbenchTab?: (tabId: string) => Promise<void>;
 };
 
-const captureLyraWorkspaceWindow = async (
-  getWindow: () => BrowserWindow | null
+const captureFromWindowPixels = async (
+  window: BrowserWindow,
+  captureLayers?: () => Promise<readonly {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+    readonly imageBase64: string;
+  }[]>
 ): Promise<WorkbenchVisualCaptureResult> => {
-  const window = getWindow();
-  if (window === null || window.isDestroyed()) {
-    throw new Error("renderer_bridge_unavailable");
-  }
-  const scale = screen.getPrimaryDisplay().scaleFactor || 1;
-  const { width, height } = window.getSize();
-  const sources = await desktopCapturer.getSources({
-    types: ["window"],
-    thumbnailSize: {
-      width: Math.max(1, Math.round(width * scale)),
-      height: Math.max(1, Math.round(height * scale))
-    }
+  const shell = await window.webContents.capturePage();
+  const shellSize = shell.getSize();
+  const content = window.getContentBounds();
+  const layers = captureLayers === undefined ? [] : await captureLayers();
+  const scaleX = shellSize.width / Math.max(1, content.width);
+  const scaleY = shellSize.height / Math.max(1, content.height);
+  const painted = paintWorkspaceLayers(
+    shell.getBitmap(),
+    shellSize.width,
+    shellSize.height,
+    content.width,
+    content.height,
+    layers.map((layer) => {
+      const page = nativeImage.createFromBuffer(Buffer.from(layer.imageBase64, "base64"));
+      const slotWidth = Math.max(1, Math.round(layer.width * scaleX));
+      const slotHeight = Math.max(1, Math.round(layer.height * scaleY));
+      const fitted = page.resize({ width: slotWidth, height: slotHeight });
+      return {
+        x: layer.x,
+        y: layer.y,
+        width: layer.width,
+        height: layer.height,
+        bitmap: fitted.getBitmap(),
+        bitmapWidth: slotWidth,
+        bitmapHeight: slotHeight
+      };
+    })
+  );
+  const image = nativeImage.createFromBitmap(painted, {
+    width: shellSize.width,
+    height: shellSize.height
   });
-  const source = pickDesktopCaptureSource(sources, "focused-window", window.getTitle());
-  if (source !== undefined && source.thumbnail.isEmpty() === false) {
-    const image = source.thumbnail;
-    const size = image.getSize();
-    return {
-      tabId: "lyra-workspace-window",
-      mimeType: "image/png",
-      imageBase64: image.toPNG().toString("base64"),
-      width: size.width,
-      height: size.height,
-      visibleOnly: true
-    };
-  }
-  // Electron BrowserView pixels are missing from renderer capturePage; this is last resort.
-  const image = await window.webContents.capturePage();
   const size = image.getSize();
   return {
     tabId: "lyra-workspace-window",
@@ -162,6 +173,52 @@ const captureLyraWorkspaceWindow = async (
     height: size.height,
     visibleOnly: true
   };
+};
+
+const captureLyraWorkspaceWindow = async (
+  getWindow: () => BrowserWindow | null,
+  captureLayers?: () => Promise<readonly {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+    readonly imageBase64: string;
+  }[]>
+): Promise<WorkbenchVisualCaptureResult> => {
+  const window = getWindow();
+  if (window === null || window.isDestroyed()) {
+    throw new Error("renderer_bridge_unavailable");
+  }
+  const scale = screen.getPrimaryDisplay().scaleFactor || 1;
+  const { width, height } = window.getSize();
+  // Wayland's portal treats a D-Bus name as a PipeWire address and can freeze
+  // the process. Capture our own pixels instead of asking for a window list.
+  if (waylandSession() === false) try {
+    const sources = await desktopCapturer.getSources({
+      types: ["window"],
+      thumbnailSize: {
+        width: Math.max(1, Math.round(width * scale)),
+        height: Math.max(1, Math.round(height * scale))
+      }
+    });
+    const source = pickDesktopCaptureSource(sources, "focused-window", window.getTitle());
+    if (source !== undefined && source.thumbnail.isEmpty() === false) {
+      const image = source.thumbnail;
+      const size = image.getSize();
+      return {
+        tabId: "lyra-workspace-window",
+        mimeType: "image/png",
+        imageBase64: image.toPNG().toString("base64"),
+        width: size.width,
+        height: size.height,
+        visibleOnly: true
+      };
+    }
+  } catch {
+    // Wayland does not hand Electron a window list. The gin binding then
+    // throws "argument at index 2, conversion failure" instead of an empty list.
+  }
+  return await captureFromWindowPixels(window, captureLayers);
 };
 
 export const createWorkbenchObservationAdapter = ({
@@ -252,7 +309,6 @@ export const createWorkbenchObservationAdapter = ({
     if (!browser) throw new Error("Browser capability is not available");
 
     const explicitTabId = readTabId(payload);
-    const preview = readAgentBrowserPreviewTarget();
     const observationService = getWorkbenchObservationService();
     const listed = observationService === null
       ? null
@@ -273,7 +329,7 @@ export const createWorkbenchObservationAdapter = ({
           return targetTab.tabId;
         }
       }
-      if (preview?.tabId === explicitTabId || livePageExists(explicitTabId)) {
+      if (livePageExists(explicitTabId)) {
         return explicitTabId;
       }
       throw new Error(`Unknown Workbench tab: ${explicitTabId}`);
@@ -283,9 +339,6 @@ export const createWorkbenchObservationAdapter = ({
       const activeWorkspaceTab = findActiveWorkbenchTab(listed.tabs, listed.activeTabId);
       if (activeWorkspaceTab !== null && isBrowserPageTab(activeWorkspaceTab)) {
         return activeWorkspaceTab.tabId;
-      }
-      if (preview?.targetMode === "live") {
-        return preview.tabId;
       }
       const pageTab =
         listed.tabs.find((tab) => isBrowserPageTab(tab) && tab.focusedPane)
@@ -298,8 +351,6 @@ export const createWorkbenchObservationAdapter = ({
       if (activeWorkspaceTab !== null) {
         throw new NonBrowserWorkbenchTabError(activeWorkspaceTab);
       }
-    } else if (preview?.targetMode === "live") {
-      return preview.tabId;
     }
 
     return browser.readActiveTabId() ?? "";
@@ -504,7 +555,10 @@ export const createWorkbenchObservationAdapter = ({
           }
           return await service.captureVisual({ tabId: target.tabId });
         })()
-        : await captureLyraWorkspaceWindow(getWindow);
+        : await captureLyraWorkspaceWindow(
+          getWindow,
+          getBrowserBridge()?.captureVisiblePageLayers
+        );
       return {
         ok: true,
         kind: "workbenchVisualEvidence",

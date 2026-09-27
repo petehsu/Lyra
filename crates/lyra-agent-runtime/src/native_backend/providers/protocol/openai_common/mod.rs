@@ -1,15 +1,14 @@
 mod content;
 mod discovery;
 mod leaked_tool_calls;
+mod reasoning;
 mod schema;
 mod sse;
 mod think_scrubber;
 mod tool_args_repair;
 mod tools;
 
-pub(crate) use content::{
-    content_to_plain_text, message_content, message_reasoning_field, message_reasoning_text,
-};
+pub(crate) use content::{content_to_plain_text, message_content, message_reasoning_text};
 pub(crate) use discovery::{
     ModelDiscoveryScope, discover_models, discover_models_with_capabilities,
     is_discoverable_model_id,
@@ -17,6 +16,9 @@ pub(crate) use discovery::{
 pub(crate) use leaked_tool_calls::{
     content_has_unmapped_trailing_tool_json, extract_leaked_tool_calls,
     leftover_is_planning_monologue,
+};
+pub(crate) use reasoning::{
+    ReasoningAccumulator, reasoning_replay_items, replay_reasoning_value, valid_reasoning_value,
 };
 pub(crate) use schema::strict_tool_schema;
 pub(crate) use sse::{SseEvent, parse_sse_line};

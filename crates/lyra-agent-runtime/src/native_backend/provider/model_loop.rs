@@ -1,11 +1,16 @@
 use super::*;
 
+mod browser_order;
 mod progress_guard;
 mod progress_guard_synthesis;
 mod recovery;
+mod tool_catalog_revision;
+mod tool_result_group;
 pub(crate) use progress_guard::*;
 pub(crate) use progress_guard_synthesis::*;
 use recovery::*;
+use tool_catalog_revision::*;
+use tool_result_group::seal_tool_result_groups;
 
 #[cfg(test)]
 pub(crate) fn run_model_loop(
@@ -87,6 +92,7 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
     let mut retried_without_previous_response = false;
     let mut tool_choice_recovery_active = false;
     let mut attempt_local_overlay_start = None;
+    let mut tool_catalog_revision = current_tool_catalog_revision(session_id);
     loop {
         if cancellation.is_cancelled() || turn_was_cancelled(session_id, turn_id) {
             return Err(AgentRuntimeError::Cancelled);
@@ -101,6 +107,7 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
             },
             "provider_request_started",
         );
+        seal_tool_result_groups(&mut messages);
         let attempt_result = call_model_once_for_loop_async(
             session_id,
             turn_id,
@@ -810,8 +817,22 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                 if has_response_replay {
                     segment_assistant["openaiResponsesShadow"] = Value::Bool(true);
                 }
+                attach_assistant_replay(&mut segment_assistant, &reply);
                 messages.push(segment_assistant.clone());
                 provider_transcript.push(segment_assistant);
+                let auxiliary_messages = take_provider_protocol_auxiliary_messages(
+                    &provider_transcript,
+                    &mut provider_protocol_transcript_cursor,
+                );
+                deferred_provider_protocol_steps.push(provider_protocol_step(
+                    &request,
+                    turn_id,
+                    &reply,
+                    &[],
+                    "complete",
+                    Vec::new(),
+                    auxiliary_messages,
+                ));
                 let input_start = messages.len();
                 advance_stateful_responses(
                     &mut messages,
@@ -844,7 +865,7 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                     prefix.push_str(&this_segment);
                     prefix
                 }
-                None => this_segment,
+                None => this_segment.clone(),
             };
             let continuation_exhausted =
                 reply.stop_signal == TurnStopSignal::MaxTokens && had_truncated_prefix;
@@ -861,25 +882,9 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
             }
             let mut final_assistant = json!({
                 "role": "assistant",
-                "content": final_text,
+                "content": this_segment,
             });
-            if !had_truncated_prefix
-                && reply.provider_replay_protocol.as_deref() != Some(openai_responses::PROTOCOL_ID)
-                && let Some(protocol) = reply.provider_replay_protocol.as_ref()
-                && !reply.provider_replay_items.is_empty()
-            {
-                final_assistant["lyraProviderReplay"] = json!({
-                    "protocol": protocol,
-                    "items": reply.provider_replay_items.clone(),
-                });
-            }
-            if let Some(reasoning_content) = reply
-                .reasoning_content
-                .as_ref()
-                .filter(|value| !value.trim().is_empty())
-            {
-                final_assistant["reasoning_content"] = Value::String(reasoning_content.clone());
-            }
+            attach_assistant_replay(&mut final_assistant, &reply);
             provider_transcript.push(final_assistant);
             let auxiliary_messages = take_provider_protocol_auxiliary_messages(
                 &provider_transcript,
@@ -894,12 +899,8 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                 Vec::new(),
                 auxiliary_messages,
             );
-            final_protocol_step["assistant"]["content"] = Value::String(final_text.clone());
-            if had_truncated_prefix {
-                // The last native reply only represents the final continuation
-                // segment. Replaying it would silently discard the earlier
-                // visible segments, so fall back to the canonical full text.
-                final_protocol_step["replay"] = Value::Null;
+            if !had_truncated_prefix {
+                final_protocol_step["assistant"]["content"] = Value::String(final_text.clone());
             }
             attach_prior_provider_protocol_steps(
                 &mut final_protocol_step,
@@ -987,21 +988,8 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
         });
         if !response_replay_items.is_empty() {
             assistant_message["openaiResponsesShadow"] = Value::Bool(true);
-        } else if let Some(protocol) = reply.provider_replay_protocol.as_ref()
-            && !reply.provider_replay_items.is_empty()
-        {
-            assistant_message["lyraProviderReplay"] = json!({
-                "protocol": protocol,
-                "items": reply.provider_replay_items.clone(),
-            });
         }
-        if let Some(reasoning_content) = reply
-            .reasoning_content
-            .as_ref()
-            .filter(|value| !value.trim().is_empty())
-        {
-            assistant_message["reasoning_content"] = Value::String(reasoning_content.clone());
-        }
+        attach_assistant_replay(&mut assistant_message, &reply);
         messages.push(assistant_message.clone());
         provider_transcript.push(assistant_message);
         let tool_step_message_id = reply.ui_message_id.clone();
@@ -1064,10 +1052,12 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                 let thread_turn_id = turn_id.to_string();
                 let thread_dispatcher = dispatcher.clone();
                 let thread_cancellation = cancellation.clone();
+                let mut browser_order = browser_order::BrowserBatchOrder::default();
                 let tasks = tool_calls
                     .iter()
                     .enumerate()
                     .map(|(idx, call)| {
+                    let browser_turn = browser_order.reserve(tool_protocol::is_browser_tool_name(&call.name));
                     let call = call.clone();
                     let loop_block = loop_blocks[idx].clone();
                     let session_id = thread_session_id.clone();
@@ -1076,6 +1066,7 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                     let cancellation = thread_cancellation.clone();
                     let request_tools = request_tools.clone();
                     Box::pin(async move {
+                        let _browser_turn = browser_turn.enter().await;
                         let result = if let Some(block_msg) = loop_block {
                             json!({
                                 "content": block_msg,
@@ -1311,6 +1302,7 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                             == Some(PLAN_PHASE_REVIEWING)
                 });
             tool_protocol_step["toolResults"] = json!([]);
+            let mut pending_image_parts = Vec::new();
             for (call, output) in tool_calls.iter().zip(outputs.into_iter()) {
                 let failed = tool_output_failed(&output);
                 let (mut content, evidence_ref) =
@@ -1364,6 +1356,9 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                         .cloned()
                         .unwrap_or(Value::Null),
                 });
+                crate::native_backend::tools::tool_search::record_browser_follow_tools(
+                    session_id, &call.name,
+                );
                 if call.name == TOOL_SEARCH_TOOL_NAME {
                     if let Some(matches) = output.pointer("/raw/matches") {
                         tool_message["lyraDiscoveredTools"] = matches.clone();
@@ -1396,14 +1391,18 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                 )?;
                 if let Some(content) =
                     provider_image_message_from_tool_output(&output, &request.capabilities)
+                    && let Some(parts) = content.as_array()
                 {
-                    let user_message = json!({
-                        "role": "user",
-                        "content": content,
-                    });
-                    messages.push(user_message.clone());
-                    provider_transcript.push(user_message);
+                    pending_image_parts.extend(parts.clone());
                 }
+            }
+            if !pending_image_parts.is_empty() {
+                let user_message = json!({
+                    "role": "user",
+                    "content": pending_image_parts,
+                });
+                messages.push(user_message.clone());
+                provider_transcript.push(user_message);
             }
             tool_protocol_step["status"] = json!("complete");
             tool_protocol_step["auxiliaryMessagesAfterToolResults"] =
@@ -1429,21 +1428,34 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                     .tools
                     .iter()
                     .any(|tool| tool.get("defer_loading") == Some(&Value::Bool(true)));
-                persist_discovered_snapshot(session_id, request.host_dispatcher.as_ref());
-                let snapshot = state().lock().ok().and_then(|state| {
-                    state
-                        .sessions
-                        .get(session_id)
-                        .map(|session| session.snapshot.clone())
-                });
-                if let Some(snapshot) = snapshot {
-                    request.tools = assemble_provider_tools(
-                        &snapshot,
-                        request.host_dispatcher.as_ref(),
-                        request.capabilities.context_window,
-                        defer_loading,
+                // Ordinary browser/file actions cannot change the installed
+                // software registry. Rebuild only on discovery changes or an
+                // explicit capability/configuration operation.
+                if current_tool_catalog_revision(session_id) != tool_catalog_revision
+                    || tool_calls.iter().any(tool_can_change_catalog)
+                {
+                    let _timing = super::session_runtime::LocalPhaseTimer::start(
+                        session_id,
+                        turn_id,
+                        "toolCatalogRefresh",
                     );
-                    request.tools = filter_tools_for_session(&snapshot, request.tools);
+                    persist_discovered_snapshot(session_id, request.host_dispatcher.as_ref());
+                    let snapshot = state().lock().ok().and_then(|state| {
+                        state
+                            .sessions
+                            .get(session_id)
+                            .map(|session| session.snapshot.clone())
+                    });
+                    if let Some(snapshot) = snapshot {
+                        request.tools = assemble_provider_tools(
+                            &snapshot,
+                            request.host_dispatcher.as_ref(),
+                            request.capabilities.context_window,
+                            defer_loading,
+                        );
+                        request.tools = filter_tools_for_session(&snapshot, request.tools);
+                    }
+                    tool_catalog_revision = current_tool_catalog_revision(session_id);
                 }
                 if clarification_completed {
                     request.tool_choice = ModelToolChoice::Auto;
@@ -1499,6 +1511,11 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
         // microCompact + MidTurn 压缩 — 在 model loop 中间减小 context。
         // 两级阈值：先 microCompact 清理旧工具结果（不调 LLM），
         // 如果 token 仍超限，MidTurn 用非损 checkpoint 替换旧消息（不调 LLM）。
+        let context_timing = super::session_runtime::LocalPhaseTimer::start(
+            session_id,
+            turn_id,
+            "contextAccounting",
+        );
         let current_tokens = estimate_messages_tokens(&messages);
         if current_tokens > MICRO_COMPACT_THRESHOLD {
             let cleared = micro_compact_messages(&mut messages, MICRO_COMPACT_KEEP_RECENT);
@@ -1528,6 +1545,8 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                 reset_stateful_responses(&mut messages);
             }
         }
+
+        drop(context_timing);
 
         if let Some(nudge) = progress_guard
             .browser_loop_detector

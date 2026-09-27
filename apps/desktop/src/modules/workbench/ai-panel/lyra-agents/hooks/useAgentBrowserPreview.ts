@@ -10,6 +10,19 @@ import {
 
 const PREVIEW_POLL_MS = 500;
 
+const samePages = (
+  current: readonly AgentBrowserPreviewSnapshot[],
+  next: readonly AgentBrowserPreviewSnapshot[]
+): boolean => current.length === next.length && current.every((page, index) => {
+  const other = next[index];
+  return other !== undefined
+    && page.tabId === other.tabId
+    && page.targetMode === other.targetMode
+    && page.url === other.url
+    && page.title === other.title
+    && page.faviconUrl === other.faviconUrl;
+});
+
 export const openAgentBrowserPreviewTarget = (
   preview: AgentBrowserPreviewSnapshot,
   handlers: {
@@ -71,32 +84,33 @@ export const useAgentBrowserPreview = ({
     }
     const readPreview = desktopApi.agent.readAgentBrowserPreview;
     let disposed = false;
-    const poll = (): void => {
-      void readPreview().then(
-        (snapshots) => {
-          if (!disposed) {
-            setItems(Array.isArray(snapshots) ? snapshots : []);
-          }
-        },
-        () => {
-          if (!disposed) {
-            setItems([]);
-          }
-        }
-      );
+    let timer: number | undefined;
+    const poll = async (): Promise<void> => {
+      let next: readonly AgentBrowserPreviewSnapshot[] = [];
+      try {
+        const snapshots = await readPreview();
+        next = Array.isArray(snapshots) ? snapshots : [];
+      } catch {
+        // A missing browser target clears the indicator until the next read.
+      }
+      if (disposed) {
+        return;
+      }
+      setItems((current) => samePages(current, next) ? current : next);
+      // Schedule after completion so a slow IPC call cannot build a queue.
+      timer = window.setTimeout(() => { void poll(); }, PREVIEW_POLL_MS);
     };
-    poll();
-    const timer = window.setInterval(poll, PREVIEW_POLL_MS);
+    void poll();
     return () => {
       disposed = true;
-      window.clearInterval(timer);
+      window.clearTimeout(timer);
     };
   }, [desktopApi, isTurnRunning]);
 
   const promote = useCallback((tabId: string): void => {
     setItems((current) => {
       const found = current.find((item) => item.tabId === tabId);
-      if (found === undefined) {
+      if (found === undefined || current[0] === found) {
         return current;
       }
       return [found, ...current.filter((item) => item.tabId !== tabId)];

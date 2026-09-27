@@ -87,7 +87,15 @@ export type LyraSensitiveValueDeleteRequest = {
   readonly ref: LyraSensitiveValueRef;
 };
 
+export type LyraSensitiveStorageStatus = {
+  readonly available: boolean;
+  readonly backend: string;
+  readonly issue?: "unavailable" | "decryption-failed";
+};
+
 export type LyraSensitiveValueApi = {
+  readonly readStatus: () => Promise<LyraSensitiveStorageStatus>;
+  readonly onStatusChanged: (listener: (status: LyraSensitiveStorageStatus) => void) => () => void;
   readonly store: (
     request: LyraSensitiveValueStoreRequest
   ) => Promise<LyraSensitiveValueStoreResponse>;

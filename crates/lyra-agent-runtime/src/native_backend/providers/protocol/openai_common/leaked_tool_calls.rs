@@ -1,11 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
 use serde_json::{Value, json};
-use uuid::Uuid;
 
 use crate::native_backend::provider::ModelToolCall;
 
-use super::tools::repair_tool_name;
+use super::tools::{repair_tool_name, synthesized_tool_call_id};
 
 const DSML_PREFIXES: &[&str] = &["｜｜DSML｜｜", "||DSML||", "｜DSML｜", "|DSML|"];
 
@@ -29,7 +28,8 @@ pub(crate) fn extract_leaked_tool_calls(
         recovered.extend(calls);
         remaining.replace_range(start..end, "");
     }
-    let (remaining, json_calls) = extract_trailing_json_tool_calls(&remaining, allowed_tool_names);
+    let (remaining, json_calls) =
+        extract_trailing_json_tool_calls(&remaining, allowed_tool_names, recovered.len());
     recovered.extend(json_calls);
     (remaining, recovered)
 }
@@ -41,6 +41,7 @@ pub(crate) fn extract_leaked_tool_calls(
 fn extract_trailing_json_tool_calls(
     content: &str,
     allowed_tool_names: &HashSet<String>,
+    index: usize,
 ) -> (String, Vec<ModelToolCall>) {
     let Some((start, value)) = trailing_json_object(content) else {
         return (content.to_string(), Vec::new());
@@ -51,7 +52,7 @@ fn extract_trailing_json_tool_calls(
     (
         content[..start].to_string(),
         vec![ModelToolCall {
-            id: format!("tool-{}", Uuid::new_v4()),
+            id: synthesized_tool_call_id(index),
             name,
             arguments: value,
         }],
@@ -204,7 +205,7 @@ fn parse_invoke_calls(inner: &str, allowed_tool_names: &HashSet<String>) -> Vec<
         };
         let arguments = parse_parameters(body);
         calls.push(ModelToolCall {
-            id: format!("tool-{}", Uuid::new_v4()),
+            id: synthesized_tool_call_id(calls.len()),
             name,
             arguments,
         });

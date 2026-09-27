@@ -610,11 +610,10 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-browser",
                 "lyra_lumen_map",
-                "Map actionable elements on a Lyra browser page using selectors, focus scan, and weak DOM.",
+                "Map the visible surface: the topmost painted control at each viewport point, collapsed by CSS cursor into one operable control. A short page is one payload. A crowded page is this window plus how many controls remain.",
                 "hostCapability",
                 "hostCapability",
                 lumen_target_schema(json!({
-                    "strategy": { "type": "string", "enum": ["picker", "focus", "hybrid", "domFallback"], "default": "picker" },
                     "timeoutMs": { "type": "number" }
                 })),
                 Some("browser.operate"),
@@ -626,7 +625,6 @@ impl ToolProvider for BuiltInLyraToolProvider {
                 "read",
                 "hostCapability",
                 lumen_target_schema(json!({
-                    "strategy": { "type": "string", "enum": ["focus", "hybrid", "domFallback"], "default": "focus" },
                     "query": { "type": "string" },
                     "reveal": { "type": "boolean", "default": true },
                     "instruction": { "type": "string" },
@@ -638,7 +636,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-browser",
                 "lyra_lumen_see",
-                "Capture a Lyra browser page as a visual evidence artifact. Returns the screenshot dimensions in real device pixels plus a visualFrame captureId/dpr/viewport metadata block; use that exact captureId with lyra_lumen_vact for visual coordinate actions. Optionally draws targetRef highlights and downsamples for vision models.",
+                "Capture a screenshot only when the surface map marks a canvas or cross-origin region with no cursor meaning. Returns device-pixel size and a captureId for lyra_lumen_vact. Do not use this as a second map of ordinary controls.",
                 "read",
                 "hostCapability",
                 lumen_target_schema(json!({
@@ -655,7 +653,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
             capability(
                 "lyra-browser",
                 "lyra_lumen_vact",
-                "Visually click, drag, hover, or scroll using REAL device-pixel coordinates read directly from the latest lyra_lumen_see screenshot. Use only when DOM targetRefs are unavailable or unreliable, such as canvas/WebGL/custom-rendered widgets or blocked frames. Prefer lyra_lumen_act with a targetRef whenever DOM mapping works. Always call lyra_lumen_see first and pass its captureId; if the page layout, scroll position, or device pixel ratio changed, this tool rejects the stale coordinates and asks for a new screenshot.",
+                "Click a canvas or cross-origin region that the surface map could not name, using device-pixel coordinates from the latest lyra_lumen_see captureId. Ordinary buttons, links, and inputs use lyra_lumen_act with a map targetRef.",
                 "hostCapability",
                 "runtimePolicy",
                 lumen_target_schema(json!({
@@ -690,20 +688,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
                 "Click, double-click, right-click, or hover a Lyra Lumen targetRef or visual fallback point. Prefer targetRef; elementId is observation-local compatibility only. If this turn already opened the page in Lyra's browser, complete the visible click there instead of asking whether a member already finished it.",
                 "hostCapability",
                 "runtimePolicy",
-                lumen_target_schema(json!({
-                    "elementId": { "type": "number" },
-                    "targetRef": { "type": "string" },
-                    "point": {
-                        "type": "object",
-                        "properties": {
-                            "x": { "type": "number" },
-                            "y": { "type": "number" },
-                            "reason": { "type": "string" }
-                        }
-                    },
-                    "interaction": { "type": "string", "enum": ["click", "doubleClick", "rightClick", "hover"], "default": "click" },
-                    "timeoutMs": { "type": "number" }
-                })),
+                canonical_browser_schema("act"),
                 Some("browser.operate"),
             ),
             capability(
@@ -728,13 +713,7 @@ impl ToolProvider for BuiltInLyraToolProvider {
                 "Press a non-text keyboard key in the Lyra browser agent page, such as Enter, Tab, Escape, or Arrow keys. Prefer targetRef when focusing a target first; elementId is observation-local compatibility only. Do not use this for typing text or verification-code characters; call lyra_lumen_type once with the full text instead.",
                 "hostCapability",
                 "runtimePolicy",
-                lumen_target_schema(json!({
-                    "elementId": { "type": "number" },
-                    "targetRef": { "type": "string" },
-                    "key": { "type": "string" },
-                    "timeoutMs": { "type": "number" }
-                }))
-                .with_required(vec!["key"]),
+                canonical_browser_schema("press"),
                 Some("browser.operate"),
             ),
             capability(
@@ -985,7 +964,12 @@ impl ToolProvider for BuiltInLyraToolProvider {
                         "timeoutMs": { "type": "number", "default": 30000 },
                         "maxOutputBytes": { "type": "number", "default": 20000 },
                         "env": { "type": "object" },
-                        "envAllowlist": { "type": "array", "items": { "type": "string" } }
+                        "sensitiveEnv": {
+                        "type": "object",
+                        "description": "Optional environment bindings: LYRA_SECRET_* names to lyra-sensitive-value-ref objects from secure storage. Values are resolved only in the process host, never in the command text. Use a credential helper/stdin consumer; never expand into a URL or write to a file.",
+                        "additionalProperties": { "type": "object" }
+                    },
+                    "envAllowlist": { "type": "array", "items": { "type": "string" } }
                     },
                     "required": ["command"]
                 }),
@@ -1379,6 +1363,19 @@ impl JsonSchemaRequired for Value {
         }
         self
     }
+}
+
+// The legacy capability descriptor and provider Tool-FS schema must expose the
+// same input contract. Do not maintain another copy of these gesture fields.
+fn canonical_browser_schema(operation: &str) -> Value {
+    let path = format!("/tools/browser/{operation}");
+    lyra_tool_fs_core::ToolFsRegistry::builtin()
+        .manifests()
+        .iter()
+        .find(|manifest| manifest.path == path)
+        .expect("built-in browser schema")
+        .input_schema
+        .clone()
 }
 
 fn lumen_target_schema(extra_properties: Value) -> Value {

@@ -415,13 +415,8 @@ export const createCdpAuditSession = ({
             );
           }
         }
-        try {
-          await session.sendCommand("Page.setInterceptFileChooserDialog", { enabled: true });
-        } catch (error) {
-          emitSessionWarning(
-            `CDP file chooser interception unavailable: ${toErrorMessage(error)}`
-          );
-        }
+        // Diagnostics observe the page. File chooser interception belongs to
+        // a scoped agent input operation; leaving it on breaks human clicks.
         available = true;
         unavailableReason = undefined;
         return { available: true };

@@ -1,6 +1,8 @@
 use super::*;
 use lyra_agent_plugins::LyraSkillManifest;
 
+mod reasoning_replay;
+
 #[test]
 fn active_skill_prompt_enters_layered_context() {
     let registry = SkillRegistry::default();
@@ -1144,7 +1146,7 @@ fn retention_policy_uses_complexity_aware_trigger() {
 }
 
 #[test]
-fn provider_context_drops_incomplete_tool_rounds_missing_reasoning() {
+fn provider_context_retains_complete_tool_rounds_without_reasoning() {
     let mut messages = vec![json!({
         "role": "system",
         "content": "system",
@@ -1192,7 +1194,7 @@ fn provider_context_drops_incomplete_tool_rounds_missing_reasoning() {
     compact_to_retention_policy(&mut output, retention, TrimAggressiveness::Normal);
 
     let payload = serde_json::to_string(&output.messages).unwrap();
-    assert!(!payload.contains("call-tabs"));
+    assert!(payload.contains("call-tabs"));
     assert!(payload.contains("latest intent"));
 }
 

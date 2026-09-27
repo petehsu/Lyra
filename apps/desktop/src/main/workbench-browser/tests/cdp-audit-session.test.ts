@@ -79,6 +79,8 @@ describe("CdpAuditSession", () => {
       "Accessibility.enable"
     ]));
 
+    expect(fake.sentCommands).not.toContain("Page.setInterceptFileChooserDialog");
+
     fake.emit("Runtime.exceptionThrown", {
       timestamp: 1_765_000_000_000,
       exceptionDetails: {

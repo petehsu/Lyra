@@ -94,13 +94,6 @@
   /* Match the workspace tab bar (34px): meta row 26 + margin 4 + this inset. */
   --lyra-agents-composer-wrap-padding-bottom: var(--lyra-space-4);
   --lyra-agents-composer-toolbar-control-size: var(--lyra-control-h-26);
-  --lyra-agents-composer-browser-preview-height: calc(
-    var(--lyra-agents-composer-toolbar-control-size) + var(--lyra-space-8)
-  );
-  --lyra-agents-composer-browser-preview-width: calc(
-    var(--lyra-agents-composer-toolbar-control-size) * 2
-  );
-  --lyra-agents-composer-browser-preview-peek: var(--lyra-space-10);
   --lyra-agents-composer-toolbar-icon-size: var(--lyra-icon-size-14);
   --lyra-agents-composer-toolbar-plain-icon-size: var(--lyra-icon-size-14);
   --lyra-agents-composer-toolbar-gap: var(--lyra-space-2);
@@ -5409,12 +5402,6 @@
   pointer-events: none;
 }
 
-.lyra-agents-composer-rail:has(.lyra-agents-composer-browser-preview) {
-  align-items: stretch;
-  min-height: var(--lyra-agents-composer-browser-preview-height);
-  margin-bottom: 0;
-}
-
 .lyra-agents-composer-toprow {
   position: relative;
   flex: 1 1 auto;
@@ -5426,10 +5413,6 @@
   gap: var(--lyra-space-6);
   margin-bottom: 0;
   pointer-events: none;
-}
-
-.lyra-agents-composer-rail:has(.lyra-agents-composer-browser-preview) > .lyra-agents-composer-toprow {
-  align-self: start;
 }
 
 .lyra-agents-composer-rail-chip,
@@ -5491,48 +5474,6 @@
 .lyra-agents-todo-capsule-sep {
   margin: 0 var(--lyra-space-2);
   opacity: 0.45;
-}
-
-.lyra-agents-composer-browser-stack {
-  pointer-events: auto;
-  position: relative;
-  flex: 0 0 auto;
-  margin-left: var(--lyra-space-10);
-  margin-bottom: calc(-1 * var(--lyra-stroke-thin));
-  width: calc(
-    var(--lyra-agents-composer-browser-preview-width) +
-      (var(--lyra-agents-composer-browser-stack-count, 1) - 1) *
-      var(--lyra-agents-composer-browser-preview-peek)
-  );
-  height: var(--lyra-agents-composer-browser-preview-height);
-}
-
-.lyra-agents-composer-browser-preview {
-  pointer-events: auto;
-  position: absolute;
-  top: 0;
-  left: calc(
-    var(--lyra-agents-composer-browser-preview-index, 0) *
-      var(--lyra-agents-composer-browser-preview-peek)
-  );
-  z-index: var(--lyra-agents-composer-browser-preview-z, 1);
-  flex: 0 0 auto;
-  width: var(--lyra-agents-composer-browser-preview-width);
-  height: var(--lyra-agents-composer-browser-preview-height);
-  padding: 0;
-  border: var(--lyra-stroke-thin) solid var(--lyra-app-input-border);
-  border-bottom: 0;
-  border-radius: var(--lyra-radius-12) var(--lyra-radius-12) 0 0;
-  overflow: hidden;
-  background: color-mix(in srgb, var(--lyra-text-primary) 8%, transparent);
-  cursor: pointer;
-}
-
-.lyra-agents-composer-browser-preview img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
 }
 
 .lyra-agents-composer-browser-capsule-wrap {

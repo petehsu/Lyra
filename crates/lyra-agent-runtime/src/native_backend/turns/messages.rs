@@ -786,6 +786,11 @@ pub(crate) fn persist_provider_protocol_step(
     message_id: &str,
     provider_protocol: Value,
 ) -> AgentRuntimeResult<()> {
+    let _timing = super::super::session_runtime::LocalPhaseTimer::start(
+        session_id,
+        turn_id,
+        "protocolCheckpoint",
+    );
     let (callback, committed_message) = {
         let mut state = state()
             .lock()

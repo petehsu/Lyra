@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 
 import type { WorkspaceTab } from "../../workspace-tabs/types";
@@ -103,6 +103,14 @@ const mockRect = (
   } as DOMRect));
 };
 
+const flushQueuedCloses = async (): Promise<void> => {
+  await act(async () => {
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0);
+    });
+  });
+};
+
 const fireDragEvent = (
   element: Element,
   type: "dragstart" | "dragover",
@@ -116,7 +124,7 @@ const fireDragEvent = (
 };
 
 describe("BrowserTabStrip", () => {
-  test("renders accessible controls and dispatches tab actions", () => {
+  test("renders accessible controls and dispatches tab actions", async () => {
     const onGoBack = vi.fn();
     const onActivateTab = vi.fn();
     const onCloseTab = vi.fn();
@@ -148,6 +156,7 @@ describe("BrowserTabStrip", () => {
     fireEvent.click(within(nav).getByRole("button", { name: "Back" }));
     fireEvent.click(within(nav).getByRole("button", { name: "Docs" }));
     fireEvent.click(within(nav).getByRole("button", { name: "Close-Docs" }));
+    await flushQueuedCloses();
     fireEvent.click(newTabButton);
 
     expect(within(nav).queryByRole("button", { name: "Stack tabs" })).toBeNull();
@@ -248,7 +257,7 @@ describe("BrowserTabStrip", () => {
     expect(screen.queryByRole("button", { name: "Close-Home" })).toBeNull();
   });
 
-  test("closes a tab on middle click", () => {
+  test("closes a tab on middle click", async () => {
     const onCloseTab = vi.fn();
     render(
       <BrowserTabStrip
@@ -261,10 +270,11 @@ describe("BrowserTabStrip", () => {
     const docsTab = screen.getByLabelText("browser-tabs")
       .querySelector('[data-lyra-tab-id="docs"]') as HTMLElement;
     fireEvent.mouseDown(docsTab, { button: 1 });
+    await flushQueuedCloses();
     expect(onCloseTab).toHaveBeenCalledWith("docs");
   });
 
-  test("closes a tab on the close-button pointer down", () => {
+  test("closes a tab on the close-button pointer down", async () => {
     const onCloseTab = vi.fn();
     render(
       <BrowserTabStrip
@@ -275,6 +285,7 @@ describe("BrowserTabStrip", () => {
     );
 
     fireEvent.pointerDown(screen.getByRole("button", { name: "Close-Docs" }));
+    await flushQueuedCloses();
     expect(onCloseTab).toHaveBeenCalledTimes(1);
     expect(onCloseTab).toHaveBeenCalledWith("docs");
     fireEvent.click(screen.getByRole("button", { name: "Close-Docs" }), { detail: 1 });
@@ -357,7 +368,7 @@ describe("BrowserTabStrip", () => {
     expect(newTab).not.toHaveClass("lyra-browser-tab-item-new");
   });
 
-  test("locks remaining tab widths after close so the next close stays under the cursor", () => {
+  test("locks remaining tab widths after close so the next close stays under the cursor", async () => {
     const onCloseTab = vi.fn();
     render(
       <BrowserTabStrip
@@ -380,6 +391,7 @@ describe("BrowserTabStrip", () => {
     });
 
     fireEvent.click(within(nav).getByRole("button", { name: "Close-Docs" }));
+    await flushQueuedCloses();
 
     expect(onCloseTab).toHaveBeenCalledWith("docs");
     expect(strip).toHaveClass("lyra-tab-strip-close-lock");

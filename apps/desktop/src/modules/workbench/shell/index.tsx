@@ -70,6 +70,7 @@ import { useWorkbenchFileActions } from "./use-workbench-file-actions";
 import { useWorkbenchJsReplSetting } from "./use-workbench-js-repl-setting";
 import { useWorkbenchLabels } from "./use-workbench-labels";
 import { useWorkbenchLinuxCompatNotice } from "./use-workbench-linux-compat-notice";
+import { useWorkbenchCredentialStorageNotifications } from "./use-workbench-credential-storage-notifications";
 import { useWorkbenchObservationBridge } from "./use-workbench-observation-bridge";
 import { useWorkbenchFileAttachChooser } from "./use-workbench-file-attach-chooser";
 import { useWorkbenchDirectoryChooser } from "./use-workbench-directory-chooser";
@@ -79,7 +80,7 @@ import { useAgentProtocolContractCheck } from "./use-agent-protocol-contract-che
 import { useWorkbenchSettingsSurfaceProps } from "./use-workbench-settings-surface-props";
 import { useWorkbenchSidebarAiSurfaceProps } from "./use-workbench-sidebar-ai-surface-props";
 import { useSoftwareCapabilitiesRegistry } from "../software-capabilities";
-import { useWorkbenchProviderFaultNotifications } from "./use-workbench-provider-fault-notifications";
+import { buildProviderRouteNotification, useWorkbenchProviderFaultNotifications } from "./use-workbench-provider-fault-notifications";
 import { useWorkbenchAppUpdateNotifications } from "./use-workbench-app-update-notifications";
 import { useWorkbenchProductAnnouncements } from "./use-workbench-product-announcements";
 import {
@@ -115,7 +116,7 @@ export const WorkbenchShell = ({ onSignedOut = () => undefined }: WorkbenchShell
   useAgentProtocolContractCheck(desktopApi);
 
   const preferencesModel = useWorkbenchPreferencesModel(createInitialWorkbenchPreferences());
-  const { locale } = useWorkbenchLocaleSnapshot();
+  const { locale, revision: localeRevision } = useWorkbenchLocaleSnapshot();
   const { jsReplEnabled, updateJsReplSetting } = useWorkbenchJsReplSetting(desktopApi);
   const [settingsFocusRequest, setSettingsFocusRequest] =
     useState<BrowserSettingsCategoryFocusRequest | null>(null);
@@ -136,7 +137,9 @@ export const WorkbenchShell = ({ onSignedOut = () => undefined }: WorkbenchShell
 
   const t = useMemo(
     () => createTranslator(locale),
-    [locale]
+    // Language bundles arrive asynchronously. Rebuild derived chrome labels
+    // when resources change even if the selected language stays the same.
+    [locale, localeRevision]
   );
   const labels = useWorkbenchLabels(t);
   const rootRef = useRef<HTMLElement | null>(null);
@@ -358,6 +361,7 @@ resolvedThemeId,
     t
   });
   useWorkbenchAppUpdateNotifications({ desktopApi, publishNotification, t });
+  useWorkbenchCredentialStorageNotifications({ desktopApi, publishNotification, t });
   useWorkbenchProviderFaultNotifications({
     desktopApi,
     notificationModel,
@@ -549,6 +553,9 @@ resolvedThemeId,
     labels,
     onOpenAgentConfigFile,
     onOpenSite: tabsModel.openPageInNewTab,
+    onProviderRouteAdjusted: (adjustment) => {
+      publishNotification(buildProviderRouteNotification(adjustment, t));
+    },
   });
   const selectProjectDirectory = useCallback(async (): Promise<string | null> => {
     const api = desktopApi;

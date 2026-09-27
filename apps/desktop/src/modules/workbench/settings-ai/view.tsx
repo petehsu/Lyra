@@ -28,6 +28,7 @@ import type {
   AgentProviderRouteEntry,
   AgentSkillStoreEntry,
 } from "../../../shared/desktop-bridge";
+import type { AgentProviderRouteAdjustment } from "../../../shared/agent";
 import { AgentProviderBrandIcon } from "../agent-provider-brand-icon";
 import type { GlobalDialogModel } from "../global-dialog";
 import { resolveElectronFilePath } from "@workbench/shell/electron-file-path";
@@ -1315,6 +1316,7 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
   const [drilledModelId, setDrilledModelId] = useState<string | null>(null);
   const [providerQuery, setProviderQuery] = useState("");
   const [selectedProviderRouteId, setSelectedProviderRouteId] = useState("");
+  const [routeAdjustment, setRouteAdjustment] = useState<AgentProviderRouteAdjustment | null>(null);
   const [providerBaseUrl, setProviderBaseUrl] = useState("");
   const [providerApiKey, setProviderApiKey] = useState("");
   const [discoveredModelIds, setDiscoveredModelIds] = useState<readonly string[]>([]);
@@ -1345,7 +1347,7 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
     model.quickSetupRoutes,
   ]);
   const selectedProviderRoute =
-    providerRoutes.find((route) => route.id === selectedProviderRouteId)
+    providerRoutes.find((route) => route.id === (routeAdjustment?.toRouteId ?? selectedProviderRouteId))
     ?? null;
   const hasSelectedProviderRoute = selectedProviderRoute !== null;
   const selectedProviderRouteDefaultBaseUrl = selectedProviderRoute?.defaultBaseUrl ?? null;
@@ -1357,10 +1359,10 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
   const selectedProviderProfile = selectedProviderRoute === null
     ? null
     : model.profiles.find((profile) =>
-      profile.routeId === selectedProviderRoute.id
+      (routeAdjustment ? profile.id === routeAdjustment.profileId : profile.routeId === selectedProviderRoute.id)
       && !builtInFreeProviderKeys.has(profile.id)
     ) ?? null;
-  const selectedProviderProfileId = selectedProviderProfile?.id ?? selectedProviderRoute?.id ?? "";
+  const selectedProviderProfileId = routeAdjustment?.profileId ?? selectedProviderProfile?.id ?? selectedProviderRoute?.id ?? "";
   const selectedProviderConfig = selectedProviderProfileId.length === 0
     ? null
     : config.providers?.[selectedProviderProfileId] ?? null;
@@ -1524,6 +1526,7 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
       setProviderQuery(nextValue);
       if (selectedProviderRoute !== null) {
         setSelectedProviderRouteId("");
+        setRouteAdjustment(null);
         setDiscoveredModelIds([]);
         setIsAddingCustomModel(false);
         setCustomModelId("");
@@ -1550,6 +1553,13 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
     if (!hasSelectedProviderRoute) {
       return;
     }
+    // Discovery already saved this profile. Keep its identity and discovered
+    // models when the verified route differs from the initial selection.
+    if (routeAdjustment) {
+      setProviderBaseUrl(routeAdjustment.baseUrl);
+      setProviderApiKey("");
+      return;
+    }
     setProviderBaseUrl(
       selectedProviderProfile?.baseUrl
       ?? selectedProviderConfig?.baseUrl
@@ -1569,6 +1579,7 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
     selectedProviderProfile?.baseUrl,
     selectedProviderRouteDefaultBaseUrl,
     selectedProviderRouteId,
+    routeAdjustment,
   ]);
 
   const setModelEnabled = (entry: SettingsAiRenderedModelEntry, enabled: boolean): void => {
@@ -1637,7 +1648,7 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
     const profileName = getProviderProfileName();
     const baseUrl = selectedRouteNeedsUrl
       ? providerBaseUrl.trim()
-      : selectedProviderRoute.defaultBaseUrl ?? providerBaseUrl.trim();
+      : routeAdjustment?.baseUrl ?? selectedProviderRoute.defaultBaseUrl ?? providerBaseUrl.trim();
     const apiKey = providerApiKey.trim();
     const hasNewSecret = apiKey.length > 0;
 
@@ -1674,6 +1685,10 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
             await model.saveAgentProviderProfile?.(saveRequest);
             return model.refreshAgentModels?.(profileName) ?? null;
           })();
+        if (catalog?.routeAdjustment) {
+          setRouteAdjustment(catalog.routeAdjustment);
+          setProviderQuery(catalog.routeAdjustment.toLabel);
+        }
         const discoveredIds = discoveredModelIdsFromCatalog(
           catalog?.models ?? [],
           profileName,
@@ -1688,15 +1703,27 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
     })();
   };
   const saveDiscoveredProvider = (): void => {
-    const saveRequest = buildProviderSaveRequest(discoveredModelEntries);
+    const saveRequest = buildProviderSaveRequest(
+      discoveredModelEntries.length > 0 ? discoveredModelEntries : undefined
+    );
     if (saveRequest === null) {
       return;
     }
     void (async () => {
-      await model.saveAgentProviderProfile?.(saveRequest);
-      await model.refreshAgentModelCatalog?.();
+      // Saving a newly entered MiMo key must perform the same verification as
+      // Discover. Do not refresh an unrelated default provider instead.
+      if (selectedProviderRoute?.providerId === "mimo"
+        && model.saveAndDiscoverAgentProviderProfile
+        && (providerApiKey.trim().length > 0 || discoveredModelEntries.length === 0)) {
+        const catalog = await model.saveAndDiscoverAgentProviderProfile(saveRequest);
+        if (catalog === null) return;
+      } else {
+        await model.saveAgentProviderProfile?.(saveRequest);
+        await model.refreshAgentModelCatalog?.();
+      }
       setIsAddingModel(false);
       setSelectedProviderRouteId("");
+      setRouteAdjustment(null);
       setProviderQuery("");
       setDiscoveredModelIds([]);
       setIsAddingCustomModel(false);
@@ -1728,7 +1755,11 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
     const saveRequest = buildProviderSaveRequest(mergedEntries);
     if (saveRequest !== null) {
       void (async () => {
-        await model.saveAndDiscoverAgentProviderProfile?.(saveRequest);
+        const catalog = await model.saveAndDiscoverAgentProviderProfile?.(saveRequest);
+        if (catalog?.routeAdjustment) {
+          setRouteAdjustment(catalog.routeAdjustment);
+          setProviderQuery(catalog.routeAdjustment.toLabel);
+        }
       })();
     }
   };
@@ -1775,6 +1806,7 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
                 const nextValue = !value;
                 setProviderQuery("");
                 setSelectedProviderRouteId("");
+                setRouteAdjustment(null);
                 if (!nextValue && !hasConfiguredModels) {
                   setQuery("");
                 }
@@ -1830,6 +1862,7 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
                       description={route.description}
                       onClick={() => {
                         setSelectedProviderRouteId(route.id);
+                        setRouteAdjustment(null);
                         setProviderQuery(route.label);
                       }}
                     />

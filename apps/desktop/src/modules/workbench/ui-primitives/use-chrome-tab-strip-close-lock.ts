@@ -1,5 +1,7 @@
 import {
   useCallback,
+  useEffect,
+  useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent
@@ -61,9 +63,47 @@ export const useChromeTabStripCloseLock = ({
   readonly onClearCloseLock: () => void;
 } => {
   const [closeLockedTabWidth, setCloseLockedTabWidth] = useState<number | null>(null);
+  const pendingIdsRef = useRef<string[]>([]);
+  const pendingWidthRef = useRef<number | null>(null);
+  const flushTimerRef = useRef<number | null>(null);
+  const onCloseTabRef = useRef(onCloseTab);
+  const tabCountRef = useRef(tabCount);
+  onCloseTabRef.current = onCloseTab;
+  tabCountRef.current = tabCount;
 
   const onClearCloseLock = useCallback((): void => {
     setCloseLockedTabWidth(null);
+  }, []);
+
+  const flushPendingCloses = useCallback((): void => {
+    flushTimerRef.current = null;
+    const ids = pendingIdsRef.current;
+    const width = pendingWidthRef.current;
+    pendingIdsRef.current = [];
+    pendingWidthRef.current = null;
+    if (ids.length === 0) {
+      return;
+    }
+    if (width !== null) {
+      setCloseLockedTabWidth(width);
+    }
+    for (const id of ids) {
+      onCloseTabRef.current(id);
+    }
+  }, []);
+
+  useEffect(() => () => {
+    if (flushTimerRef.current === null) {
+      return;
+    }
+    window.clearTimeout(flushTimerRef.current);
+    flushTimerRef.current = null;
+    const ids = pendingIdsRef.current;
+    pendingIdsRef.current = [];
+    pendingWidthRef.current = null;
+    for (const id of ids) {
+      onCloseTabRef.current(id);
+    }
   }, []);
 
   const closeTabWithLock = useCallback((
@@ -74,10 +114,26 @@ export const useChromeTabStripCloseLock = ({
     const tabElement = typeof host.closest === "function"
       ? host.closest<HTMLElement>(CHROME_TAB_CLOSE_SELECTOR)
       : null;
-    const tabWidth = tabElement?.getBoundingClientRect().width ?? 0;
-    setCloseLockedTabWidth(tabCount > 1 && tabWidth > 0 ? Math.round(tabWidth) : null);
-    onCloseTab(tabId);
-  }, [onCloseTab, tabCount]);
+    // Width is stamped at render. Reading layout here forces a reflow of the
+    // whole dirty shell between closes and is what freezes the app.
+    const stampedWidth = Number(tabElement?.dataset.lyraTabWidth ?? "");
+    if (
+      pendingWidthRef.current === null
+      && tabCountRef.current > 1
+      && Number.isFinite(stampedWidth)
+      && stampedWidth > 0
+    ) {
+      pendingWidthRef.current = Math.round(stampedWidth);
+    }
+    if (pendingIdsRef.current.includes(tabId) === false) {
+      pendingIdsRef.current.push(tabId);
+    }
+    if (flushTimerRef.current !== null) {
+      return;
+    }
+    // Already-queued clicks run before this timer, so a burst is one commit.
+    flushTimerRef.current = window.setTimeout(flushPendingCloses, 0);
+  }, [flushPendingCloses]);
 
   return {
     closeLockedTabWidth,

@@ -313,7 +313,40 @@ export type WorkbenchBrowserAgentElementBounds = {
   readonly height: number;
 };
 
+/** Page-provided facts. Absence means unknown, never false. */
+export type WorkbenchBrowserControlSemantics = {
+  readonly checked?: boolean | "mixed" | "unknown";
+  readonly pressed?: boolean | "mixed";
+  readonly selected?: boolean;
+  readonly current?: string;
+  readonly focused?: boolean;
+  readonly busy?: boolean;
+  readonly readOnly?: boolean;
+  readonly required?: boolean;
+  readonly invalid?: string;
+  readonly validationMessage?: string;
+  readonly description?: string;
+  readonly constraints?: Readonly<Record<string, string>>;
+  readonly valueText?: string;
+  readonly context?: readonly string[];
+  readonly controls?: readonly string[];
+  readonly activeDescendant?: string;
+  readonly popup?: string;
+  readonly appearance?: string;
+};
+
+/** Informational context only; these entries cannot be used as action targets. */
+export type WorkbenchBrowserPageNote = {
+  readonly id: string;
+  readonly kind: "dialog" | "status" | "alert" | "progress" | "busy" | "focus" | "recent" | "coverage" | "cursor";
+  readonly text: string;
+};
+
 export type WorkbenchBrowserAgentElement = {
+  readonly cursor?: import("./view-manager-runtime/agent-cursor-semantics").BrowserCursorObservation;
+  readonly cursorOnly?: boolean;
+  /** Actual composed DOM ancestors that are also mapped controls; never inferred from bounds. */
+  readonly ancestorTargetRefs?: readonly string[];
   readonly id: number;
   readonly targetRef: string;
   readonly stableId: string;
@@ -328,8 +361,11 @@ export type WorkbenchBrowserAgentElement = {
   readonly actionHint?: string;
   readonly actionCapabilities?: readonly WorkbenchBrowserSemanticActionCapability[];
   readonly stateHint?: string;
+  readonly semantics?: WorkbenchBrowserControlSemantics;
   readonly tooltipText?: string;
+  readonly tooltipProbe?: "found" | "empty";
   readonly textSnippet?: string;
+  readonly formGroup?: string;
   readonly selectorPreview: string;
   readonly bounds: WorkbenchBrowserAgentElementBounds;
   readonly localBounds?: WorkbenchBrowserAgentElementBounds;
@@ -343,6 +379,7 @@ export type WorkbenchBrowserAgentElement = {
     readonly offscreen: boolean;
     readonly covered: boolean;
     readonly ariaHidden: boolean;
+    readonly inPopup?: boolean;
   };
   readonly checked?: boolean;
   readonly expanded?: boolean;
@@ -387,6 +424,7 @@ export type WorkbenchBrowserAgentObservation = {
   readonly scrollHints?: readonly WorkbenchBrowserAgentScrollHint[];
   readonly hiddenBelowCount?: number;
   readonly mapAppendix?: string;
+  readonly pageNotes?: readonly WorkbenchBrowserPageNote[];
   readonly mapCompaction?: WorkbenchBrowserAgentMapCompaction;
   readonly browserHealth?: readonly BrowserHealthAlert[];
   readonly needsUserAction?: WorkbenchBrowserAxNeedsUserAction;
@@ -649,6 +687,7 @@ export type BrowserAxNode = {
   readonly frameTreeNodeId?: number;
   readonly frameUrl?: string;
   readonly backendDOMNodeId?: number;
+  readonly cdpTargetId?: string;
   readonly nodeId?: string;
   readonly osPath?: string;
   readonly parentAxRef?: string;
@@ -756,6 +795,7 @@ export type WorkbenchBrowserAxElementDiff = {
 };
 
 export type WorkbenchBrowserAxActionResult = {
+  readonly inputDelivery?: "targetReceived" | "unconfirmed";
   readonly ok: boolean;
   readonly kind: "browserAxActionResult";
   readonly tabId: string;
@@ -1005,6 +1045,18 @@ export type WorkbenchBrowserAgentFocusResult = {
 };
 
 export type WorkbenchBrowserAgentActionResult = {
+  readonly selectionOptions?: import("./view-manager-runtime/native-select").NativeSelectInspection;
+  readonly responseWatch?: import("./view-manager-runtime/agent-response-watch").BrowserResponseState & { readonly targetRef: string };
+  readonly inputDelivery?: "targetReceived" | "unconfirmed";
+  readonly surfaceChange?: {
+    readonly changed: boolean;
+    readonly cursorChanged?: boolean;
+    readonly settled: boolean;
+    readonly addedTargetRefs: readonly string[];
+    readonly removedTargetRefs: readonly string[];
+    readonly updatedTargetRefs: readonly string[];
+    readonly contextChanged: boolean;
+  };
   readonly ok: boolean;
   readonly kind: "lyraLumenActionResult";
   readonly tabId: string;
@@ -1035,6 +1087,12 @@ export type WorkbenchBrowserAgentActionResult = {
   readonly inputValuePreview?: string;
   readonly inputTextChanged?: boolean;
   readonly inputAlreadyMatched?: boolean;
+  readonly inputValidation?: { readonly valid: boolean; readonly messages: readonly string[] };
+  readonly inputEvidence?: {
+    readonly valueMatches: boolean;
+    readonly inputEventObserved: boolean;
+    readonly beforeInputCancelled: boolean;
+  };
   readonly inputInsertionMethod?: string;
   readonly staleElement?: boolean;
   readonly staleTarget?: WorkbenchLumenStaleTarget;
@@ -1287,11 +1345,17 @@ export type WorkbenchBrowserViewManager = {
   ) => Promise<WorkbenchBrowserAgentLocateResult>;
   readonly actOnAgentElement: (
     tabId: string,
-    request: WorkbenchBrowserAgentModeRequest & {
+    request: WorkbenchBrowserAgentModeRequest & import("./view-manager-runtime/bound-pointer").PointerOptions & {
       readonly elementId?: number;
       readonly targetRef?: string;
       readonly effect?: BrowserActionEffect;
+      readonly awaitResponse?: boolean;
       readonly interaction: WorkbenchBrowserAgentInteraction;
+      readonly optionLabel?: string;
+      readonly selectValue?: string;
+      readonly selectValues?: readonly string[];
+      readonly optionQuery?: string;
+      readonly optionOffset?: number;
       readonly timeoutMs?: number;
       readonly verification?: WorkbenchBrowserAgentVerification;
     }
@@ -1348,6 +1412,10 @@ export type WorkbenchBrowserViewManager = {
       readonly reason?: "explicit_scroll" | "ensure_visible";
     }
   ) => Promise<WorkbenchBrowserAgentScrollResult>;
+  readonly handleAgentDialog: (tabId:string,request:import("./view-manager-runtime/agent-native-dialog").NativeDialogRequest) => Promise<Record<string,unknown>>;
+  readonly peekAgentDialog: (tabId:string,mode:"live"|"isolated") => Record<string,unknown> | undefined;
+  readonly dragAgentElement: (tabId:string,request:import("./view-manager-runtime/surface-drag").BrowserDragRequest) => Promise<Record<string,unknown>>;
+  readonly uploadAgentFiles: (tabId: string, request: import("./view-manager-runtime/agent-file-input").BrowserUploadRequest) => Promise<Record<string, unknown>>;
   readonly typeIntoAgentElement: (
     tabId: string,
     request: WorkbenchBrowserAgentModeRequest & {
@@ -1356,6 +1424,11 @@ export type WorkbenchBrowserViewManager = {
       readonly effect?: BrowserActionEffect;
       readonly text: string;
       readonly clear?: boolean;
+      readonly fields?: readonly {
+        readonly targetRef: string;
+        readonly text: string;
+        readonly clear?: boolean;
+      }[];
       readonly timeoutMs?: number;
       readonly verification?: WorkbenchBrowserAgentVerification;
     }
@@ -1364,7 +1437,11 @@ export type WorkbenchBrowserViewManager = {
     tabId: string,
     request: WorkbenchBrowserAgentModeRequest & {
       readonly key: string;
+      readonly repeat?: number;
+      readonly selectText?: string;
+      readonly occurrence?: number;
       readonly effect?: BrowserActionEffect;
+      readonly awaitResponse?: boolean;
       readonly elementId?: number;
       readonly targetRef?: string;
       readonly timeoutMs?: number;
@@ -1381,6 +1458,8 @@ export type WorkbenchBrowserViewManager = {
   ) => Promise<WorkbenchBrowserNavigateResult & {
     readonly targetMode: WorkbenchBrowserAgentTargetMode;
     readonly browserMode?: WorkbenchBrowserAgentModeInfo;
+    readonly alreadyOpen?: true;
+    readonly navigationState?: "ready" | "pending" | "failed";
   }>;
   readonly reloadAgentPage: (
     tabId: string,
@@ -1398,19 +1477,27 @@ export type WorkbenchBrowserViewManager = {
     tabId: string,
     request: WorkbenchBrowserAgentModeRequest & {
       readonly strategy?: WorkbenchBrowserAgentObserveStrategy;
+      readonly scope?: "viewport" | "full";
       readonly maxChars?: number;
       readonly timeoutMs?: number;
+      readonly waitTargetRef?: string;
+      readonly waitOperationId?: string;
+      readonly responseStateOnly?: boolean;
+      readonly textTail?: boolean;
+      readonly waitText?: string;
     }
   ) => Promise<
     | (WorkbenchTabExtractTextResult & {
         readonly targetMode: WorkbenchBrowserAgentTargetMode;
         readonly browserMode?: WorkbenchBrowserAgentModeInfo;
         readonly content: string;
+        readonly waitState?: WorkbenchBrowserWaitState;
       })
     | (WorkbenchObservationBrowserDomSummary & {
         readonly targetMode: WorkbenchBrowserAgentTargetMode;
         readonly browserMode?: WorkbenchBrowserAgentModeInfo;
         readonly content: string;
+        readonly waitState?: WorkbenchBrowserWaitState;
       })
   >;
   readonly captureAgentPage: (
@@ -1431,7 +1518,7 @@ export type WorkbenchBrowserViewManager = {
     readonly highlighted?: boolean;
     readonly downsampled?: boolean;
   }>;
-  readonly captureAgentPreviewPage: (
+  readonly readAgentPreviewPage: (
     tabId: string,
     targetMode: WorkbenchBrowserAgentTargetMode
   ) => Promise<{
@@ -1440,10 +1527,6 @@ export type WorkbenchBrowserViewManager = {
     readonly url: string;
     readonly title: string;
     readonly faviconUrl?: string;
-    readonly mimeType: "image/png";
-    readonly imageBase64: string;
-    readonly width: number;
-    readonly height: number;
   } | null>;
   readonly destroyBrowserAgentShadow: (tabId: string) => void;
   readonly detectAgentPageQr: (
@@ -1556,3 +1639,14 @@ export type WorkbenchBrowserElementPickerController = {
   readonly handleConsoleMessage: (tabId: string, message: string) => void;
   readonly readState: () => WorkbenchBrowserElementPickerState | null;
 };
+
+/** DOM facts for browser waits; text stability alone is not task completion. */
+export interface WorkbenchBrowserWaitState {
+  readonly response?: import("./view-manager-runtime/agent-response-watch").BrowserResponseState;
+  readonly readyState: string;
+  readonly busy: boolean;
+  readonly textFingerprint?: string;
+  readonly textMatch?: boolean;
+  readonly coverage?: { readonly scope: "viewport" | "full"; readonly scanComplete: boolean; readonly startChar: number; readonly totalChars: number; readonly frameRef?: string; readonly excerpt?: "head" | "tail" | "frameExcerpts" };
+  readonly target?: { readonly visible: boolean; readonly enabled: boolean };
+}

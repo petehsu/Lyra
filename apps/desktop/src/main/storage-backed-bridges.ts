@@ -1,4 +1,5 @@
 import type { BrowserWindow } from "electron";
+import { LYRA_CHANNELS } from "../shared/desktop-bridge";
 
 import { createImageViewerIpcBridge } from "./image-viewer";
 import { createOfficeIpcBridge } from "./office/ipc";
@@ -40,7 +41,13 @@ export const createStorageBackedIpcBridges = ({
     getWindow
   });
   const sensitiveValues = createSensitiveValuesIpcBridge({
-    loginManager
+    loginManager,
+    onStorageStatus: (status) => {
+      const window = getWindow();
+      if (window !== null && !window.isDestroyed() && !window.webContents.isDestroyed()) {
+        window.webContents.send(LYRA_CHANNELS.sensitiveValuesStatusChanged, status);
+      }
+    }
   });
 
   return {

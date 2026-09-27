@@ -17,6 +17,21 @@ export const browserAgentCacheKey = (
 export const isAgentEditableElement = (element: WorkbenchBrowserAgentElement): boolean =>
   element.editable === true || element.actionHint === "type";
 
+export const typeTargetWhenSeveralFields = (
+  focused: WorkbenchBrowserAgentElement | null,
+  elements: readonly WorkbenchBrowserAgentElement[]
+): WorkbenchBrowserAgentElement | null => {
+  const editables = elements.filter(isAgentEditableElement);
+  if (focused !== null && focused.tagName === "textarea" && editables.length > 1) {
+    const others = editables.filter((candidate) => candidate.targetRef !== focused.targetRef);
+    return others.length === 1 ? others[0] : null;
+  }
+  if (focused !== null) {
+    return focused;
+  }
+  return editables.length === 1 ? editables[0] : null;
+};
+
 export const activeEditableElementFromObservation = (
   observation: WorkbenchBrowserAgentObservation
 ): WorkbenchBrowserAgentElement | null => {
@@ -62,7 +77,8 @@ export const createBrowserAgentStateStore = () => {
       targets: observation.targets,
       targetsByRef: new Map(observation.targets.map((entry) => [entry.targetRef, entry])),
       url: observation.url,
-      title: observation.title
+      title: observation.title,
+      pageNotes: observation.pageNotes ?? []
     });
   };
 
@@ -189,6 +205,7 @@ export const createBrowserAgentStateStore = () => {
     targetMode: WorkbenchBrowserAgentTargetMode
   ): void => {
     cdpFileChooserOpen.delete(browserAgentCacheKey(tabId, targetMode));
+    pendingFileChooserHints.delete(browserAgentCacheKey(tabId, targetMode));
   };
 
   const isActiveFileChooserPending = (

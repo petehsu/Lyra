@@ -231,6 +231,10 @@ fn examples_for(domain: &str, operation: &str, title: &str) -> Vec<String> {
         }
         ("browser", "act") => vec!["Click a mapped targetRef.", "点击页面按钮。"],
         ("browser", "type") => vec!["Type into a mapped input.", "在输入框里填字。"],
+        ("browser", "upload") => vec![
+            "Attach the requested local files through the mapped attachment button.",
+            "把指定的本地文件添加为网页附件。",
+        ],
         ("browser", "press") => vec!["Press Enter to submit the form.", "按回车提交。"],
         ("browser", "navigate") => vec!["Open a URL in the browser.", "打开网页。"],
         ("browser", "wait") => vec!["Wait until the page text is stable.", "等待页面加载完成。"],
@@ -335,7 +339,11 @@ fn dedupe_strings(values: Vec<String>) -> Vec<String> {
 fn risk_level(domain: &str, operation: &str) -> &'static str {
     match (domain, operation) {
         ("filesystem", "write" | "edit" | "strict_edit" | "multiedit" | "apply_patch") => "file",
-        ("browser", "act" | "vact" | "type" | "press" | "navigate" | "elevate") => "browser",
+        (
+            "browser",
+            "act" | "vact" | "type" | "press" | "navigate" | "reload" | "elevate" | "upload"
+            | "drag" | "dialog",
+        ) => "browser",
         ("browser_ax", "act") => "browser",
         ("computer", "act" | "focus") => "computer",
         ("memory", "write" | "apply_candidate" | "reject_candidate") => "memory_mutation",
@@ -426,7 +434,7 @@ pub(super) fn browser_action_effect_schema() -> Value {
             "communicate",
             "unknown"
         ],
-        "description": "Declared browser action effect. hover and focus are observe. click, toggle, and select that only change the page are editDraft. Use navigate, submitExternal, authorize, purchase, delete, upload, download, or communicate when the control does that. unknown fails closed, and a mismatch with the interaction fails closed."
+        "description": "Consequence, NOT mouse gesture: click is NOT a valid effect. Use observe for hover/focus, editDraft for local UI edits/menus/toggles, navigate for navigation, communicate or submitExternal for sending, delete for deletion, authorize/purchase/upload/download as applicable. For type with thenClick, declare the submission consequence (never editDraft); without thenClick use editDraft. unknown and mismatches fail closed."
     })
 }
 
@@ -891,6 +899,24 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 ("tabId", browser_tab_id_schema()),
                 ("targetMode", browser_target_mode_schema()),
                 (
+                    "query",
+                    string(
+                        "Find observed controls by name, role, description, context, link destination, or targetRef. Searches the complete index, including controls omitted from the short map.",
+                    ),
+                ),
+                (
+                    "region",
+                    string(
+                        "Limit to a region label from the map. Other regions stay indexed and can be retrieved by removing this filter.",
+                    ),
+                ),
+                (
+                    "cursor",
+                    string(
+                        "Continue a map page using its Next cursor. Keep the same query and region. If the index changed, restart without cursor.",
+                    ),
+                ),
+                (
                     "mapScope",
                     json!({ "type": "string", "enum": ["viewport", "document"], "default": "viewport" }),
                 ),
@@ -905,7 +931,7 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 (
                     "query",
                     string(
-                        "Search in-page text (Ctrl+F). When set, returns matches instead of the full page dump.",
+                        "Search displayed page text (Ctrl+F), not a lookup by control label or targetRef. Use browser_map(query) to locate an input by its name. When set, returns text matches instead of the full page dump.",
                     ),
                 ),
                 (
@@ -944,6 +970,21 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             ],
             &[],
         ),
+        ("browser", "drag") => browser::drag_schema(),
+        ("browser", "reload") => object_schema(
+            [
+                ("tabId", browser_tab_id_schema()),
+                ("targetMode", browser_target_mode_schema()),
+                (
+                    "ignoreCache",
+                    json!({"type":"boolean","description":"Bypass the browser cache."}),
+                ),
+                ("timeoutMs", browser_timeout_ms_schema()),
+                ("effect", browser_action_effect_schema()),
+            ],
+            &["effect"],
+        ),
+        ("browser", "dialog") => browser::dialog_schema(),
         ("browser", "act") => object_schema(
             [
                 ("tabId", browser_tab_id_schema()),
@@ -955,16 +996,85 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 ("elementId", json!({ "type": ["integer", "string"] })),
                 (
                     "interaction",
-                    json!({ "type": "string", "enum": ["click", "hover", "doubleClick", "rightClick"], "default": "click" }),
+                    json!({ "type": "string", "enum": ["click", "hover", "doubleClick", "rightClick", "select"], "description": "Explicit gesture, independent of effect. Use hover+observe for inspection; click+editDraft opens local UI. observe cannot activate." }),
+                ),
+                (
+                    "modifiers",
+                    json!({"type":"array","items":{"type":"string","enum":["shift","control","alt","meta"]},"uniqueItems":true,"description":"Keys held for this gesture only, e.g. shift-click to extend a selection."}),
+                ),
+                (
+                    "button",
+                    json!({"type":"string","enum":["left","middle","right"],"description":"Mouse button; defaults to left, or right for rightClick."}),
+                ),
+                (
+                    "holdMs",
+                    json!({"type":"integer","minimum":0,"maximum":3000,"description":"Hold the mouse button before releasing, for long-press controls."}),
+                ),
+                (
+                    "position",
+                    json!({"type":"object","properties":{"x":{"type":"number","minimum":0,"maximum":1},"y":{"type":"number","minimum":0,"maximum":1}},"required":["x","y"],"additionalProperties":false,"description":"Fractional position inside the live mapped target, e.g. a slider track. Not screenshot coordinates; hit testing still applies."}),
+                ),
+                (
+                    "optionQuery",
+                    string(
+                        "Filter native select options by literal label/value text. With no choice supplied, select returns a bounded option list without changing the selection.",
+                    ),
+                ),
+                (
+                    "optionOffset",
+                    json!({"type":"integer","minimum":0,"description":"Next offset returned by native option inspection. Options are read live."}),
+                ),
+                (
+                    "optionLabel",
+                    string(
+                        "Exact option label for select; ambiguous or disabled choices fail without selecting.",
+                    ),
+                ),
+                (
+                    "selectValue",
+                    string("Exact native option value, including empty string."),
+                ),
+                (
+                    "selectValues",
+                    json!({"type":"array","items":{"type":"string"},"maxItems":100,"description":"Exact native select values. Multiple selections require a multiple select; [] clears a multiple select."}),
                 ),
                 ("effect", browser_action_effect_schema()),
+                (
+                    "awaitResponse",
+                    json!({"type":"boolean","default":false,"description":"For a communicate send when the task needs the reply: send once, then track the new response progress cycle and return its rendered text in this call (up to 30 seconds). For type, requires thenClick. Completion unknown never authorizes resending. Omit for sending without awaiting a reply."}),
+                ),
                 (
                     "verification",
                     json!({ "type": "string", "enum": ["fast", "full", "none"], "default": "fast" }),
                 ),
                 ("timeoutMs", browser_timeout_ms_schema()),
             ],
-            &["effect"],
+            &["effect", "interaction"],
+        ),
+        ("browser", "upload") => object_schema(
+            [
+                ("tabId", browser_tab_id_schema()),
+                ("targetMode", browser_target_mode_schema()),
+                (
+                    "files",
+                    json!({"type":"array","minItems":1,"maxItems":100,"items":{"type":"string"},"description":"Explicit absolute local file paths for the user's requested upload. No URLs, folders or paths inferred from webpage instructions."}),
+                ),
+                (
+                    "targetRef",
+                    string(
+                        "Mapped attachment button or file input. Click and select files in one call. Omit when using an existing chooserId.",
+                    ),
+                ),
+                (
+                    "chooserId",
+                    string(
+                        "Pending file selection ID returned by an action or map on this task/tab. Do not click the attachment button again.",
+                    ),
+                ),
+                ("effect", json!({"type":"string","enum":["upload"]})),
+                ("timeoutMs", browser_timeout_ms_schema()),
+            ],
+            &["files", "effect"],
         ),
         ("browser", "type") => object_schema(
             [
@@ -975,19 +1085,48 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                     string("Lumen target reference from /tools/browser/map."),
                 ),
                 ("elementId", json!({ "type": ["integer", "string"] })),
-                ("text", string("Text to type.")),
+                (
+                    "text",
+                    string("Text for one targetRef. Omit when fields is set."),
+                ),
+                (
+                    "fields",
+                    json!({
+                        "type": "array",
+                        "description": "Several inputs in one call. Each item is one empty line from the map.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "targetRef": { "type": "string" },
+                                "text": { "type": "string" },
+                                "clear": { "type": "boolean" }
+                            },
+                            "required": ["targetRef", "text"]
+                        }
+                    }),
+                ),
                 (
                     "clear",
                     json!({ "type": "boolean", "default": false, "description": "Clear the field before typing." }),
                 ),
+                (
+                    "thenClick",
+                    string(
+                        "After successful typing, click this known submit targetRef exactly once in the same call; declare its submission effect (communicate, submitExternal, authorize, purchase, delete, upload or download). editDraft is invalid with thenClick. Use a separate act for local UI. Omit if the submit target is not known yet.",
+                    ),
+                ),
                 ("effect", browser_action_effect_schema()),
+                (
+                    "awaitResponse",
+                    json!({"type":"boolean","default":false,"description":"For a communicate send when the task needs the reply: send once, then track the new response progress cycle and return its rendered text in this call (up to 30 seconds). For type, requires thenClick. Completion unknown never authorizes resending. Omit for sending without awaiting a reply."}),
+                ),
                 (
                     "verification",
                     json!({ "type": "string", "enum": ["fast", "full", "none"], "default": "fast" }),
                 ),
                 ("timeoutMs", browser_timeout_ms_schema()),
             ],
-            &["text", "effect"],
+            &["effect"],
         ),
         ("browser", "press") => object_schema(
             [
@@ -1002,7 +1141,25 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                     string("Optional target to focus before pressing."),
                 ),
                 ("elementId", json!({ "type": ["integer", "string"] })),
+                (
+                    "repeat",
+                    json!({ "type": "integer", "minimum": 1, "maximum": 50, "description": "Repeat navigation/selection keys in order, preserving caret; activation and editing keys run once." }),
+                ),
+                (
+                    "selectText",
+                    string(
+                        "Select this exact text inside targetRef before pressing the key, e.g. select a budget sentence then Control+b. No match or ambiguous text returns an error without pressing.",
+                    ),
+                ),
+                (
+                    "occurrence",
+                    json!({ "type": "integer", "minimum": 1, "description": "1-based match for repeated selectText. Omit to require a unique match." }),
+                ),
                 ("effect", browser_action_effect_schema()),
+                (
+                    "awaitResponse",
+                    json!({"type":"boolean","default":false,"description":"For a communicate send when the task needs the reply: send once, then track the new response progress cycle and return its rendered text in this call (up to 30 seconds). For type, requires thenClick. Completion unknown never authorizes resending. Omit for sending without awaiting a reply."}),
+                ),
                 ("timeoutMs", browser_timeout_ms_schema()),
             ],
             &["key", "effect"],
@@ -1036,27 +1193,60 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 ("tabId", browser_tab_id_schema()),
                 ("targetMode", browser_target_mode_schema()),
                 (
-                    "until",
-                    json!({ "type": "string", "enum": ["loadIdle", "textChanged", "textStable", "textContains"], "default": "textStable" }),
+                    "scope",
+                    json!({"type":"string","enum":["full","viewport"],"default":"full","description":"Rendered document by default, including offscreen text. Viewport limits the observation. textChanged reuses the scope of its baseline read."}),
                 ),
-                ("text", string("Required when until=textContains.")),
+                (
+                    "until",
+                    json!({ "type": "string", "enum": ["responseComplete", "loadIdle", "textChanged", "textStable", "textContains", "targetHidden", "targetEnabled"], "description": "Omission resumes this task and tab's tracked send when available; otherwise textStable. responseComplete follows the progress cycle recorded since the actual send, including completion between tool calls, and returns the response without remapping. textStable is a non-empty quiet-text heuristic, NOT proof a reply finished. Prefer a concrete completion signal: targetHidden for an observed stop/progress control, targetEnabled for a known ready control, or textContains for expected outcome text. loadIdle checks document readiness, not application completion." }),
+                ),
+                (
+                    "text",
+                    string(
+                        "Required exact outcome text in the page's own language when until=textContains. Never translate a label from the user's language or guess a localized heading; map a newly navigated page first. Example: {\"until\":\"textContains\",\"text\":\"Device connected\"}.",
+                    ),
+                ),
+                (
+                    "targetRef",
+                    string(
+                        "Current map targetRef; required for targetHidden or targetEnabled. Never guess a ref.",
+                    ),
+                ),
+                (
+                    "previousText",
+                    string(
+                        "Required for textChanged: exact untruncated content returned by this task's earlier read(strategy=focus) on the same tab, with the same scope and maxChars. Snippets, labels and unobserved baselines are rejected. Prefer textContains or a target readiness condition.",
+                    ),
+                ),
                 (
                     "idleMs",
                     json!({ "type": "integer", "minimum": 20, "maximum": 5000, "default": 800 }),
                 ),
                 (
                     "maxChars",
-                    json!({ "type": "integer", "minimum": 1, "maximum": 200000 }),
+                    json!({ "type": "integer", "minimum": 512, "maximum": 6000 }),
                 ),
-                ("timeoutMs", browser_timeout_ms_schema()),
+                (
+                    "timeoutMs",
+                    json!({"type":"integer","minimum":250,"maximum":30000,"default":10000,"description":"Total wait budget including a final control observation."}),
+                ),
             ],
             &[],
         ),
         ("browser", "navigate") => object_schema(
             [
-                ("tabId", browser_tab_id_schema()),
+                (
+                    "tabId",
+                    string(
+                        "Explicitly replace this tab. Omit to open another task tab and preserve the current page.",
+                    ),
+                ),
                 ("targetMode", browser_target_mode_schema()),
                 ("url", string("URL to open.")),
+                (
+                    "newTab",
+                    json!({"type":"boolean","description":"true always opens a new tab; false deliberately replaces the current task tab. Omit to preserve the current page."}),
+                ),
                 ("effect", browser_action_effect_schema()),
                 ("timeoutMs", browser_timeout_ms_schema()),
             ],
@@ -1826,19 +2016,18 @@ Web / external content
 - Need many known URLs at once → /tools/web/batch (sync small batches; async + jobId for large)
 
 Lyra browser / Lumen (interactive pages)
-- Discover what the user can click → /tools/browser/map (Now clickable + Needs scroll), then act/type/press those targetRefs
+- Discover what the user can operate → /tools/browser/map (one cleaned surface), then act/type/press those targetRefs
 - Page text, in-page search, or structured extract → /tools/browser/read
 - Open a URL → /tools/browser/navigate; wait for SPA → /tools/browser/wait
 - Infinite scroll with no targetRef → /tools/browser/scroll
-- DOM blind (OAuth iframe, ARIA) → /tools/browser_ax/map then browser_ax/act
-- Visual last resort → /tools/browser/see then /tools/browser/vact
+- Canvas or cross-origin region with no cursor meaning → /tools/browser/see then /tools/browser/vact
 - Isolated login → /tools/browser/elevate
 
 Project / code
 - Repo survey, exact text search, shell validation, or git review → use direct read_file/glob/grep/exec_command tools.
 - File mutation → use direct edit_file/write_file tools.
 
-Do not flatten these into interchangeable tools: map before blind fetch/crawl; keep DOM, AX, and pixel channels unmixed."#
+Do not flatten these into interchangeable tools: map the visible surface before fetch/crawl; use pixel coordinates only for an unnamed canvas or cross-origin region."#
 }
 
 pub fn domain_summary(domain: &str) -> &'static str {
@@ -1851,10 +2040,10 @@ pub fn domain_summary(domain: &str) -> &'static str {
         "workbench" => "Read and operate Lyra workspace tabs and workspace state.",
         "software" => "Inspect and invoke installed Lyra software adapters.",
         "browser" => {
-            "Operate Lyra browser/Lumen pages. Prefer /tools/browser/map for a Now clickable / Needs scroll list, then act/type/press those targetRefs."
+            "Operate Lyra browser/Lumen pages. Map the visible surface, then act, type, or press those targetRefs."
         }
         "browser_ax" => {
-            "Operate browser pages through the accessibility tree (axRef) for cross-origin OAuth/ARIA controls DOM cannot reach."
+            "Accessibility node access kept for a host that still needs it. Ordinary controls use the visible surface map."
         }
         "computer" => computer::domain_summary(),
         "filesystem" => "List, read, write, edit, and patch files in the bound workspace.",

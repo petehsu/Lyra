@@ -3,7 +3,7 @@ import type { WorkbenchBrowserAgentModeInfo, WorkbenchBrowserAgentModeReason, Wo
 import type { BrowserAgentLoginBorrowResult, BrowserAgentPageTarget, BrowserPageEntry } from "./types";
 
 const agentTargetAddress = (target: BrowserAgentPageTarget): string =>
-  target.liveEntry?.runtime.address ?? target.address;
+  target.webContents.getURL?.() || target.liveEntry?.runtime.address || target.address;
 
 const agentTargetTitle = (target: BrowserAgentPageTarget): string =>
   target.liveEntry?.runtime.title ?? target.title;

@@ -136,6 +136,30 @@ describe("terminal agent tools", () => {
     expect(terminalPermissionRisk("unknown", {})).toBe("dangerous");
   });
 
+  test("empty terminal writes poll output without sending a key or starting a command",async()=>{
+    const registered=new Map<string,(payload:unknown)=>unknown>();
+    const terminalBridge=createTerminalBridgeMock();
+    const bridge=createAgentIpcBridge({runtimeClient:createRuntimeClient(registered),storageRoot:"/tmp/lyra-agent-test",
+      terminalBridge:terminalBridge as never,getWindow:()=>null,getBrowserBridge:()=>null,
+      getWorkbenchObservationService:()=>({openTerminalPane:vi.fn()}) as never,workbenchState:createWorkbenchStateMock()});
+    await registered.get("terminal.write")?.({data:"",runtimeCancellation:{sessionId:"poll-task",turnId:"poll-turn"}});
+    expect(terminalBridge.write).not.toHaveBeenCalled();expect(terminalBridge.readObservation).toHaveBeenCalled();
+    bridge.dispose();
+  });
+
+  test("an invented ID reports only this task's terminal and never writes elsewhere",async()=>{
+    const registered=new Map<string,(payload:unknown)=>unknown>();
+    const terminalBridge=createTerminalBridgeMock();
+    const bridge=createAgentIpcBridge({runtimeClient:createRuntimeClient(registered),storageRoot:"/tmp/lyra-agent-test",
+      terminalBridge:terminalBridge as never,getWindow:()=>null,getBrowserBridge:()=>null,
+      getWorkbenchObservationService:()=>({openTerminalPane:vi.fn()}) as never,workbenchState:createWorkbenchStateMock()});
+    await registered.get("terminal.write")?.({data:"",runtimeCancellation:{sessionId:"own-task",turnId:"turn"}});
+    terminalBridge.write.mockClear();
+    await expect(registered.get("terminal.write")?.({data:"must not run",sessionId:"__new__",runtimeCancellation:{sessionId:"own-task"}})).rejects.toThrow(/current terminal sessionId.*Omit sessionId/);
+    await expect(registered.get("terminal.write")?.({data:"must not run",sessionId:"__new__",runtimeCancellation:{sessionId:"foreign-task"}})).rejects.toThrow(/no private terminal yet/);
+    expect(terminalBridge.write).not.toHaveBeenCalled();bridge.dispose();
+  });
+
   test("host handlers route tools through one terminal target resolver", async () => {
     const registered = new Map<string, (payload: unknown) => unknown>();
     const terminalBridge = createTerminalBridgeMock();

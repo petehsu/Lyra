@@ -1,3 +1,5 @@
+import { focusBrowserPageForInput } from "../workspace-focus-isolation";
+import { dispatchBrowserKeys, browserKeyEvents, isBrowserNavigationKey } from "./agent-keyboard";
 import type {
   BrowserAxNode,
   BrowserAxSnapshot,
@@ -23,6 +25,7 @@ import type {
 } from "../types";
 import { hasBrowserAuthorizeActGrant } from "../../browser-authorize-grant";
 import { agentTargetAddress, agentTargetIsLoading, agentTargetTitle } from "./agent-target-runtime";
+import { prepareLiveAxTarget } from "./ax-live-target";
 import {
   boundsFromCdpBoxModel,
   readAxValueText
@@ -30,7 +33,6 @@ import {
 import {
   BROWSER_AX_SNAPSHOT_TTL_MS
 } from "./ax-snapshot-store";
-import { buildAxActCacheKey } from "./ax-act-cache";
 import {
   BROWSER_AX_ACTIONABLE_ROLES,
   BROWSER_AX_TEXT_ROLES,
@@ -73,8 +75,6 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
     buildSemanticFrameGraph,
     nextMapEpoch,
     axSnapshotStore,
-    axActCache,
-    getActCacheEnabled,
     osAxAdapter
   } = deps;
 
@@ -92,12 +92,13 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
     includeText,
     seenAxRefs,
     sessionId,
+    cdpTargetId,
     boundsOffset,
     allowBounds
   }: {
     readonly debuggerSession: WorkbenchBrowserDebuggerSession;
     readonly axNodes: readonly unknown[];
-    readonly frame: WorkbenchBrowserSemanticFrame | undefined;
+    readonly frame: (Pick<WorkbenchBrowserSemanticFrame, "frameRef" | "url"> & { readonly frameTreeNodeId?: number }) | undefined;
     readonly snapshotHash: string;
     readonly strategy: WorkbenchBrowserAxStrategy;
     readonly maxNodes: number;
@@ -105,6 +106,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
     readonly includeText: boolean;
     readonly seenAxRefs: Set<string>;
     readonly sessionId?: string;
+    readonly cdpTargetId?: string;
     readonly boundsOffset?: { readonly x: number; readonly y: number };
     readonly allowBounds?: boolean;
   }): Promise<readonly BrowserAxNode[]> => {
@@ -145,7 +147,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
       }
 
       const backendNodeId = Number(record.backendDOMNodeId);
-      const hasBackend = Number.isFinite(backendNodeId);
+      const hasBackend = typeof record.backendDOMNodeId === "number" && Number.isInteger(backendNodeId) && backendNodeId > 0;
       let bounds: WorkbenchBrowserAgentElementBounds | undefined;
       if (hasBackend && allowBounds !== false) {
         const box = await debuggerSession
@@ -169,6 +171,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
         role,
         name,
         ...(bounds === undefined ? {} : { boundsX: bounds.x, boundsY: bounds.y }),
+        ...(frame === undefined ? {} : { frameRef: frame.frameRef }),
         frameUrl
       })}`;
       if (seenAxRefs.has(axRef)) {
@@ -187,7 +190,8 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
           : {}),
         state,
         ...(bounds === undefined ? {} : { bounds }),
-        ...(frame === undefined ? {} : { frameRef: frame.frameRef, frameTreeNodeId: frame.frameTreeNodeId }),
+        ...(frame === undefined ? {} : { frameRef: frame.frameRef }),
+        ...(frame?.frameTreeNodeId === undefined ? {} : { frameTreeNodeId: frame.frameTreeNodeId }),
         ...(frameUrl.length > 0 ? { frameUrl } : {}),
         ...(hasBackend ? { backendDOMNodeId: Math.round(backendNodeId) } : {}),
         ...(nodeId === undefined ? {} : { nodeId }),
@@ -195,6 +199,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
         confidence: hasBackend ? (bounds === undefined ? 0.6 : 0.86) : 0.5,
         source: "ax",
         axSource: "cdp",
+        ...(cdpTargetId === undefined ? {} : { cdpTargetId }),
         coordinateSpace: "webContentsCss",
         ...(provider === undefined ? {} : { provider })
       };
@@ -338,6 +343,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
             includeIgnored,
             includeText,
             seenAxRefs,
+            cdpTargetId: targetId,
             sessionId: childSessionId,
             ...(correlated.confidence === "high" && frame.bounds !== undefined
               ? { boundsOffset: { x: frame.bounds.x, y: frame.bounds.y } }
@@ -469,6 +475,8 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
     }
   ): Promise<WorkbenchBrowserAxMapResult> => {
     const target = await resolveBrowserAgentTarget(tabId, request, request.timeoutMs);
+    const referenceScope = axSnapshotStore.referenceScopeFor(tabId, target.targetMode);
+    const mapEpoch = nextMapEpoch(tabId, target.targetMode);
     const strategy = normalizeAxStrategy(request.strategy);
     const maxNodes = Math.max(
       1,
@@ -493,7 +501,6 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
       session = read.session;
       axNodes = read.axNodes;
       const createdAt = Date.now();
-      const mapEpoch = nextMapEpoch(tabId, target.targetMode);
       const snapshotHash = browserAxSnapshotHash(tabId, target.targetMode, createdAt, mapEpoch);
       const snapshotId = `ax-snap-${snapshotHash}`;
       const seenAxRefs = new Set<string>();
@@ -502,13 +509,40 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
         debuggerSession: session,
         axNodes,
         frame: mainFrame,
-        snapshotHash,
+        snapshotHash: referenceScope.hash,
         strategy,
         maxNodes,
         includeIgnored,
         includeText,
         seenAxRefs
       });
+      // getFullAXTree is scoped to one document, even for same-process iframes.
+      // Read those documents on this session; OOPIFs are read below on their own.
+      const frameNodes: BrowserAxNode[] = [];
+      if (request.includeFrames !== false && mainNodes.length < maxNodes) {
+        const tree = await session.sendCommand("Page.getFrameTree").catch(() => ({}));
+        const descendants = (entry: unknown): Record<string, unknown>[] => {
+          if (!isRecord(entry) || !Array.isArray(entry.childFrames)) return [];
+          return entry.childFrames.flatMap((child) => isRecord(child) ? [child, ...descendants(child)] : []);
+        };
+        for (const entry of descendants(isRecord(tree) ? tree.frameTree : undefined)) {
+          if (mainNodes.length + frameNodes.length >= maxNodes) break;
+          const frame = entry.frame;
+          if (!isRecord(frame) || typeof frame.id !== "string") continue;
+          const read = await session.sendCommand("Accessibility.getFullAXTree", { frameId: frame.id }).catch(() => ({}));
+          if (!isRecord(read) || !Array.isArray(read.nodes)) continue;
+          const url = typeof frame.url === "string" ? frame.url : "";
+          const candidates = frameGraph.frames.filter((candidate) => !candidate.isMainFrame && candidate.url === url);
+          const known = candidates.length === 1 ? candidates[0] : undefined;
+          frameNodes.push(...await compressAxTree({
+            debuggerSession: session, axNodes: read.nodes,
+            frame: known ?? { frameRef: `cdp-frame:${frame.id}`, url },
+            snapshotHash: referenceScope.hash, strategy,
+            maxNodes: maxNodes - mainNodes.length - frameNodes.length,
+            includeIgnored, includeText, seenAxRefs
+          }));
+        }
+      }
       // Phase 4: merge cross-process iframe AX trees when the frame graph shows OOPIF frames and
       // includeFrames is not disabled.
       const oopifNodes = request.includeFrames === false
@@ -516,21 +550,21 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
         : await readOopifAxNodes({
             session,
             frameGraph,
-            snapshotHash,
+            snapshotHash: referenceScope.hash,
             strategy,
             maxNodes,
             includeIgnored,
             includeText,
             seenAxRefs,
-            remainingBudget: maxNodes - mainNodes.length
+            remainingBudget: maxNodes - mainNodes.length - frameNodes.length
           });
       const osAxRead = await readOsAxNodes({
-        snapshotHash,
-        maxNodes: maxNodes - mainNodes.length - oopifNodes.length,
+        snapshotHash: referenceScope.hash,
+        maxNodes: maxNodes - mainNodes.length - frameNodes.length - oopifNodes.length,
         includeText,
         seenAxRefs
       });
-      const nodes = [...mainNodes, ...oopifNodes, ...osAxRead.nodes];
+      const nodes = [...mainNodes, ...frameNodes, ...oopifNodes, ...osAxRead.nodes];
 
       const url = agentTargetAddress(target);
       const title = agentTargetTitle(target);
@@ -563,7 +597,9 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
             .map((node) => [node.axRef, { osPath: node.osPath as string }])
         )
       };
-      axSnapshotStore.rememberSnapshot(snapshot);
+      if (!axSnapshotStore.rememberSnapshot(snapshot, referenceScope)) {
+        throw new Error("The document changed during the AX map. Read the current page again.");
+      }
 
       const noAxButAuthFrame = nodes.length === 0
         && blockedRegions.some((region) => region.kind === "auth-prompt" || region.kind === "cross-origin");
@@ -611,7 +647,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
     const snapshot = request.snapshotId !== undefined
       ? axSnapshotStore.getSnapshot(request.snapshotId)
       : axSnapshotStore.getLatest(tabId, targetMode);
-    if (snapshot === undefined) {
+    if (snapshot === undefined || snapshot.tabId !== tabId || snapshot.targetMode !== targetMode) {
       return {
         ok: true,
         kind: "browserAxQuery",
@@ -659,22 +695,19 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
   };
 
   const sendActivationKey = async (target: BrowserAgentPageTarget, key: string): Promise<void> => {
-    target.webContents.focus();
-    sendAgentInputEvent(target, { type: "keyDown", keyCode: key });
-    if (key.length === 1) {
-      sendAgentInputEvent(target, { type: "char", keyCode: key });
-    }
-    sendAgentInputEvent(target, { type: "keyUp", keyCode: key });
+    await focusBrowserPageForInput(target.webContents);
+    dispatchBrowserKeys(browserKeyEvents(key), event => sendAgentInputEvent(target, event));
     await delay(30);
   };
 
   const dispatchPointerInput = async (
     target: BrowserAgentPageTarget,
     bounds: WorkbenchBrowserAgentElementBounds,
-    interaction: WorkbenchBrowserAxInteraction
+    interaction: WorkbenchBrowserAxInteraction,
+    point?: { readonly x: number; readonly y: number }
   ): Promise<{ readonly x: number; readonly y: number }> => {
-    const center = boundsCenterPoint(bounds);
-    target.webContents.focus();
+    const center = point ?? boundsCenterPoint(bounds);
+    await focusBrowserPageForInput(target.webContents);
     sendAgentInputEvent(target, {
       type: "mouseMove",
       x: center.x,
@@ -702,46 +735,6 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
       await delay(30);
     }
     return center;
-  };
-
-  const tryResolveNodeAction = async (
-    target: BrowserAgentPageTarget,
-    backendDOMNodeId: number,
-    focusOnly: boolean
-  ): Promise<boolean> => {
-    let session: WorkbenchBrowserDebuggerSession | null = null;
-    try {
-      session = await openDebuggerSessionForTarget(target);
-      const resolved = await session
-        .sendCommand("DOM.resolveNode", { backendNodeId: Math.round(backendDOMNodeId) })
-        .catch(() => ({}));
-      const object = (resolved as Record<string, unknown>).object;
-      const objectId = object !== null && typeof object === "object"
-        ? (object as Record<string, unknown>).objectId
-        : undefined;
-      if (typeof objectId !== "string") {
-        return false;
-      }
-      const declaration = focusOnly
-        ? "function(){ if (this && this.focus) { this.focus(); return true; } return false; }"
-        : "function(){ if (this && this.focus) { this.focus(); } if (this && this.click) { this.click(); return true; } return false; }";
-      const result = await session
-        .sendCommand("Runtime.callFunctionOn", {
-          objectId,
-          functionDeclaration: declaration,
-          returnByValue: true
-        })
-        .catch(() => ({}));
-      const value = (result as Record<string, unknown>).result;
-      const inner = value !== null && typeof value === "object"
-        ? (value as Record<string, unknown>).value
-        : undefined;
-      return inner === true;
-    } catch {
-      return false;
-    } finally {
-      await session?.close().catch(() => undefined);
-    }
   };
 
   const axActOnNode = async (
@@ -781,30 +774,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
       };
     }
     const resolution = axSnapshotStore.resolveAxRef(request.axRef);
-    // ActCache replay: when the toggle is on and an intent is supplied, look up
-    // a previously-recorded successful result for this (url, snapshot, axRef,
-    // interaction, intent) tuple. Hits are only possible within the same AX
-    // snapshot (snapshotHash is in the key), so the page state is identical to
-    // when the act was first verified — safe to replay the recorded outcome.
-    if (getActCacheEnabled !== undefined && getActCacheEnabled() && request.intent !== undefined && resolution.kind === "ok") {
-      const cacheKey = buildAxActCacheKey({
-        url: resolution.snapshot.url,
-        snapshotHash: resolution.snapshot.snapshotHash,
-        axRef: request.axRef,
-        interaction,
-        intent: request.intent
-      });
-      const lookup = axActCache.get(cacheKey);
-      if (lookup.hit && lookup.entry !== undefined) {
-        return {
-          ...lookup.entry.result,
-          cacheHit: true,
-          replayed: true,
-          nextRecommendedAction: "browser_ax.query"
-        };
-      }
-    }
-    if (resolution.kind === "stale") {
+    if (resolution.kind === "stale" || resolution.snapshot.tabId !== tabId || resolution.snapshot.targetMode !== targetMode) {
       return {
         ok: false,
         kind: "browserAxActionResult",
@@ -828,7 +798,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
         interaction,
         pageChanged: false,
         navigationStarted: false,
-        error: { kind: "unknownAxRef", message: "axRef is not present in the latest AX snapshot." },
+        error: { kind: "unknownAxRef", message: "axRef is not present in this document." },
         nextRecommendedAction: "browser_ax.map"
       };
     }
@@ -883,7 +853,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
     // Respect user takeover / shared-control interruption (throws SharedControlInterruptionError).
     assertSharedControlCanContinue(tabId);
     const beforeUrl = agentTargetAddress(target);
-    publishBrowserAgentActivity({
+    await publishBrowserAgentActivity({
       tabId,
       targetMode: target.targetMode,
       action: "act",
@@ -972,93 +942,54 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
     let x: number | undefined;
     let y: number | undefined;
 
-    const wantsKeyboardOnly = interaction === "focus";
-    const requiresTrustedInput = risk.highRisk && !wantsKeyboardOnly && interaction !== "hover";
-    const canTier1 = node.backendDOMNodeId !== undefined
-      && (interaction === "click" || interaction === "focus" || interaction === "toggle");
-
-    // High-risk auth/payment actions need a trusted activation path. JS click often reports
-    // success while OAuth/FedCM ignores it, so do not use resolveNode for those actions.
-    if (requiresTrustedInput && node.bounds !== undefined) {
-      const center = await dispatchPointerInput(target, node.bounds, interaction);
-      x = center.x;
-      y = center.y;
-      method = "cdpInput";
-    }
-
-    // Tier 1: resolveNode + callFunctionOn for ordinary nodes, or focus-only actions.
-    if (method === undefined && canTier1 && !requiresTrustedInput) {
-      const ok = await tryResolveNodeAction(target, node.backendDOMNodeId!, wantsKeyboardOnly);
-      if (ok) {
-        method = "resolveNode";
+    // Focus/follow work must finish before resolving a live hit point.
+    await focusBrowserPageForInput(target.webContents);
+    const pointer = {
+      send: (event: Electron.MouseInputEvent) => sendAgentInputEvent(target, event),
+      check: () => {
+        assertSharedControlCanContinue(tabId);
+        if (axSnapshotStore.resolveAxRef(request.axRef).kind !== "ok") throw new Error("staleAxRef");
       }
-    }
-
-    // Tier 2: pointer click at bounds center
-    if (method === undefined && node.bounds !== undefined && !wantsKeyboardOnly) {
-      const center = await dispatchPointerInput(target, node.bounds, interaction);
-      x = center.x;
-      y = center.y;
-      method = "cdpInput";
-    }
-
-    if (method === undefined && requiresTrustedInput) {
-      recordFollowAction(tabId, target.targetMode, "act", {
-        visibleFollow: target.browserMode.visibleFollow,
-        inputActive: false,
-        result: "failure"
-      });
-      return {
-        ok: false,
-        kind: "browserAxActionResult",
-        tabId,
-        targetMode: target.targetMode,
-        axRef: request.axRef,
-        interaction,
-        pageChanged: false,
-        navigationStarted: false,
-        error: {
-          kind: "trustedAxInputUnavailable",
-          message: "High-risk AX action requires pointer bounds or OS AX. Refusing DOM click fallback."
-        },
-        nextRecommendedAction: "lyra_lumen.see"
-      };
-    }
-
-    // Tier 3: focus + keyboard activation
-    if (method === undefined) {
-      let focused = false;
-      if (node.backendDOMNodeId !== undefined) {
-        focused = await tryResolveNodeAction(target, node.backendDOMNodeId, true);
-      }
-      if (focused || wantsKeyboardOnly) {
-        if (!wantsKeyboardOnly) {
-          await sendActivationKey(target, activationKeyForRole(node.role));
+    };
+    const session = await openDebuggerSessionForTarget(target);
+    let prepared: Awaited<ReturnType<typeof prepareLiveAxTarget>>;
+    try {
+      let offset = { x: 0, y: 0 };
+      if (node.cdpTargetId !== undefined) {
+        const graph = await buildSemanticFrameGraph(target, request.timeoutMs ?? 8_000);
+        const frame = graph.frames.find((entry) => entry.frameRef === node.frameRef);
+        if (frame?.bounds === undefined) {
+          prepared = { reason: "missingFrame" };
+        } else {
+          offset = frame.bounds;
+          prepared = await prepareLiveAxTarget(session, node, interaction, offset, pointer);
         }
-        method = "keyboard";
+      } else {
+        prepared = await prepareLiveAxTarget(session, node, interaction, offset, pointer);
       }
+    } finally {
+      await session.close().catch(() => undefined);
     }
-
-    if (method === undefined) {
-      recordFollowAction(tabId, target.targetMode, "act", {
-        visibleFollow: target.browserMode.visibleFollow,
-        inputActive: false,
-        result: "failure"
-      });
+    // Navigation or takeover during preparation also cancels input.
+    assertSharedControlCanContinue(tabId);
+    const current = axSnapshotStore.resolveAxRef(request.axRef);
+    if (current.kind !== "ok" && !prepared.dispatched) prepared = { reason: "detached" };
+    if (prepared.focused === true) {
+      method = "resolveNode";
+    } else if (prepared.bounds !== undefined && prepared.point !== undefined) {
+      const point = prepared.dispatched ? prepared.point : await dispatchPointerInput(target, prepared.bounds, interaction, prepared.point);
+      x = point.x;
+      y = point.y;
+      method = "cdpInput";
+    } else {
       return {
-        ok: false,
-        kind: "browserAxActionResult",
-        tabId,
-        targetMode: target.targetMode,
-        axRef: request.axRef,
-        interaction,
-        pageChanged: false,
-        navigationStarted: false,
+        ok: false, kind: "browserAxActionResult", tabId, targetMode: target.targetMode,
+        axRef: request.axRef, interaction, pageChanged: false, navigationStarted: false,
         error: {
-          kind: "axActionUnavailable",
-          message: "AX node has no usable bounds or DOM binding. Fall back to lyra_lumen.see."
+          kind: prepared.reason === "detached" ? "staleAxRef" : "axTargetNotActionable",
+          message: `AX target interaction stopped (${prepared.reason ?? "unavailable"}). Inspect the current state before another action; this operation was not automatically replayed.`
         },
-        nextRecommendedAction: "lyra_lumen.see"
+        nextRecommendedAction: "browser_ax.map"
       };
     }
 
@@ -1163,6 +1094,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
       method,
       ...(x === undefined ? {} : { x }),
       ...(y === undefined ? {} : { y }),
+      ...(prepared.inputDelivery === undefined ? {} : { inputDelivery: prepared.inputDelivery }),
       pageChanged,
       navigationStarted,
       ...(focusChanged === undefined ? {} : { focusChanged }),
@@ -1171,33 +1103,6 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
       pathTaken: "fast",
       nextRecommendedAction: navigationStarted || pageChanged ? "browser_ax.map" : "browser_ax.query"
     };
-    // Record successful acts into the ActCache when the toggle is on and an
-    // intent is supplied. The key folds snapshotHash so this entry is only
-    // replayable while the same AX snapshot is live.
-    if (getActCacheEnabled !== undefined && getActCacheEnabled() && request.intent !== undefined && !pageChanged && !navigationStarted) {
-      const cacheKey = buildAxActCacheKey({
-        url: resolution.kind === "ok" ? resolution.snapshot.url : "",
-        snapshotHash: resolution.kind === "ok" ? resolution.snapshot.snapshotHash : "",
-        axRef: request.axRef,
-        interaction,
-        intent: request.intent
-      });
-      if (cacheKey.length > 0 && resolution.kind === "ok") {
-        axActCache.set({
-          tabId,
-          targetMode: target.targetMode,
-          axRef: request.axRef,
-          interaction,
-          intent: request.intent,
-          snapshotHash: resolution.snapshot.snapshotHash,
-          url: resolution.snapshot.url,
-          result,
-          recordedAt: Date.now(),
-          ttlMs: BROWSER_AX_SNAPSHOT_TTL_MS
-        });
-        return { ...result, cacheMiss: true };
-      }
-    }
     return result;
   };
 
@@ -1213,19 +1118,9 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
     }
   ): Promise<WorkbenchBrowserAxActionResult> => {
     const targetMode = request.targetMode ?? "live";
-    const observationalKey =
-      request.key === "Tab"
-      || request.key === "Shift+Tab"
-      || request.key === "ArrowUp"
-      || request.key === "ArrowDown"
-      || request.key === "ArrowLeft"
-      || request.key === "ArrowRight"
-      || request.key === "Escape"
-      || request.key === "Home"
-      || request.key === "End"
-      || request.key === "PageUp"
-      || request.key === "PageDown";
-    if (request.effect === "unknown" || observationalKey !== (request.effect === "observe")) {
+    const observationalKey = isBrowserNavigationKey(request.key);
+    if (request.effect === "unknown" || (observationalKey
+      ? !["observe", "editDraft"].includes(request.effect) : request.effect === "observe")) {
       return {
         ok: false,
         kind: "browserAxActionResult",
@@ -1372,7 +1267,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
     let snapshotId = "";
 
     for (let step = 1; step <= maxSteps; step += 1) {
-      target.webContents.focus();
+      await focusBrowserPageForInput(target.webContents);
       sendAgentInputEvent(target, {
         type: "keyDown",
         keyCode: "Tab",
@@ -1446,7 +1341,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
       return {
         ok: true,
         kind: "browserAxExplanation",
-        summary: "The axRef is stale or unknown. A newer map replaced it, or the page navigated. Re-run browser_ax.map.",
+        summary: "The axRef is unknown in this document, or navigation invalidated it. Re-run browser_ax.map.",
         domAvailable: false,
         axAvailable: false,
         visualFallbackRecommended: true,
@@ -1499,7 +1394,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
       };
     }
     const resolution = axSnapshotStore.resolveAxRef(request.axRef);
-    if (resolution.kind === "stale") {
+    if (resolution.kind === "stale" || resolution.snapshot.tabId !== tabId || resolution.snapshot.targetMode !== targetMode) {
       return {
         ok: false,
         kind: "browserAxRefBbox",
@@ -1517,7 +1412,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
         tabId,
         targetMode,
         axRef: request.axRef,
-        error: { kind: "unknownAxRef", message: "axRef is not present in the latest AX snapshot." },
+        error: { kind: "unknownAxRef", message: "axRef is not present in this document." },
         nextRecommendedAction: "browser_ax.map"
       };
     }

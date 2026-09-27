@@ -12,6 +12,15 @@ pub(crate) const DISCOVERED_TOOL_NAMES_KEY: &str = "discoveredToolNames";
 /// turn without an office file drops these schemas again.
 pub(crate) const EPHEMERAL_OFFICE_TOOLS_KEY: &str = "ephemeralOfficeTools";
 const OFFICE_TOOL_NAMES: &[&str] = &["software__office__read", "software__office__apply"];
+const BROWSER_FOLLOW_TOOLS: &[&str] = &[
+    "browser_upload",
+    "browser_type",
+    "browser_act",
+    "browser_press",
+    "browser_wait",
+    "browser_drag",
+    "browser_dialog",
+];
 const DEFAULT_SEARCH_LIMIT: usize = 5;
 const MAX_SEARCH_LIMIT: usize = 25;
 const LISTING_MAX_TOKENS: usize = 4000;
@@ -31,7 +40,7 @@ const EAGER_DEFERRED_EXCLUSIONS: &[&str] = &[
 
 const TOOL_SEARCH_PROMPT_HEAD: &str =
     "Fetches full schema definitions for deferred tools so they can be called.";
-const TOOL_SEARCH_PROMPT_TAIL: &str = " Until fetched, only the name is known — there is no parameter schema, so the tool cannot be invoked. Query forms:\n- \"select:browser_read,computer_map\" — fetch these exact tools by name\n- \"notebook jupyter\" — keyword search, up to max_results best matches";
+const TOOL_SEARCH_PROMPT_TAIL: &str = " Tools whose schemas are already in this request can be called directly; do not search for them again. browser_map, browser_read and browser_navigate are always available. An attached browser map also makes browser_act, browser_type, browser_press, browser_wait, browser_upload, browser_drag and browser_dialog available. Query forms for other tools:\n- \"select:browser_scroll,computer_map\" — fetch these exact tools by name\n- \"notebook jupyter\" — keyword search, up to max_results best matches";
 
 #[derive(Clone, Debug)]
 pub(crate) struct DeferredTool {
@@ -92,6 +101,20 @@ pub(crate) fn discovered_tool_names(snapshot: &Value) -> Vec<String> {
         }
     }
     names
+}
+
+pub(crate) fn record_browser_follow_tools(session_id: &str, tool_name: &str) {
+    if !matches!(
+        tool_name,
+        "browser_map" | "browser_read" | "browser_navigate"
+    ) {
+        return;
+    }
+    let names = BROWSER_FOLLOW_TOOLS
+        .iter()
+        .map(|name| (*name).to_string())
+        .collect::<Vec<_>>();
+    record_discovered_tool_names(session_id, &names);
 }
 
 pub(crate) fn record_discovered_tool_names(session_id: &str, names: &[String]) {
@@ -426,7 +449,7 @@ pub(crate) fn tool_search_provider_tool(tools: &[DeferredTool], max_tokens: usiz
                     "minimum": 1,
                     "maximum": MAX_SEARCH_LIMIT,
                     "default": DEFAULT_SEARCH_LIMIT,
-                    "description": "Maximum number of results to return (default: 5)"
+                    "description": "Maximum ranked candidates (default: 5). Keyword search loads the first 3 schemas and lists the rest; select:<name> loads an exact candidate."
                 }
             },
             "required": ["query"]
@@ -465,6 +488,35 @@ fn promotable_discovered_names(snapshot: &Value, deferred: &[DeferredTool]) -> V
         .collect()
 }
 
+fn has_attached_browser_map(snapshot: &Value) -> bool {
+    snapshot
+        .get("messages")
+        .and_then(Value::as_array)
+        .and_then(|messages| {
+            messages
+                .iter()
+                .rev()
+                .find(|message| message.get("role").and_then(Value::as_str) == Some("user"))
+        })
+        .and_then(|message| message.pointer("/metadata/pageCitations"))
+        .and_then(Value::as_array)
+        .is_some_and(|citations| {
+            citations.iter().any(|citation| {
+                citation.get("sourceKind").and_then(Value::as_str) != Some("terminal-tab")
+                    && citation
+                        .get("pageUrl")
+                        .and_then(Value::as_str)
+                        .is_some_and(|url| {
+                            url.starts_with("https://") || url.starts_with("http://")
+                        })
+                    && citation
+                        .get("surfaceMap")
+                        .and_then(Value::as_str)
+                        .is_some_and(|map| !map.trim().is_empty())
+            })
+        })
+}
+
 pub(crate) fn persist_discovered_snapshot(
     session_id: &str,
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
@@ -495,14 +547,35 @@ pub(crate) fn assemble_provider_tools(
     let mut tools = eager_model_tools_without_search();
     tools.push(tool_search_provider_tool(&deferred, budget));
     tools.push(session_read_message_model_tool());
-    for name in promotable_discovered_names(snapshot, &deferred) {
-        if let Some(entry) = deferred.iter().find(|tool| tool.name == name) {
+    let promoted = promotable_discovered_names(snapshot, &deferred);
+    for name in &promoted {
+        if BROWSER_FOLLOW_TOOLS.contains(&name.as_str()) {
+            continue;
+        }
+        if let Some(entry) = deferred.iter().find(|tool| tool.name == *name) {
             let schema = if defer_loading {
                 mark_defer_loading(entry.schema.clone())
             } else {
                 entry.schema.clone()
             };
             tools.push(schema);
+        }
+    }
+    if has_attached_browser_map(snapshot)
+        || promoted
+            .iter()
+            .any(|name| BROWSER_FOLLOW_TOOLS.contains(&name.as_str()))
+    {
+        for name in BROWSER_FOLLOW_TOOLS {
+            if tools
+                .iter()
+                .any(|tool| tool.pointer("/function/name").and_then(Value::as_str) == Some(*name))
+            {
+                continue;
+            }
+            if let Some(entry) = deferred.iter().find(|tool| tool.name == *name) {
+                tools.push(entry.schema.clone());
+            }
         }
     }
     if office_tools_active(snapshot) {
@@ -588,6 +661,19 @@ pub(crate) fn execute_tool_search(
         .unwrap_or(DEFAULT_SEARCH_LIMIT as u64)
         .clamp(1, MAX_SEARCH_LIMIT as u64) as usize;
     let deferred = deferred_tools(dispatcher);
+    let eager_names = eager_model_tools_without_search()
+        .iter()
+        .filter_map(|tool| {
+            tool.pointer("/function/name")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .collect::<Vec<_>>();
+    let already_available = parse_select_names(&query)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|name| eager_names.contains(name))
+        .collect::<Vec<_>>();
     let matches = if query.is_empty() {
         Vec::new()
     } else if let Some(names) = parse_select_names(&query) {
@@ -602,19 +688,56 @@ pub(crate) fn execute_tool_search(
             .map(|entry| entry.name.clone())
             .collect()
     };
+    // Discovery and schema loading have different budgets. Preserve every
+    // requested candidate, but do not carry a broad keyword search's weak
+    // matches in every subsequent model request. Exact selections are explicit.
+    let candidates = matches.clone();
+    let matches = if parse_select_names(&query).is_some() {
+        matches
+    } else {
+        matches.into_iter().take(3).collect::<Vec<_>>()
+    };
     record_discovered_tool_names(session_id, &matches);
-    let raw = json!({
+    let mut raw = json!({
         "matches": matches,
+        "candidates": candidates,
+        "alreadyAvailable": already_available,
         "query": query,
         "total_deferred_tools": deferred.len(),
     });
-    let content = if matches.is_empty() {
-        format!("No matching deferred tools found for `{query}`.")
-    } else {
+    let content = if matches.is_empty() && already_available.is_empty() {
+        let mut sources = std::collections::BTreeMap::<&str, usize>::new();
+        for tool in &deferred {
+            *sources.entry(&tool.source_name).or_default() += 1;
+        }
+        raw["availableSources"] = json!(
+            sources
+                .iter()
+                .map(|(name, count)| { json!({"name": name, "toolCount": count}) })
+                .collect::<Vec<_>>()
+        );
+        let groups = sources.keys().copied().collect::<Vec<_>>().join(", ");
         format!(
-            "Loaded deferred tools: {}. Call them by name on the next turn.",
-            matches.join(", ")
+            "No keyword matches for `{query}`; this does not establish that a capability is unavailable. Check the tool schemas already provided and the ToolSearch catalog; use select:<tool_name> for an exact listed name or fewer keywords. Available tool groups: {groups}."
         )
+    } else {
+        let mut parts = Vec::new();
+        if !already_available.is_empty() {
+            parts.push(format!(
+                "Already available: {}. Call them directly; no discovery is needed.",
+                already_available.join(", ")
+            ));
+        }
+        if !matches.is_empty() {
+            parts.push(format!(
+                "Loaded deferred tools: {}. Call them by name on the next turn.",
+                matches.join(", ")
+            ));
+        }
+        if candidates.len() > matches.len() {
+            parts.push(format!("Additional ranked candidates (not loaded): {}. Load only a needed candidate with select:<name>.", candidates[matches.len()..].join(", ")));
+        }
+        parts.join("\n")
     };
     let output = json!({
         "content": content,
@@ -662,6 +785,168 @@ mod tests {
     use super::*;
 
     #[test]
+    fn attached_map_exposes_action_schemas_in_the_first_request() {
+        let snapshot = json!({"messages":[{"role":"user", "metadata":{"pageCitations":[{
+            "pageUrl":"https://example.test/", "surfaceMap":"[1 targetRef=lumen:send] button: Send"
+        }]}}]});
+        let tools = assemble_provider_tools(&snapshot, None, Some(128_000), true);
+        for name in BROWSER_FOLLOW_TOOLS {
+            let schema = tools
+                .iter()
+                .find(|tool| tool.pointer("/function/name").and_then(Value::as_str) == Some(name))
+                .unwrap();
+            assert!(schema.get("defer_loading").is_none());
+        }
+    }
+
+    #[test]
+    fn searching_eager_tools_reports_available_instead_of_no_match() {
+        let output = execute_tool_search(
+            "no-session",
+            "no-turn",
+            None,
+            &ModelToolCall {
+                id: "search-eager-test".to_string(),
+                name: TOOL_SEARCH_TOOL_NAME.to_string(),
+                arguments: json!({"query":"select:browser_map,browser_read,browser_scroll"}),
+            },
+            "2026-09-26T00:00:00Z",
+        );
+        assert_eq!(
+            output["raw"]["alreadyAvailable"],
+            json!(["browser_map", "browser_read"])
+        );
+        assert_eq!(output["raw"]["matches"], json!(["browser_scroll"]));
+        assert!(!output["content"].as_str().unwrap().contains("No matching"));
+    }
+
+    #[test]
+    fn upload_session_queries_discover_the_upload_schema() {
+        for query in [
+            "upload file attach filechooser input files",
+            "file picker chooser attach insert document upload path",
+        ] {
+            let session = new_session(
+                Some("Upload discovery regression".to_string()),
+                None,
+                "normal",
+            );
+            let session_id = session.id.clone();
+            state()
+                .lock()
+                .unwrap()
+                .sessions
+                .insert(session_id.clone(), session);
+            let output = execute_tool_search(
+                &session_id,
+                "no-turn",
+                None,
+                &ModelToolCall {
+                    id: "upload-discovery-test".to_string(),
+                    name: TOOL_SEARCH_TOOL_NAME.to_string(),
+                    arguments: json!({"query": query, "max_results": 3}),
+                },
+                "2026-09-27T10:25:00Z",
+            );
+            let matches = output["raw"]["matches"].as_array().expect("matches");
+            let snapshot = state()
+                .lock()
+                .unwrap()
+                .sessions
+                .remove(&session_id)
+                .unwrap()
+                .snapshot;
+            eprintln!("{query}: {matches:?}");
+            assert!(
+                matches.contains(&json!("browser_upload")),
+                "{query}: {output}"
+            );
+            assert!(discovered_tool_names(&snapshot).contains(&"browser_upload".to_string()));
+            let tools = assemble_provider_tools(&snapshot, None, Some(128_000), false);
+            assert!(request_contains_tool(&tools, "browser_upload"));
+            assert!(schema_not_sent_if_needed("browser_upload", &tools, None).is_none());
+            let wire = providers::protocol::openai_chat_completions::build_request_body(
+                "test-model",
+                &[],
+                &tools,
+                true,
+            );
+            let upload = wire["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|tool| {
+                    tool.pointer("/function/name").and_then(Value::as_str) == Some("browser_upload")
+                })
+                .expect("upload schema reaches the provider body");
+            assert!(
+                upload
+                    .pointer("/function/parameters/properties/files")
+                    .is_some()
+            );
+        }
+    }
+
+    #[test]
+    fn broad_search_lists_candidates_without_loading_every_schema() {
+        let search = |query: &str, limit| {
+            execute_tool_search(
+                "budget-test",
+                "no-turn",
+                None,
+                &ModelToolCall {
+                    id: "budget-search".into(),
+                    name: TOOL_SEARCH_TOOL_NAME.into(),
+                    arguments: json!({"query":query,"max_results":limit}),
+                },
+                "2026-09-27T10:25:00Z",
+            )
+        };
+        let result = search("browser page file upload attachment", 20);
+        let loaded = result["raw"]["matches"].as_array().unwrap();
+        let candidates = result["raw"]["candidates"].as_array().unwrap();
+        assert_eq!(loaded.len(), 3);
+        assert!(candidates.len() > loaded.len());
+        assert!(loaded.contains(&json!("browser_upload")));
+        let selected = candidates.last().unwrap().as_str().unwrap();
+        assert_eq!(
+            search(&format!("select:{selected}"), 20)["raw"]["matches"],
+            json!([selected])
+        );
+    }
+
+    #[test]
+    fn empty_search_preserves_the_available_catalog_and_a_recovery_path() {
+        let output = execute_tool_search(
+            "no-session",
+            "no-turn",
+            None,
+            &ModelToolCall {
+                id: "empty-discovery-test".to_string(),
+                name: TOOL_SEARCH_TOOL_NAME.to_string(),
+                arguments: json!({"query": "nonexistentcapability"}),
+            },
+            "2026-09-27T10:25:00Z",
+        );
+        assert_eq!(output["raw"]["matches"], json!([]));
+        assert!(
+            output["raw"]["availableSources"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|source| {
+                    source["name"] == "browser" && source["toolCount"].as_u64().unwrap() > 0
+                })
+        );
+        assert!(
+            output["content"]
+                .as_str()
+                .unwrap()
+                .contains("select:<tool_name>")
+        );
+    }
+
+    #[test]
     fn select_query_promotes_exact_names() {
         let tools = deferred_tools(None);
         assert!(tools.iter().any(|tool| tool.name == "browser_scroll"));
@@ -704,6 +989,51 @@ mod tests {
     }
 
     #[test]
+    fn assemble_inserts_browser_tools_after_map() {
+        let tools = assemble_provider_tools(
+            &json!({
+                "discoveredToolNames": ["browser_type", "browser_act", "browser_press", "browser_wait"]
+            }),
+            None,
+            Some(128_000),
+            true,
+        );
+        let typed = tools
+            .iter()
+            .find(|tool| {
+                tool.pointer("/function/name").and_then(Value::as_str) == Some("browser_type")
+            })
+            .expect("type schema");
+        assert!(typed.get("defer_loading").is_none());
+        assert!(
+            typed
+                .pointer("/function/parameters/properties/fields")
+                .is_some()
+        );
+        let names: Vec<_> = tools
+            .iter()
+            .filter_map(|tool| tool.pointer("/function/name").and_then(Value::as_str))
+            .collect();
+        assert!(names.contains(&"browser_act"));
+        assert!(names.contains(&"browser_press"));
+        assert!(names.contains(&"browser_wait"));
+        // A persisted session from before uploads existed must gain the new
+        // browser action without another map/search or a new conversation.
+        let upload = tools
+            .iter()
+            .find(|tool| {
+                tool.pointer("/function/name").and_then(Value::as_str) == Some("browser_upload")
+            })
+            .expect("upload schema in an old browser session");
+        assert!(upload.get("defer_loading").is_none());
+        assert!(
+            upload
+                .pointer("/function/parameters/properties/files")
+                .is_some()
+        );
+        assert!(!names.contains(&"browser_see"));
+    }
+
     fn assemble_promotes_discovered_tools() {
         let tools = assemble_provider_tools(
             &json!({ "discoveredToolNames": ["web_search"] }),

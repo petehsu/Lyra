@@ -1,5 +1,22 @@
 use super::*;
 
+fn connection_establishment_failed(error: &AgentRuntimeError) -> bool {
+    matches!(
+        error,
+        AgentRuntimeError::ProviderTransport {
+            kind: ProviderTransportKind::Connect,
+            ..
+        }
+    )
+}
+fn transport_retry_limit(error: &AgentRuntimeError) -> u8 {
+    if connection_establishment_failed(error) {
+        1
+    } else {
+        MAX_STREAM_TRANSPORT_RETRIES
+    }
+}
+
 fn apply_opencode_identity(
     builder: reqwest::blocking::RequestBuilder,
     provider: &NativeProviderProfile,
@@ -79,6 +96,7 @@ fn record_physical_provider_attempt(
     model: &str,
     streaming: bool,
     started_at: Instant,
+    request_started_at: Option<Instant>,
     committed_any: Option<bool>,
     result: &AgentRuntimeResult<ModelReply>,
 ) {
@@ -168,6 +186,8 @@ fn record_physical_provider_attempt(
             ),
         ),
     };
+    let finished_at = Instant::now();
+    let milliseconds = |duration: Duration| duration.as_millis().min(u64::MAX as u128) as u64;
     super::session_runtime::append_turn_provider_attempt(
         session_id,
         turn_id,
@@ -185,10 +205,20 @@ fn record_physical_provider_attempt(
             "reasoningChars": reasoning_chars,
             "toolCallCount": tool_call_count,
             "usage": usage,
-            "latencyMs": started_at.elapsed().as_millis().min(u64::MAX as u128) as u64,
+            "latencyMs": milliseconds(finished_at.duration_since(started_at)),
+            // Queue time includes adaptive rate-limit cooldown. Request time
+            // starts after admission; it still includes transport and parsing.
+            "schedulerWaitMs": milliseconds(request_started_at.unwrap_or(finished_at).duration_since(started_at)),
+            "requestDurationMs": request_started_at.map(|started| milliseconds(finished_at.duration_since(started))),
             "committedBefore": committed_any == Some(true),
             "recoveryAction": Value::Null,
             "errorCategory": error_category,
+            // Persist the structured failure class even when recovery succeeds.
+            // Do not copy raw error text, URLs, headers or request content here.
+            "transportKind": match result {
+                Err(AgentRuntimeError::ProviderTransport { kind, .. }) => Some(kind.to_string()),
+                _ => None,
+            },
         }),
     );
 }
@@ -577,7 +607,7 @@ pub(crate) fn call_model_once_inner(
                     // behavior), because replaying would duplicate or corrupt
                     // the committed timeline.
                     let safe_to_retry = committed_any == Some(false)
-                        && stream_transport_retries < MAX_STREAM_TRANSPORT_RETRIES;
+                        && stream_transport_retries < transport_retry_limit(&error);
                     // Non-streaming fallback (Claude Code pattern): when the
                     // streaming turn failed and nothing was committed, retry the
                     // SAME turn non-streaming once. Non-streaming has no partial
@@ -586,7 +616,9 @@ pub(crate) fn call_model_once_inner(
                     // Some(true)` must never fall back (the non-streaming reply
                     // would re-emit the full assistant text, duplicating the
                     // committed delta).
-                    let can_fallback = !stream_fallback_attempted && committed_any == Some(false);
+                    let can_fallback = !connection_establishment_failed(&error)
+                        && !stream_fallback_attempted
+                        && committed_any == Some(false);
                     emit_provider_protocol_event(
                         session_id,
                         turn_id,
@@ -629,6 +661,9 @@ pub(crate) fn call_model_once_inner(
                     // Finalize any tool left running so the next round doesn't
                     // see "[Tool did not finish ...]" for this aborted attempt.
                     let _finish_ok = finish_running_tools_for_failed_turn(session_id, turn_id);
+                    if connection_establishment_failed(&error) {
+                        return Err(error);
+                    }
                     return Err(AgentRuntimeError::Core(format!(
                         "provider streaming transport failed for route `{}`; non-streaming fallback was not attempted because replaying a partially-read SSE turn can duplicate or corrupt assistant/tool state: {}",
                         provider.route_id, error
@@ -741,8 +776,10 @@ pub(crate) async fn call_model_once_inner_async(
         loop {
             let mut committed_any: Option<bool> = None;
             let attempt_started_at = Instant::now();
+            let mut request_started_at = None;
             let attempt_result =
                 scheduled_provider_request_async(session_id, provider, model, cancellation, || {
+                    request_started_at = Some(Instant::now());
                     call_model_once_streaming_inner_async(
                         session_id,
                         turn_id,
@@ -764,6 +801,7 @@ pub(crate) async fn call_model_once_inner_async(
                 model,
                 true,
                 attempt_started_at,
+                request_started_at,
                 committed_any,
                 &attempt_result,
             );
@@ -771,8 +809,10 @@ pub(crate) async fn call_model_once_inner_async(
                 Ok(reply) => return Ok(reply),
                 Err(error) if is_provider_transport_error(&error) => {
                     let safe_to_retry = committed_any == Some(false)
-                        && stream_transport_retries < MAX_STREAM_TRANSPORT_RETRIES;
-                    let can_fallback = !stream_fallback_attempted && committed_any == Some(false);
+                        && stream_transport_retries < transport_retry_limit(&error);
+                    let can_fallback = !connection_establishment_failed(&error)
+                        && !stream_fallback_attempted
+                        && committed_any == Some(false);
                     emit_provider_protocol_event(
                         session_id,
                         turn_id,
@@ -826,6 +866,9 @@ pub(crate) async fn call_model_once_inner_async(
                         break;
                     }
                     let _finish_ok = finish_running_tools_for_failed_turn(session_id, turn_id);
+                    if connection_establishment_failed(&error) {
+                        return Err(error);
+                    }
                     // Keep partial assistant prefix + send a continuation marker.
                     // See zed's `Message::Resume` ("Continue where you left off",
                     // thread.rs:238-243, 3047-3053) and codex's same-turn retry
@@ -861,6 +904,8 @@ pub(crate) async fn call_model_once_inner_async(
                         .await?;
 
                         let attempt_started_at = Instant::now();
+
+                        let mut request_started_at = None;
                         let continue_marker = json!({
                             "role": "user",
                             "content": "继续之前未完成的话。完整文本补齐之前不要重复已写过的内容、不要解释，直接续写。".to_string(),
@@ -876,6 +921,7 @@ pub(crate) async fn call_model_once_inner_async(
                             model,
                             cancellation,
                             || {
+                                request_started_at = Some(Instant::now());
                                 call_model_once_non_streaming_checked_async(
                                     session_id,
                                     turn_id,
@@ -896,6 +942,7 @@ pub(crate) async fn call_model_once_inner_async(
                             model,
                             false,
                             attempt_started_at,
+                            request_started_at,
                             None,
                             &attempt_result,
                         );
@@ -936,8 +983,10 @@ pub(crate) async fn call_model_once_inner_async(
         }
         if stream_fallback_attempted {
             let attempt_started_at = Instant::now();
+            let mut request_started_at = None;
             let mut attempt_result =
                 scheduled_provider_request_async(session_id, provider, model, cancellation, || {
+                    request_started_at = Some(Instant::now());
                     call_model_once_non_streaming_checked_async(
                         session_id,
                         turn_id,
@@ -962,6 +1011,7 @@ pub(crate) async fn call_model_once_inner_async(
                 model,
                 false,
                 attempt_started_at,
+                request_started_at,
                 None,
                 &attempt_result,
             );
@@ -981,8 +1031,10 @@ pub(crate) async fn call_model_once_inner_async(
         }
     }
     let attempt_started_at = Instant::now();
+    let mut request_started_at = None;
     let mut attempt_result =
         scheduled_provider_request_async(session_id, provider, model, cancellation, || {
+            request_started_at = Some(Instant::now());
             call_model_once_non_streaming_checked_async(
                 session_id,
                 turn_id,
@@ -1007,6 +1059,7 @@ pub(crate) async fn call_model_once_inner_async(
         model,
         false,
         attempt_started_at,
+        request_started_at,
         None,
         &attempt_result,
     );
@@ -1292,8 +1345,7 @@ pub(crate) fn parse_openai_chat_non_streaming_reply(
         AgentRuntimeError::Core("provider returned no assistant message".to_string())
     })?;
     let raw_content = openai_chat::message_content(message.get("content"));
-    let reasoning_replay = openai_chat::message_reasoning_field(message)
-        .map(|(field, value)| json!({ "field": field, "value": value }));
+    let reasoning_replay = openai_chat::reasoning_replay_items(message);
     let mut reasoning = openai_chat::message_reasoning_text(message);
     let content = raw_content.map(|text| {
         let scrubbed = openai_chat::scrub_think_blocks(&text);
@@ -1313,7 +1365,8 @@ pub(crate) fn parse_openai_chat_non_streaming_reply(
         .unwrap_or_default();
     let tool_calls = raw_tool_calls
         .iter()
-        .filter_map(|item| openai_chat::parse_tool_call(item, &allowed_tool_names))
+        .enumerate()
+        .filter_map(|(index, item)| openai_chat::parse_tool_call(item, &allowed_tool_names, index))
         .collect::<Vec<_>>();
     let raw_stop_reason = body
         .pointer("/choices/0/finish_reason")
@@ -1353,7 +1406,7 @@ pub(crate) fn parse_openai_chat_non_streaming_reply(
         ui_message_id: None,
         raw_stop_reason,
         provider_replay_protocol: Some(openai_chat::PROTOCOL_ID.to_string()),
-        provider_replay_items: reasoning_replay.into_iter().collect(),
+        provider_replay_items: reasoning_replay,
         response_meta: openai_chat_response_meta(body),
         stop_signal,
     })
@@ -1884,3 +1937,50 @@ pub(crate) async fn call_model_once_streaming_inner_async(
     *committed_any = Some(stream_committed);
     result
 }
+
+#[cfg(test)]
+#[test]
+fn attempt_metadata_keeps_transport_class_without_raw_failure_secrets() {
+    let provider: NativeProviderProfile = serde_json::from_value(json!({
+        "id":"fixture", "label":"Fixture", "routeId":"custom_openai_compatible"
+    }))
+    .unwrap();
+    let session = format!("transport-metadata-{}", Uuid::new_v4());
+    for kind in [
+        ProviderTransportKind::Connect,
+        ProviderTransportKind::Timeout,
+        ProviderTransportKind::StreamInterrupted,
+        ProviderTransportKind::Other,
+    ] {
+        let started = Instant::now();
+        record_physical_provider_attempt(
+            &session,
+            "turn",
+            &provider,
+            "fixture",
+            true,
+            started,
+            Some(started),
+            Some(false),
+            &Err(AgentRuntimeError::ProviderTransport {
+                kind,
+                detail: "raw-error-secret-must-not-be-persisted".into(),
+            }),
+        );
+        let metadata =
+            super::session_runtime::take_turn_provider_metadata(&session, "turn").unwrap();
+        assert_eq!(
+            metadata["providerAttempts"][0]["transportKind"],
+            kind.to_string()
+        );
+        assert_eq!(
+            metadata["providerAttempts"][0]["errorCategory"],
+            "transport"
+        );
+        assert!(!metadata.to_string().contains("raw-error-secret"));
+    }
+}
+
+#[cfg(test)]
+#[path = "connection_recovery_tests.rs"]
+mod connection_recovery_tests;

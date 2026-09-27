@@ -311,10 +311,6 @@ export type AgentBrowserPreviewSnapshot = {
   readonly url: string;
   readonly title: string;
   readonly faviconUrl?: string;
-  readonly mimeType: "image/png";
-  readonly imageBase64: string;
-  readonly width: number;
-  readonly height: number;
 };
 
 export type AgentBrowserPreviewPromoteRequest = {
@@ -619,6 +615,7 @@ export type AgentPageCitation = {
   readonly excerptKind: AgentPageCitationExcerptKind;
   readonly preview: string;
   readonly quotedText: string;
+  readonly surfaceMap?: string;
   readonly truncated: boolean;
   readonly sourceCapturedAt?: string | null;
   readonly sourceKind?: AgentPageCitationSourceKind | null;
@@ -1526,7 +1523,17 @@ export type AgentModelCatalogRequest = {
   readonly sessionId?: string | null;
 };
 
+export type AgentProviderRouteAdjustment = {
+  readonly profileId: string;
+  readonly fromRouteId: string;
+  readonly fromLabel: string;
+  readonly toRouteId: string;
+  readonly toLabel: string;
+  readonly baseUrl: string;
+};
+
 export type AgentModelCatalogSnapshot = {
+  readonly routeAdjustment?: AgentProviderRouteAdjustment;
   readonly sessionId?: string | null;
   readonly currentModel: string;
   readonly currentProvider: string;

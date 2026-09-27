@@ -183,17 +183,76 @@ pub fn provider_tool_names() -> Vec<String> {
 }
 
 /// Model-facing deferred name: pinned handle, otherwise path after `/tools/`.
+/// Characters outside `^[a-zA-Z0-9_-]+$` become `_` so the name can be a provider function name.
 pub fn deferred_tool_name(manifest: &ToolManifest) -> String {
-    if let Some(handle) = manifest
+    let raw = if let Some(handle) = manifest
         .handle
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        return handle.to_string();
+        handle.to_string()
+    } else {
+        manifest
+            .path
+            .trim_start_matches("/tools/")
+            .replace('/', "_")
+    };
+    provider_function_name(&raw)
+}
+
+pub fn provider_function_name(name: &str) -> String {
+    let sanitized: String = name
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if sanitized.is_empty() {
+        "tool".to_string()
+    } else {
+        sanitized
     }
-    manifest
-        .path
-        .trim_start_matches("/tools/")
-        .replace('/', "_")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deferred_name_replaces_characters_providers_reject() {
+        let manifest = ToolManifest {
+            path: "/tools/software/capability/browser-search/browser-search.readCurrentPage"
+                .to_string(),
+            handle: Some("software__browser-search__browser-search.readCurrentPage".to_string()),
+            domain: "software".to_string(),
+            operation: "invoke_capability".to_string(),
+            title: "Read current page".to_string(),
+            summary: String::new(),
+            description: String::new(),
+            aliases: Vec::new(),
+            examples: Vec::new(),
+            tags: Vec::new(),
+            risk_level: "external".to_string(),
+            permission_policy: "host_policy".to_string(),
+            input_schema: Value::Null,
+            output_kind: "json".to_string(),
+            activity_kind: "software".to_string(),
+            renderer_hint: "software".to_string(),
+        };
+        let name = deferred_tool_name(&manifest);
+        assert_eq!(
+            name,
+            "software__browser-search__browser-search_readCurrentPage"
+        );
+        assert!(
+            name.chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+        );
+        assert_eq!(provider_function_name("browser_map"), "browser_map");
+    }
 }

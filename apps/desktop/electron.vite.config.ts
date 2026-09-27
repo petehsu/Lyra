@@ -34,6 +34,7 @@ export default defineConfig({
       // production node_modules tree.
       exclude: [
         "@lyra/app-runtime",
+        "@lyra/icons",
         "@supabase/supabase-js",
         "electron-updater",
         "jsqr",

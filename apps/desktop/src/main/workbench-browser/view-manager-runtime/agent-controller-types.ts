@@ -83,7 +83,9 @@ export type WorkbenchBrowserAgentControllerHost = {
     readonly inputActive?: boolean;
     readonly visibleFollow?: boolean;
     readonly durationMs?: number;
+    readonly hold?: boolean;
     readonly cursor?: { readonly x: number; readonly y: number };
+    readonly points?: readonly { readonly x: number; readonly y: number }[];
   }) => void;
   readonly recordFollowAction: (
     tabId: string,

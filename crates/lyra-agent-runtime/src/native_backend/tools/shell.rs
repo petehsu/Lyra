@@ -1,3 +1,4 @@
+use super::shell_secrets::ShellSecrets;
 use super::*;
 
 use std::collections::VecDeque;
@@ -14,6 +15,47 @@ use tree_sitter::{Node, Parser};
 /// `outputCollectionTimedOut` is set, matching the previous mpsc/thread
 /// behaviour. No process is killed.
 const OUTPUT_DRAIN_TIMEOUT: Duration = Duration::from_millis(500);
+
+// Foreground work belongs to its turn, including work parked after a prediction
+// miss. Explicit background terminal jobs use a separate lifecycle.
+static FOREGROUND_SHELLS: OnceLock<Mutex<HashMap<String, HashMap<u32, CancellationToken>>>> =
+    OnceLock::new();
+fn foreground_shells() -> &'static Mutex<HashMap<String, HashMap<u32, CancellationToken>>> {
+    FOREGROUND_SHELLS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+pub(crate) fn finish_foreground_shells(turn_id: &str) {
+    if let Some(processes) = foreground_shells()
+        .lock()
+        .ok()
+        .and_then(|mut jobs| jobs.remove(turn_id))
+    {
+        for token in processes.values() {
+            token.cancel();
+        }
+    }
+}
+fn forget_foreground_shell(turn_id: &str, pid: u32) {
+    if let Ok(mut jobs) = foreground_shells().lock()
+        && let Some(processes) = jobs.get_mut(turn_id)
+    {
+        processes.remove(&pid);
+        if processes.is_empty() {
+            jobs.remove(turn_id);
+        }
+    }
+}
+async fn stop_foreground_shell(
+    child: &mut tokio::process::Child,
+) -> Option<std::process::ExitStatus> {
+    if let Ok(Some(status)) = child.try_wait() {
+        return Some(status);
+    }
+    // Keep ownership of the unreaped child while signaling its process group.
+    if let Some(pid) = child.id() {
+        lyra_process_lifecycle_core::terminate_process_tree(pid, true);
+    }
+    child.wait().await.ok()
+}
 
 #[derive(Clone, Debug, Default)]
 struct ShellCommandAst {
@@ -126,6 +168,15 @@ pub(crate) async fn tool_shell_run_async(
         session_id,
         value_string(input, "cwd").or_else(|| value_string(input, "workingDir")),
     )?;
+    if (wants_background || shell_command_is_long_lived(&analysis))
+        && input.get("sensitiveEnv").is_some()
+    {
+        return Err(NativeToolFailure::new(
+            "sensitive_background_unsupported",
+            "Credential injection requires a foreground command",
+            "Run a bounded foreground command; do not write secrets into a terminal.",
+        ));
+    }
     if wants_background || shell_command_is_long_lived(&analysis) {
         return start_long_lived_in_background_terminal(
             session_id,
@@ -137,6 +188,7 @@ pub(crate) async fn tool_shell_run_async(
         )
         .await;
     }
+    let secrets = ShellSecrets::resolve(input).await?;
     let predicted_timeout = predicted_exec_timeout(input)?;
     let timeout_ms = occupancy_wait(predicted_timeout);
     let max_output = value_usize(
@@ -162,7 +214,9 @@ pub(crate) async fn tool_shell_run_async(
         let max_output_win = max_output;
         let input_win = input.clone();
         let command_kind_win = command_kind.to_string();
-        if let Some(pipe_name) = elevated_pipe_name() {
+        if let Some(pipe_name) =
+            elevated_pipe_name().filter(|_| input.get("sensitiveEnv").is_none())
+        {
             let pipe_name_win = pipe_name.clone();
             let helper_result = tokio::task::spawn_blocking(move || {
                 try_execute_via_elevated_helper(
@@ -221,6 +275,7 @@ pub(crate) async fn tool_shell_run_async(
         // outlive the tool call — matches opencode `detached: true` / zed pty.
         .kill_on_drop(false);
     apply_allowed_env(input, &mut command_builder);
+    secrets.apply(&mut command_builder);
     let mut child = command_builder.spawn().map_err(|error| {
         NativeToolFailure::new(
             "spawn_failed",
@@ -238,6 +293,13 @@ pub(crate) async fn tool_shell_run_async(
         .id()
         .expect("tokio::process::Child::id returns Some until wait() completes");
     lyra_process_lifecycle_core::spawn_parent_death_watcher(child_process_id, true);
+    let process_lifetime = cancellation.child_token();
+    foreground_shells()
+        .lock()
+        .expect("foreground shells lock")
+        .entry(turn_id.to_string())
+        .or_default()
+        .insert(child_process_id, process_lifetime.clone());
     // Read pipes while waiting so a loud command cannot fill the buffer and
     // deadlock, and so a prediction miss includes the output so far.
     let stdout_buf = Arc::new(Mutex::new(HeadTailBytes::new(max_output)));
@@ -248,11 +310,13 @@ pub(crate) async fn tool_shell_run_async(
         child.stdout.take(),
         Arc::clone(&stdout_buf),
         Arc::clone(&stdout_total),
+        secrets.clone(),
     );
     let stderr_task = spawn_pipe_pump(
         child.stderr.take(),
         Arc::clone(&stderr_buf),
         Arc::clone(&stderr_total),
+        secrets.clone(),
     );
     // ponytail: timeoutMs is the model's predicted wait, not a kill timer.
     // Occupancy is min(prediction, 120s); predictions over 10 minutes park
@@ -265,9 +329,9 @@ pub(crate) async fn tool_shell_run_async(
     let status: Option<std::process::ExitStatus> = {
         tokio::select! {
             biased;
-            _ = cancellation.cancelled() => {
+            _ = process_lifetime.cancelled() => {
                 cancelled = true;
-                None
+                stop_foreground_shell(&mut child).await
             }
             result = child.wait() => {
                 Some(result.map_err(|error| NativeToolFailure::new(
@@ -284,10 +348,10 @@ pub(crate) async fn tool_shell_run_async(
     };
     let elapsed_ms = wait_started.elapsed().as_millis() as u64;
     let predicted_timeout_ms = predicted_timeout.as_millis() as u64;
-    let still_running = timed_out || cancelled;
+    let still_running = timed_out;
     let output_collection_timed_out;
-    let stdout_output;
-    let stderr_output;
+    let mut stdout_output;
+    let mut stderr_output;
     if still_running {
         stdout_output = snapshot_live_pipe(&stdout_buf, &stdout_total);
         stderr_output = snapshot_live_pipe(&stderr_buf, &stderr_total);
@@ -304,6 +368,9 @@ pub(crate) async fn tool_shell_run_async(
             command.clone(),
             child_process_id,
             still_running,
+            turn_id.to_string(),
+            process_lifetime,
+            secrets.clone(),
         );
     } else {
         // 成功退出后不杀进程组。后台子进程（nohup &、detached）合法存活。
@@ -314,6 +381,11 @@ pub(crate) async fn tool_shell_run_async(
         stdout_output = snapshot_live_pipe(&stdout_buf, &stdout_total);
         stderr_output = snapshot_live_pipe(&stderr_buf, &stderr_total);
     }
+    if !still_running {
+        forget_foreground_shell(turn_id, child_process_id);
+    }
+    stdout_output.text = secrets.redact(&stdout_output.text);
+    stderr_output.text = secrets.redact(&stderr_output.text);
     let exit_code = status.as_ref().and_then(|s| s.code());
     let content = format!(
         "command: {}\ndescription: {}\ncwd: {}\nkind: {}\npid: {}\npredictedTimeoutMs: {}\nelapsedMs: {}\nstillRunning: {}\nexitCode: {:?}\ntimedOut: {}\npredictionMissed: {}\nprocessGroupTerminated: {}\noutputCollectionTimedOut: {}\n\nstdout:\n{}\n\nstderr:\n{}",
@@ -328,7 +400,7 @@ pub(crate) async fn tool_shell_run_async(
         exit_code,
         timed_out,
         timed_out,
-        false,
+        cancelled,
         output_collection_timed_out,
         stdout_output.text,
         stderr_output.text
@@ -379,7 +451,7 @@ pub(crate) async fn tool_shell_run_async(
             "stdoutCollectionTimedOut": stdout_output.timed_out,
             "stderrCollectionTimedOut": stderr_output.timed_out,
             "outputCollectionTimedOut": output_collection_timed_out,
-            "processGroupTerminated": false,
+            "processGroupTerminated": cancelled,
             "processGroupSignal": null,
             "stdoutRef": stdout_ref.flatten(),
             "stderrRef": stderr_ref.flatten(),
@@ -394,7 +466,7 @@ pub(crate) async fn tool_shell_run_async(
             ))
         } else if cancelled {
             Some(
-                "The turn was cancelled. The command is still running and was not killed. You will be notified when it exits."
+                "The turn was cancelled. Its foreground command and process group were stopped."
                     .to_string(),
             )
         } else if output_collection_timed_out {
@@ -598,7 +670,7 @@ fn parked_exec_next_action(pid: u32, predicted: Duration, occupancy: Duration) -
         )
     } else {
         format!(
-            "Your predicted wait elapsed; the command is still running (pid={pid}) and was not killed. You will be notified when it exits. Decide whether to wait, stop it, or change approach. Do not poll on a timer."
+            "Your predicted wait elapsed; the command is still running (pid={pid}) and was not killed. You will be notified when it exits. It remains owned by this turn and will be stopped when the turn ends. Do not claim it finished; await the exit notice if its result is required. Do not poll on a timer."
         )
     }
 }
@@ -607,6 +679,7 @@ fn spawn_pipe_pump<R>(
     reader: Option<R>,
     buf: Arc<Mutex<HeadTailBytes>>,
     total: Arc<AtomicUsize>,
+    secrets: ShellSecrets,
 ) -> tokio::task::JoinHandle<()>
 where
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
@@ -616,13 +689,20 @@ where
             return;
         };
         let mut chunk = [0_u8; 8192];
+        let mut redactor = secrets.stream();
         loop {
             match reader.read(&mut chunk).await {
-                Ok(0) | Err(_) => break,
+                Ok(0) | Err(_) => {
+                    let safe = redactor.push(&[], true);
+                    if let Ok(mut buffer) = buf.lock() {
+                        buffer.push(&safe);
+                    }
+                    break;
+                }
                 Ok(count) => {
                     total.fetch_add(count, Ordering::Relaxed);
                     if let Ok(mut buffer) = buf.lock() {
-                        buffer.push(&chunk[..count]);
+                        buffer.push(&redactor.push(&chunk[..count], false));
                     }
                 }
             }
@@ -669,11 +749,18 @@ fn follow_exec_until_exit(
     command: String,
     pid: u32,
     notify: bool,
+    turn_id: String,
+    lifetime: CancellationToken,
+    secrets: ShellSecrets,
 ) {
     crate::native_backend::turn_engine::runtime().spawn(async move {
-        let status = child.wait().await.ok();
+        let (status, stopped) = tokio::select! {
+            result = child.wait() => (result.ok(), false),
+            _ = lifetime.cancelled() => (stop_foreground_shell(&mut child).await, true),
+        };
+        forget_foreground_shell(&turn_id, pid);
         let _ = join_pipe_pumps(stdout_task, stderr_task, OUTPUT_DRAIN_TIMEOUT).await;
-        if !notify {
+        if !notify || stopped {
             return;
         }
         let stdout = snapshot_live_pipe(&stdout_buf, &stdout_total);
@@ -690,8 +777,8 @@ fn follow_exec_until_exit(
                     "exited"
                 },
                 "exitCode": status.as_ref().and_then(std::process::ExitStatus::code),
-                "stdout": stdout.text,
-                "stderr": stderr.text,
+                "stdout": secrets.redact(&stdout.text),
+                "stderr": secrets.redact(&stderr.text),
             }
         }));
     });

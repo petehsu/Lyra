@@ -1,7 +1,17 @@
+import { focusBrowserPageForInput } from "../workspace-focus-isolation";
+import { browserHistoryDirection, navigateAgentHistory } from "./agent-history-navigation";
+import { armResponseWatch } from "./agent-response-watch";
+import { randomUUID } from "node:crypto";
+import { prepareTextInputScript, armTextInputScript, verifyTextInputScript, cleanupTextInputScript, type BrowserTextInsertionResult } from "./agent-text-input";
+import { dispatchBrowserKeys, browserKeyEvents, browserKeyRepeat } from "./agent-keyboard";
+import { prepareBrowserKeyTargetScript, type BrowserEditorPreparation } from "./agent-editor-state";
+import { compactMapObservation } from "./agent-map-compaction";
 import type { BrowserActionEffect, WorkbenchBrowserAgentActionResult, WorkbenchBrowserAgentElement, WorkbenchBrowserAgentFocusDirection, WorkbenchBrowserAgentFocusResult, WorkbenchBrowserAgentFocusTrailEntry, WorkbenchBrowserAgentModeInfo, WorkbenchBrowserAgentModeRequest, WorkbenchBrowserAgentObservation, WorkbenchBrowserAgentScrollEffect, WorkbenchBrowserAgentTargetMode, WorkbenchBrowserAgentVerification } from "../types";
 import { browserElementEffectConflict } from "./agent-action-effect";
-import { boundsCenter, delay, normalizeAgentVerification, normalizeExecuteScriptTimeoutMs, runFrameScriptWithTimeout } from "./normalizers";
+import { delay, normalizeAgentVerification, normalizeExecuteScriptTimeoutMs, runFrameScriptWithTimeout } from "./normalizers";
 import { centerOfAgentElement } from "./agent-action-runtime";
+import { refreshStampedElement } from "./surface-control-names";
+import { inputFieldFromElement, planInputWrites } from "./input-plan";
 import { agentTargetAddress, agentTargetIsLoading } from "./agent-target-runtime";
 import type { BrowserAgentPageTarget } from "./types";
 import {
@@ -9,6 +19,18 @@ import {
   normalizeAgentFocusSteps,
   type BrowserAgentFocusInputControllerDeps
 } from "./agent-focus-input-support";
+
+type InputReceipt = {
+  readonly targetRef?: string;
+  readonly verify: () => Promise<BrowserTextInsertionResult>;
+  readonly dispose: () => Promise<unknown>;
+};
+
+const inputFacts = (result: BrowserTextInsertionResult) => ({
+  ...(result.textPreview === undefined ? {} : { inputValuePreview: result.textPreview }),
+  ...(result.evidence === undefined ? {} : { inputEvidence: result.evidence }),
+  ...(result.textChanged === undefined ? {} : { inputTextChanged: result.textChanged })
+});
 
 export const createBrowserAgentFocusInputController = (deps: BrowserAgentFocusInputControllerDeps) => {
   const {
@@ -30,11 +52,29 @@ export const createBrowserAgentFocusInputController = (deps: BrowserAgentFocusIn
     stateStore
   } = deps;
   const {
-    activeEditableElementFromObservation,
     cacheBrowserAgentInputTarget,
-    readBrowserAgentCacheEntry,
-    readCachedBrowserAgentInputTarget
+    readBrowserAgentCacheEntry
   } = stateStore;
+
+  const observeInputResult = async (
+    tabId: string,
+    targetMode: WorkbenchBrowserAgentTargetMode,
+    verification: WorkbenchBrowserAgentVerification,
+    timeoutMs?: number,
+    collectControls = false
+  ): Promise<WorkbenchBrowserAgentObservation | null> => {
+    if (verification === "none") return null;
+    if (verification === "full") return observeAfterAgentInput(tabId, targetMode, timeoutMs);
+    // Input receipts independently verify the actual editor after rendering.
+    // Filling a known field does not require rediscovering every page control.
+    if (!collectControls) return null;
+    return observeAgentPage(tabId, { strategy: "interactiveOnly", targetMode, suppressActivity: true,
+      ...(timeoutMs === undefined ? {} : { timeoutMs }) }).catch(() => null);
+  };
+  const inputMapFeedback = (
+    before: Pick<WorkbenchBrowserAgentObservation, "url" | "elements" | "pageNotes"> | undefined,
+    after: WorkbenchBrowserAgentObservation | null
+  ): string => after === null ? "" : `\nPage: ${after.url}\n${compactMapObservation(before, after).observation.mapAppendix ?? ""}`;
 
   const noEditableTargetResult = (
     tabId: string,
@@ -64,649 +104,57 @@ export const createBrowserAgentFocusInputController = (deps: BrowserAgentFocusIn
     };
   };
 
-  const buildBrowserAgentTextInsertionScript = ({
-    x,
-    y,
-    text,
-    clear,
-    xpath,
-    selectorPreview,
-    tagName,
-    inputType,
-    bounds,
-    hostChainFingerprint
-  }: {
-    readonly x: number;
-    readonly y: number;
-    readonly text: string;
-    readonly clear: boolean;
-    readonly xpath: string;
-    readonly selectorPreview: string;
-    readonly tagName: string;
-    readonly inputType: string;
-    readonly bounds: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
-    readonly hostChainFingerprint: string;
-  }): string => `
-    (() => {
-      const POINT = ${JSON.stringify({ x, y })};
-      const TEXT = ${JSON.stringify(text)};
-      const CLEAR = ${JSON.stringify(clear)};
-      const TARGET = ${JSON.stringify({
-        xpath,
-        selectorPreview,
-        tagName,
-        inputType,
-        bounds,
-        hostChainFingerprint
-      })};
-
-      const normalizeText = (value, maxLength = 160) => {
-        if (typeof value !== "string") return "";
-        const normalized = value.replace(/\\s+/g, " ").trim();
-        return normalized.length <= maxLength ? normalized : normalized.slice(0, maxLength - 3) + "...";
-      };
-
-      const isDisabled = (element) =>
-        element.disabled === true
-        || element.getAttribute?.("disabled") !== null
-        || element.getAttribute?.("aria-disabled") === "true";
-
-      const isVisible = (element, win = window) => {
-        const ElementCtor = win.Element || Element;
-        if (!(element instanceof ElementCtor) || !element.isConnected) return false;
-        const rect = element.getBoundingClientRect();
-        if (rect.width <= 0 || rect.height <= 0) return false;
-        const style = win.getComputedStyle(element);
-        if (style.display === "none" || style.visibility === "hidden") return false;
-        if (Number.parseFloat(style.opacity || "1") <= 0) return false;
-        return true;
-      };
-
-      const isEditable = (element) => {
-        const win = element?.ownerDocument?.defaultView || window;
-        const contentEditable = String(element.getAttribute?.("contenteditable") || "").toLowerCase();
-        const role = String(element.getAttribute?.("role") || "").toLowerCase();
-        return element instanceof win.HTMLInputElement
-          || element instanceof win.HTMLTextAreaElement
-          || element instanceof win.HTMLSelectElement
-          || (element instanceof win.HTMLElement && element.isContentEditable)
-          || (contentEditable.length > 0 && contentEditable !== "false")
-          || role === "textbox"
-          || role === "searchbox";
-      };
-
-      const selector = [
-        "a[href]",
-        "button",
-        "input",
-        "select",
-        "textarea",
-        "summary",
-        "[contenteditable]",
-        "[tabindex]",
-        "[role='button']",
-        "[role='link']",
-        "[role='checkbox']",
-        "[role='textbox']",
-        "[role='searchbox']",
-        "[role='menuitem']"
-      ].join(",");
-
-      const collectCandidates = () => {
-        const items = [];
-        const seen = new Set();
-        const crawl = (doc, win, offsetX = 0, offsetY = 0) => {
-          for (const element of Array.from(doc.querySelectorAll(selector))) {
-            if (!(element instanceof win.Element) || seen.has(element)) continue;
-            seen.add(element);
-            if (!isVisible(element, win) || isDisabled(element)) continue;
-            if (element instanceof win.HTMLInputElement && element.type === "hidden") continue;
-            const rect = element.getBoundingClientRect();
-            items.push({
-              id: items.length + 1,
-              element,
-              bounds: {
-                x: Math.round(rect.left + offsetX),
-                y: Math.round(rect.top + offsetY),
-                width: Math.round(rect.width),
-                height: Math.round(rect.height)
-              }
-            });
-          }
-          for (const host of Array.from(doc.querySelectorAll("*"))) {
-            if (host.shadowRoot) {
-              for (const element of Array.from(host.shadowRoot.querySelectorAll(selector))) {
-                if (!(element instanceof win.Element) || seen.has(element)) continue;
-                seen.add(element);
-                if (!isVisible(element, win) || isDisabled(element)) continue;
-                if (element instanceof win.HTMLInputElement && element.type === "hidden") continue;
-                const rect = element.getBoundingClientRect();
-                items.push({
-                  id: items.length + 1,
-                  element,
-                  bounds: {
-                    x: Math.round(rect.left + offsetX),
-                    y: Math.round(rect.top + offsetY),
-                    width: Math.round(rect.width),
-                    height: Math.round(rect.height)
-                  }
-                });
-              }
-            }
-          }
-          for (const frame of Array.from(doc.querySelectorAll("iframe, frame"))) {
-            try {
-              if (!isVisible(frame, win)) continue;
-              const childDoc = frame.contentDocument || frame.contentWindow?.document;
-              const childWin = frame.contentWindow;
-              if (!childDoc || !childWin) continue;
-              const frameRect = frame.getBoundingClientRect();
-              crawl(childDoc, childWin, offsetX + frameRect.left, offsetY + frameRect.top);
-            } catch (_error) {
-              // Cross-origin frames cannot be edited through DOM injection here.
-            }
-          }
-        };
-        crawl(document, window);
-        return items;
-      };
-
-      const editableNear = (element) => {
-        const win = element?.ownerDocument?.defaultView || window;
-        if (!(element instanceof win.Element)) return null;
-        if (isEditable(element)) return element;
-        const descendant = element.querySelector?.(
-          "input:not([type='hidden']), textarea, select, [contenteditable], [role='textbox'], [role='searchbox']"
-        );
-        if (descendant instanceof win.Element && isEditable(descendant)) return descendant;
-        let parent = element.parentElement;
-        while (parent) {
-          if (isEditable(parent)) return parent;
-          parent = parent.parentElement;
-        }
-        return null;
-      };
-
-      const cssEscape = (value) => {
-        if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
-          return CSS.escape(String(value));
-        }
-        return String(value).replace(/[^a-zA-Z0-9_-]/g, "\\\\$&");
-      };
-
-      const normalizeInputType = (value) =>
-        String(value || "text").trim().toLowerCase();
-
-      const expectedInputType = normalizeInputType(TARGET.inputType);
-
-      const isExpectedTextLikeInput = (element) => {
-        const win = element?.ownerDocument?.defaultView || window;
-        if (!(element instanceof win.HTMLInputElement)) return true;
-        const actual = normalizeInputType(element.type);
-        if (actual === "checkbox" || actual === "radio" || actual === "file") {
-          return false;
-        }
-        const textLikeTypes = [
-          "",
-          "text",
-          "search",
-          "email",
-          "password",
-          "tel",
-          "url",
-          "number"
-        ];
-        if (
-          expectedInputType.length > 0
-          && textLikeTypes.includes(expectedInputType)
-          && !textLikeTypes.includes(actual)
-        ) {
-          return false;
-        }
-        if (
-          expectedInputType.length > 0
-          && !textLikeTypes.includes(expectedInputType)
-          && actual !== expectedInputType
-        ) {
-          return false;
-        }
-        return true;
-      };
-
-      const acceptsResolvedElement = (element) => {
-        const resolved = editableNear(element);
-        if (resolved === null || !isEditable(resolved)) return false;
-        if (TARGET.tagName) {
-          const actualTag = String(resolved.tagName || "").toLowerCase();
-          if (actualTag.length > 0 && actualTag !== TARGET.tagName) {
-            return false;
-          }
-        }
-        return isExpectedTextLikeInput(resolved);
-      };
-
-      const resolveEditableTarget = (element) => {
-        if (!acceptsResolvedElement(element)) return null;
-        return editableNear(element);
-      };
-
-      const resolveSearchRoot = (doc, hostChainFingerprint) => {
-        if (!hostChainFingerprint) return doc;
-        let root = doc;
-        for (const hostPreview of hostChainFingerprint.split(">").filter(Boolean)) {
-          if (!root?.querySelectorAll) return null;
-          let host = null;
-          try {
-            host = root.querySelector(hostPreview);
-          } catch (_error) {
-            host = null;
-          }
-          if (host === null) {
-            const tagName = hostPreview.split(/[#.\\[]/)[0];
-            if (tagName) {
-              host = Array.from(root.querySelectorAll(tagName)).find((candidate) => {
-                const preview = [
-                  String(candidate.tagName || "").toLowerCase(),
-                  candidate.id ? "#" + candidate.id : "",
-                  ...Array.from(candidate.classList || []).slice(0, 2).map((item) => "." + item)
-                ].join("");
-                return preview === hostPreview || preview.startsWith(hostPreview);
-              }) ?? null;
-            }
-          }
-          if (host === null || !host.shadowRoot) return null;
-          root = host.shadowRoot;
-        }
-        return root;
-      };
-
-      const selectorPreviewCandidates = (preview) => {
-        if (!preview) return [];
-        const candidates = [preview];
-        if (preview.endsWith("...")) {
-          candidates.push(preview.slice(0, -3));
-        }
-        return candidates;
-      };
-
-      const evaluateXPath = (doc, xpath, searchRoot) => {
-        if (!xpath) return null;
-        try {
-          const context = searchRoot ?? doc;
-          const result = doc.evaluate(
-            xpath,
-            context,
-            null,
-            XPathResult.FIRST_ORDERED_NODE_TYPE,
-            null
-          );
-          return result.singleNodeValue;
-        } catch (_error) {
-          return null;
-        }
-      };
-
-      const boundsMatch = (element, expected, tolerance = 8) => {
-        const rect = element.getBoundingClientRect();
-        const actual = {
-          x: Math.round(rect.left),
-          y: Math.round(rect.top),
-          width: Math.round(rect.width),
-          height: Math.round(rect.height)
-        };
-        return Math.abs(actual.x - expected.x) <= tolerance
-          && Math.abs(actual.y - expected.y) <= tolerance
-          && Math.abs(actual.width - expected.width) <= tolerance
-          && Math.abs(actual.height - expected.height) <= tolerance;
-      };
-
-      const crawlEditableElements = (searchRoot, doc, win) => {
-        const items = [];
-        const seen = new Set();
-        const walk = (root) => {
-          const nodes = root.querySelectorAll?.(
-            "input:not([type='hidden']), textarea, select, [contenteditable], [role='textbox'], [role='searchbox']"
-          ) ?? [];
-          for (const element of Array.from(nodes)) {
-            if (!(element instanceof win.Element) || seen.has(element)) continue;
-            seen.add(element);
-            if (!isVisible(element, win) || isDisabled(element)) continue;
-            if (element instanceof win.HTMLInputElement && element.type === "hidden") continue;
-            if (!isEditable(element)) continue;
-            items.push(element);
-          }
-          for (const host of Array.from(root.querySelectorAll?.("*") ?? [])) {
-            if (host.shadowRoot) {
-              walk(host.shadowRoot);
-            }
-          }
-        };
-        walk(searchRoot ?? doc);
-        return items;
-      };
-
-      const resolveByStableLocators = (doc) => {
-        const win = doc.defaultView || window;
-        const searchRoot = resolveSearchRoot(doc, TARGET.hostChainFingerprint) ?? doc;
-
-        if (TARGET.xpath) {
-          const byXPath = resolveEditableTarget(evaluateXPath(doc, TARGET.xpath, searchRoot));
-          if (byXPath !== null) return byXPath;
-        }
-
-        for (const preview of selectorPreviewCandidates(TARGET.selectorPreview)) {
-          try {
-            const bySelector = resolveEditableTarget(searchRoot.querySelector?.(preview) ?? null);
-            if (bySelector !== null) return bySelector;
-          } catch (_error) {
-            // Ignore invalid selector previews from truncated observations.
-          }
-        }
-
-        const idMatch = TARGET.selectorPreview.match(/#([a-zA-Z][\\w:-]*)/);
-        if (idMatch?.[1]) {
-          const byId = searchRoot.getElementById?.(idMatch[1])
-            ?? searchRoot.querySelector?.("#" + cssEscape(idMatch[1]))
-            ?? null;
-          const resolvedById = resolveEditableTarget(byId);
-          if (resolvedById !== null) return resolvedById;
-        }
-
-        if (TARGET.bounds?.width > 0 && TARGET.bounds?.height > 0) {
-          const matches = crawlEditableElements(searchRoot, doc, win)
-            .filter((element) => boundsMatch(element, TARGET.bounds));
-          if (matches.length === 1) {
-            const resolved = resolveEditableTarget(matches[0]);
-            if (resolved !== null) return resolved;
-          }
-          if (matches.length > 1 && TARGET.inputType) {
-            const typed = matches.find((element) =>
-              element instanceof win.HTMLInputElement
-              && normalizeInputType(element.type) === expectedInputType
-            );
-            const resolvedTyped = resolveEditableTarget(typed ?? null);
-            if (resolvedTyped !== null) return resolvedTyped;
-          }
-        }
-
-        return null;
-      };
-
-      const dispatchTextEvents = (element, data = TEXT) => {
-        const win = element?.ownerDocument?.defaultView || window;
-        try {
-          element.dispatchEvent(new win.InputEvent("input", {
-            bubbles: true,
-            composed: true,
-            data,
-            inputType: "insertText"
-          }));
-        } catch (_error) {
-          element.dispatchEvent(new win.Event("input", { bubbles: true }));
-        }
-        element.dispatchEvent(new win.Event("change", { bubbles: true }));
-      };
-
-      const isTextLikeInput = (element) => {
-        const win = element?.ownerDocument?.defaultView || window;
-        if (!(element instanceof win.HTMLInputElement)) return false;
-        const type = String(element.getAttribute("type") || element.type || "text").toLowerCase();
-        return [
-          "",
-          "email",
-          "number",
-          "password",
-          "search",
-          "tel",
-          "text",
-          "url"
-        ].includes(type);
-      };
-
-      const hasSingleCharacterLimit = (element) =>
-        element.maxLength === 1 || element.getAttribute("maxlength") === "1";
-
-      const hasSegmentPositionHint = (element) => {
-        const label = [
-          element.getAttribute("aria-label"),
-          element.getAttribute("name"),
-          element.getAttribute("id"),
-          element.getAttribute("placeholder")
-        ].filter(Boolean).join(" ").toLowerCase();
-        return /\\b(?:code|digit|character|char)\\b.*\\b\\d+\\b/.test(label)
-          || /\\b\\d+\\b.*\\b(?:code|digit|character|char)\\b/.test(label)
-          || /\\b\\d+\\s*(?:of|\\/)\\s*\\d+\\b/.test(label);
-      };
-
-      const isSingleCharacterSegmentInput = (element) =>
-        isTextLikeInput(element)
-        && (hasSingleCharacterLimit(element) || hasSegmentPositionHint(element));
-
-      const inputCenterY = (element) => {
-        const rect = element.getBoundingClientRect();
-        return rect.top + rect.height / 2;
-      };
-
-      const sameSegmentGroup = (targetInput, candidate) => {
-        if (candidate.ownerDocument !== targetInput.ownerDocument) return false;
-        if (targetInput.form !== null || candidate.form !== null) {
-          return candidate.form === targetInput.form;
-        }
-        const targetRect = targetInput.getBoundingClientRect();
-        return Math.abs(inputCenterY(candidate) - inputCenterY(targetInput))
-          <= Math.max(36, targetRect.height * 1.75);
-      };
-
-      const maybeInsertSegmentedText = (targetInput) => {
-        const win = targetInput?.ownerDocument?.defaultView || window;
-        if (!(targetInput instanceof win.HTMLInputElement)) return null;
-        const segmentText = TEXT.replace(/[\\s-]+/g, "");
-        if (segmentText.length <= 1 || !isSingleCharacterSegmentInput(targetInput)) {
-          return null;
-        }
-
-        const seenInputs = new Set();
-        const candidates = [];
-        for (const item of collectCandidates()) {
-          const editable = editableNear(item.element);
-          if (
-            editable instanceof win.HTMLInputElement
-            && !seenInputs.has(editable)
-            && isSingleCharacterSegmentInput(editable)
-            && sameSegmentGroup(targetInput, editable)
-          ) {
-            seenInputs.add(editable);
-            candidates.push(editable);
-          }
-        }
-        const startIndex = candidates.indexOf(targetInput);
-        if (startIndex < 0) return null;
-        const segmentTargets = candidates.slice(startIndex, startIndex + segmentText.length);
-        if (segmentTargets.length < segmentText.length) {
-          if (!hasSingleCharacterLimit(targetInput)) {
-            return null;
-          }
-          return {
-            ok: false,
-            errorKind: "segmented_input_too_short",
-            message: "Only found " + segmentTargets.length
-              + " segmented input fields for " + segmentText.length + " characters."
-          };
-        }
-
-        const beforeValues = segmentTargets.map((input) => input.value);
-        for (let index = 0; index < segmentTargets.length; index += 1) {
-          const input = segmentTargets[index];
-          const char = segmentText[index];
-          input.focus({ preventScroll: true });
-          if (typeof input.setRangeText === "function") {
-            input.setRangeText(char, 0, input.value.length, "end");
-          } else {
-            input.value = char;
-          }
-          dispatchTextEvents(input, char);
-        }
-        segmentTargets.at(-1)?.focus({ preventScroll: true });
-        const afterValues = segmentTargets.map((input) => input.value);
-        return {
-          ok: afterValues.join("") === segmentText,
-          method: "segmentedInput",
-          tagName: "input",
-          role: normalizeText(targetInput.getAttribute?.("role") || "", 40),
-          textChanged: beforeValues.join("") !== afterValues.join(""),
-          textPreview: normalizeText(afterValues.join(""), 120),
-          segmentCount: segmentTargets.length
-        };
-      };
-
-      const target = resolveByStableLocators(document)
-        ?? resolveEditableTarget(document.elementFromPoint(POINT.x, POINT.y));
-      const targetWindow = target?.ownerDocument?.defaultView || window;
-      if (!(target instanceof targetWindow.Element)) {
-        return { ok: false, errorKind: "editable_not_found" };
-      }
-
-      const before = target instanceof targetWindow.HTMLInputElement || target instanceof targetWindow.HTMLTextAreaElement
-        ? target.value
-        : target.textContent || "";
-      let method = "dom";
-      try {
-        if (!CLEAR && before === TEXT) {
-          return {
-            ok: true,
-            method: "alreadyMatched",
-            tagName: String(target.tagName || "element").toLowerCase(),
-            role: normalizeText(target.getAttribute?.("role") || "", 40),
-            textChanged: false,
-            textPreview: normalizeText(before, 120),
-            alreadyMatched: true
-          };
-        }
-        const segmented = maybeInsertSegmentedText(target);
-        if (segmented !== null) {
-          return segmented;
-        }
-        if (target instanceof targetWindow.HTMLInputElement || target instanceof targetWindow.HTMLTextAreaElement) {
-          target.focus({ preventScroll: true });
-          const start = CLEAR ? 0 : (target.selectionStart ?? target.value.length);
-          const end = CLEAR ? target.value.length : (target.selectionEnd ?? target.value.length);
-          if (typeof target.setRangeText === "function") {
-            target.setRangeText(TEXT, start, end, "end");
-            method = "setRangeText";
-          } else {
-            target.value = target.value.slice(0, start) + TEXT + target.value.slice(end);
-            method = "value";
-          }
-          dispatchTextEvents(target);
-        } else if (target instanceof targetWindow.HTMLElement) {
-          target.focus({ preventScroll: true });
-          const ownerDocument = target.ownerDocument || document;
-          const selection = ownerDocument.getSelection?.();
-          if (selection) {
-            const range = ownerDocument.createRange();
-            range.selectNodeContents(target);
-            if (!CLEAR) {
-              range.collapse(false);
-            }
-            selection.removeAllRanges();
-            selection.addRange(range);
-          }
-          const inserted = ownerDocument.execCommand?.("insertText", false, TEXT) === true;
-          method = inserted ? "execCommand.insertText" : "textNode";
-          if (!inserted) {
-            if (CLEAR) {
-              target.textContent = TEXT;
-            } else {
-              target.appendChild(ownerDocument.createTextNode(TEXT));
-            }
-          }
-          dispatchTextEvents(target);
-        }
-      } catch (error) {
-        return {
-          ok: false,
-          errorKind: "insert_failed",
-          message: String(error instanceof Error ? error.message : error)
-        };
-      }
-
-      const after = target instanceof targetWindow.HTMLInputElement || target instanceof targetWindow.HTMLTextAreaElement
-        ? target.value
-        : target.textContent || "";
-      return {
-        ok: after !== before || (CLEAR && after === TEXT) || TEXT.length === 0,
-        method,
-        tagName: String(target.tagName || "element").toLowerCase(),
-        role: normalizeText(target.getAttribute?.("role") || "", 40),
-        textChanged: after !== before,
-        textPreview: normalizeText(after, 120)
-      };
-    })()
-  `;
-
   const insertTextIntoAgentElement = async (
     target: BrowserAgentPageTarget,
     element: WorkbenchBrowserAgentElement,
     text: string,
     clear: boolean,
-    timeoutMs: number | undefined
-  ): Promise<{
-    readonly ok: boolean;
-    readonly method?: string;
-    readonly textChanged?: boolean;
-    readonly textPreview?: string;
-    readonly alreadyMatched?: boolean;
-    readonly errorKind?: string;
-    readonly message?: string;
-  }> => {
-    if (target.targetMode === "live") {
-      assertSharedControlCanContinue(target.tabId);
+    timeoutMs: number | undefined,
+    receipts: InputReceipt[]
+  ): Promise<BrowserTextInsertionResult> => {
+    if (target.targetMode === "live") assertSharedControlCanContinue(target.tabId);
+    const frame = findFrameInWebContents(target.webContents, element.frameTreeNodeId);
+    if (!frame) return { ok: false, errorKind: "editable_frame_unavailable" };
+    const key = `__lyraTextInput_${randomUUID().replaceAll("-", "")}`;
+    const run = <T>(script: string) => runFrameScriptWithTimeout(
+      () => frame.executeJavaScript(script, true), normalizeExecuteScriptTimeoutMs(timeoutMs, 4_000)
+    ) as Promise<T>;
+    let retained = false;
+    const dispose = () => run(cleanupTextInputScript(key)).catch(() => undefined);
+    try {
+      const prepared = await run<BrowserTextInsertionResult & { needsClick?: boolean; x: number; y: number }>(
+        prepareTextInputScript(key, element.targetRef ?? "", false));
+      if (!prepared.ok) return prepared;
+      if (prepared.needsClick) {
+        await performAgentPointerInteraction({ tabId: target.tabId, target,
+          x: prepared.x + (element.frameBounds?.x ?? 0), y: prepared.y + (element.frameBounds?.y ?? 0), interaction: "click" });
+        await delay(30);
+      }
+      let armed = await run<BrowserTextInsertionResult & { skipInput?: boolean }>(armTextInputScript(key, text, clear));
+      // Retry only focus preparation, before any text dispatch. This cannot
+      // duplicate input and still refuses detached/replaced or foreign hosts.
+      for (let attempt = 0; !armed.ok && armed.errorKind === "editable_changed" && attempt < 2; attempt++) {
+        await delay(40);
+        if (target.targetMode === "live") assertSharedControlCanContinue(target.tabId);
+        armed = await run(armTextInputScript(key, text, clear));
+      }
+      if (!armed.ok) return armed;
+      if (!armed.skipInput) {
+        if (target.targetMode === "live") assertSharedControlCanContinue(target.tabId);
+        await focusBrowserPageForInput(target.webContents);
+        if (text) await target.webContents.insertText(text);
+        else dispatchBrowserKeys(browserKeyEvents("Delete"), event => sendAgentInputEvent(target, event));
+      }
+      // Let input handlers and their queued render run before reading the live
+      // host. A detached node retaining text is not successful input.
+      await delay(30);
+      const verify = () => run<BrowserTextInsertionResult>(verifyTextInputScript(key));
+      const result = await verify();
+      if (result.ok) { receipts.push({verify, dispose, targetRef: element.targetRef}); retained = true; }
+      return result;
+    } finally {
+      if (!retained) await dispose();
     }
-    const frame = findFrameInWebContents(target.webContents, element.frameTreeNodeId)
-      ?? target.webContents.mainFrame;
-    const { x, y } = centerOfAgentElement(element);
-    const localPoint = element.localBounds === undefined
-      ? {
-          x: x - (element.frameBounds?.x ?? 0),
-          y: y - (element.frameBounds?.y ?? 0)
-        }
-      : boundsCenter(element.localBounds);
-    const raw = await runFrameScriptWithTimeout(
-      () => frame.executeJavaScript(
-        buildBrowserAgentTextInsertionScript({
-          x: localPoint.x,
-          y: localPoint.y,
-          text,
-          clear,
-          xpath: element.xpath ?? "",
-          selectorPreview: element.selectorPreview ?? "",
-          tagName: element.tagName ?? "",
-          inputType: element.inputType ?? "",
-          bounds: element.localBounds ?? {
-            x: element.bounds.x - (element.frameBounds?.x ?? 0),
-            y: element.bounds.y - (element.frameBounds?.y ?? 0),
-            width: element.bounds.width,
-            height: element.bounds.height
-          },
-          hostChainFingerprint: element.hostChainFingerprint ?? ""
-        }),
-        true
-      ),
-      normalizeExecuteScriptTimeoutMs(timeoutMs, 4_000)
-    );
-    if (raw === null || typeof raw !== "object") {
-      return { ok: false, errorKind: "invalid_insert_result" };
-    }
-    const record = raw as Record<string, unknown>;
-    return {
-      ok: record.ok === true,
-      ...(typeof record.method === "string" ? { method: record.method } : {}),
-      ...(typeof record.errorKind === "string" ? { errorKind: record.errorKind } : {}),
-      ...(typeof record.message === "string" ? { message: record.message } : {}),
-      ...(typeof record.textPreview === "string" ? { textPreview: record.textPreview } : {}),
-      ...(typeof record.alreadyMatched === "boolean" ? { alreadyMatched: record.alreadyMatched } : {}),
-      ...(typeof record.textChanged === "boolean" ? { textChanged: record.textChanged } : {})
-    };
   };
 
   const markAgentFocusAnchor = async (target: BrowserAgentPageTarget): Promise<string | null> => {
@@ -754,7 +202,7 @@ export const createBrowserAgentFocusInputController = (deps: BrowserAgentFocusIn
     target: BrowserAgentPageTarget,
     backwards: boolean
   ): Promise<void> => {
-    target.webContents.focus();
+    await focusBrowserPageForInput(target.webContents);
     if (backwards) {
       sendAgentInputEvent(target, { type: "keyDown", keyCode: "Tab", modifiers: ["shift"] });
     } else {
@@ -866,7 +314,7 @@ export const createBrowserAgentFocusInputController = (deps: BrowserAgentFocusIn
     };
   };
 
-  const typeIntoAgentElement = async (
+  const performTypeIntoAgentElement = async (
     tabId: string,
     request: WorkbenchBrowserAgentModeRequest & {
       readonly elementId?: number;
@@ -874,26 +322,102 @@ export const createBrowserAgentFocusInputController = (deps: BrowserAgentFocusIn
       readonly effect?: BrowserActionEffect;
       readonly text: string;
       readonly clear?: boolean;
+      readonly fields?: readonly {
+        readonly targetRef: string;
+        readonly text: string;
+        readonly clear?: boolean;
+      }[];
       readonly timeoutMs?: number;
       readonly verification?: WorkbenchBrowserAgentVerification;
-    }
+    },
+    receipts: InputReceipt[]
   ): Promise<WorkbenchBrowserAgentActionResult> => {
     const target = await resolveBrowserAgentTarget(tabId, request, request.timeoutMs);
     const verification = normalizeAgentVerification(request.verification);
     const currentUrl = agentTargetAddress(target);
-    let beforeObservationId = readBrowserAgentCacheEntry(tabId, target.targetMode)?.observationId;
-    let element: WorkbenchBrowserAgentElement | null = null;
-    if (request.elementId !== undefined || request.targetRef !== undefined) {
-      const found = await findAgentElement(
-        tabId,
-        {
-          ...(request.elementId === undefined ? {} : { elementId: request.elementId }),
-          ...(request.targetRef === undefined ? {} : { targetRef: request.targetRef })
-        },
-        target.targetMode,
-        request.timeoutMs
-      );
-      if (found.element === null) {
+    const wantedRefs = [
+      ...(request.targetRef === undefined ? [] : [request.targetRef]),
+      ...(request.fields === undefined ? [] : request.fields.map((field) => field.targetRef))
+    ];
+    const cached = readBrowserAgentCacheEntry(tabId, target.targetMode);
+    const cacheCovers = cached !== undefined
+      && wantedRefs.length > 0
+      && wantedRefs.every((ref) => cached.elementsByTargetRef.has(ref));
+    const observed = cacheCovers && cached !== undefined
+      ? { observationId: cached.observationId, elements: cached.elements }
+      : await observeAgentPage(tabId, {
+          strategy: "interactiveOnly",
+          targetMode: target.targetMode,
+          suppressActivity: true,
+          ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs })
+        });
+    let beforeObservationId = observed.observationId
+      ?? readBrowserAgentCacheEntry(tabId, target.targetMode)?.observationId;
+    const untargeted = request.targetRef === undefined
+      && request.elementId === undefined
+      && request.fields === undefined;
+    if (untargeted) {
+      const anchor = observed.elements.find(element => element.editable && element.semantics?.focused);
+      if (anchor !== undefined) {
+        const insertion = await insertTextIntoAgentElement(
+          target,
+          anchor,
+          request.text,
+          request.clear === true,
+          request.timeoutMs,
+          receipts
+        );
+        if (insertion.ok !== true) {
+          return {
+            ...inputFacts(insertion),
+            ok: false,
+            kind: "lyraLumenActionResult",
+            tabId,
+            inputMode: "chromium",
+            targetMode: target.targetMode,
+            browserMode: target.browserMode,
+            ...(beforeObservationId === undefined ? {} : { beforeObservationId }),
+            nextRecommendedAction: "lyra_lumen.map",
+            error: {
+              kind: insertion.errorKind ?? "insertFailed",
+              message: insertion.message ?? "当前焦点不是可以输入的框。"
+            }
+          };
+        }
+        const after = await observeInputResult(tabId, target.targetMode, verification, request.timeoutMs);
+        return {
+          ok: true,
+          kind: "lyraLumenActionResult",
+          tabId,
+          inputMode: "chromium",
+          targetMode: target.targetMode,
+          browserMode: target.browserMode,
+          ...(after === null ? {} : { afterObservationId: after.observationId }),
+          ...(beforeObservationId === undefined ? {} : { beforeObservationId }),
+          ...inputFacts(insertion),
+          message: `The focused field retained the requested edit.${inputMapFeedback(cached, after)}`,
+          nextRecommendedAction: "continue_with_cached_targets"
+        };
+      }
+    }
+    const plan = planInputWrites(observed.elements.map(inputFieldFromElement), {
+      ...(request.targetRef === undefined ? {} : { targetRef: request.targetRef }),
+      ...(request.elementId === undefined ? {} : { elementId: request.elementId }),
+      text: request.text,
+      ...(request.clear === undefined ? {} : { clear: request.clear }),
+      ...(request.fields === undefined ? {} : { assignments: request.fields })
+    });
+    if (plan.ok !== true) {
+      if (plan.kind === "missingTarget") {
+        const found = await findAgentElement(
+          tabId,
+          {
+            ...(request.elementId === undefined ? {} : { elementId: request.elementId }),
+            ...(request.targetRef === undefined ? {} : { targetRef: request.targetRef })
+          },
+          target.targetMode,
+          request.timeoutMs
+        );
         return staleElementResult(
           tabId,
           request.elementId,
@@ -905,30 +429,114 @@ export const createBrowserAgentFocusInputController = (deps: BrowserAgentFocusIn
           "type"
         );
       }
-      beforeObservationId = found.observationId ?? beforeObservationId;
-      element = found.element;
-    } else {
-      const observed = await observeAgentPage(tabId, {
-        strategy: "interactiveOnly",
-        targetMode: target.targetMode,
-        suppressActivity: true,
-        ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs })
+      recordFollowAction(tabId, target.targetMode, "type", {
+        visibleFollow: target.browserMode.visibleFollow,
+        inputActive: false,
+        result: "failure"
       });
-      beforeObservationId = observed.observationId;
-      element = activeEditableElementFromObservation(observed);
-      if (element === null) {
-        element = readCachedBrowserAgentInputTarget(tabId, target.targetMode, currentUrl)?.element ?? null;
-      }
+      return {
+        ok: false,
+        kind: "lyraLumenActionResult",
+        tabId,
+        inputMode: "chromium",
+        targetMode: target.targetMode,
+        browserMode: target.browserMode,
+        ...(beforeObservationId === undefined ? {} : { beforeObservationId }),
+        nextRecommendedAction: "lyra_lumen.map",
+        error: { kind: plan.kind, message: plan.message }
+      };
     }
-
+    const planned = plan.writes[0];
+    if (planned === undefined) {
+      return noEditableTargetResult(tabId, target.targetMode, target.browserMode, beforeObservationId);
+    }
+    if (plan.writes.length > 1) {
+      const written: string[] = [];
+      for (const write of plan.writes) {
+        const fieldElement = observed.elements.find((candidate) => candidate.targetRef === write.targetRef) ?? null;
+        if (fieldElement === null) {
+          return {
+            ok: false,
+            kind: "lyraLumenActionResult",
+            tabId,
+            inputMode: "chromium",
+            targetMode: target.targetMode,
+            browserMode: target.browserMode,
+            ...(beforeObservationId === undefined ? {} : { beforeObservationId }),
+            nextRecommendedAction: "lyra_lumen.map",
+            error: {
+              kind: "fieldNotReady",
+              message: `写到这里停下了。\n${written.join("\n")}`
+            }
+          };
+        }
+        const point = centerOfAgentElement(fieldElement);
+        publishBrowserAgentActivity({
+          tabId,
+          targetMode: target.targetMode,
+          action: "type",
+          inputActive: true,
+          visibleFollow: target.browserMode.visibleFollow,
+          cursor: point,
+          durationMs: Math.max(1_700, Math.min(8_000, 900 + write.text.length * 24))
+        });
+        const insertion = await insertTextIntoAgentElement(
+          target,
+          fieldElement,
+          write.text,
+          write.clear,
+          request.timeoutMs,
+          receipts
+        );
+        if (insertion.ok !== true) {
+          return {
+            ...inputFacts(insertion),
+            ok: false,
+            kind: "lyraLumenActionResult",
+            tabId,
+            inputMode: "chromium",
+            targetMode: target.targetMode,
+            browserMode: target.browserMode,
+            targetRef: write.targetRef,
+            ...(beforeObservationId === undefined ? {} : { beforeObservationId }),
+            nextRecommendedAction: "lyra_lumen.map",
+            error: {
+              kind: insertion.errorKind ?? "insertFailed",
+              message: `${insertion.message ?? "这一格没有写上。"}\n${written.join("\n")}`
+            }
+          };
+        }
+        written.push(`${write.targetRef}: input verified`);
+      }
+      const after = await observeInputResult(tabId, target.targetMode, verification, request.timeoutMs);
+      return {
+        ok: true,
+        kind: "lyraLumenActionResult",
+        tabId,
+        inputMode: "chromium",
+        targetMode: target.targetMode,
+        browserMode: target.browserMode,
+        ...(beforeObservationId === undefined ? {} : { beforeObservationId }),
+        ...(after === null ? {} : { afterObservationId: after.observationId }),
+        message: written.join("\n") + inputMapFeedback(cached, after),
+        nextRecommendedAction: "continue_with_cached_targets"
+      };
+    }
+    let element = observed.elements.find((candidate) => candidate.targetRef === planned.targetRef) ?? null;
     if (element === null) {
       return noEditableTargetResult(tabId, target.targetMode, target.browserMode, beforeObservationId);
     }
+    const plannedText = planned.text;
+    const plannedClear = planned.clear;
 
+    const locatedElement = await refreshStampedElement(
+      element,
+      (script) => target.webContents.mainFrame.executeJavaScript(script, true)
+    );
     const visibleTarget = await ensureAgentElementVisible({
       tabId,
       target,
-      element,
+      element: locatedElement,
       observationId: beforeObservationId,
       reason: "target_offscreen",
       block: "center",
@@ -967,13 +575,7 @@ export const createBrowserAgentFocusInputController = (deps: BrowserAgentFocusIn
     const beforeFocus = verification === "full"
       ? await readFocusedElementSignature(target, request.timeoutMs)
       : "";
-    await performAgentPointerInteraction({
-      tabId,
-      target,
-      x,
-      y,
-      interaction: "click"
-    });
+    // First entry activates the editor; continuing input retains its selection.
     publishBrowserAgentActivity({
       tabId,
       targetMode: target.targetMode,
@@ -981,7 +583,7 @@ export const createBrowserAgentFocusInputController = (deps: BrowserAgentFocusIn
       inputActive: true,
       visibleFollow: target.browserMode.visibleFollow,
       cursor: { x, y },
-      durationMs: Math.max(1_700, Math.min(5_000, 950 + request.text.length * 24))
+      durationMs: Math.max(1_700, Math.min(5_000, 950 + plannedText.length * 24))
     });
 
     let insertion: Awaited<ReturnType<typeof insertTextIntoAgentElement>>;
@@ -989,9 +591,10 @@ export const createBrowserAgentFocusInputController = (deps: BrowserAgentFocusIn
       insertion = await insertTextIntoAgentElement(
         target,
         element,
-        request.text,
-        request.clear === true,
-        request.timeoutMs
+        plannedText,
+        plannedClear,
+        request.timeoutMs,
+        receipts
       );
     } catch (error) {
       recordFollowAction(tabId, target.targetMode, "type", {
@@ -1026,6 +629,7 @@ export const createBrowserAgentFocusInputController = (deps: BrowserAgentFocusIn
         result: "failure"
       });
       return {
+        ...inputFacts(insertion),
         ok: false,
         kind: "lyraLumenActionResult",
         tabId,
@@ -1047,9 +651,7 @@ export const createBrowserAgentFocusInputController = (deps: BrowserAgentFocusIn
     }
 
     await delay(30);
-    const after = verification === "full"
-      ? await observeAfterAgentInput(tabId, target.targetMode, request.timeoutMs)
-      : null;
+    const after = await observeInputResult(tabId, target.targetMode, verification, request.timeoutMs);
     cacheBrowserAgentInputTarget(
       tabId,
       target.targetMode,
@@ -1076,6 +678,7 @@ export const createBrowserAgentFocusInputController = (deps: BrowserAgentFocusIn
       y,
       verification,
       ...(inputValuePreview === undefined ? {} : { inputValuePreview }),
+      ...(insertion.evidence === undefined ? {} : { inputEvidence: insertion.evidence }),
       ...(typeof insertion.textChanged === "boolean" ? { inputTextChanged: insertion.textChanged } : {}),
       ...(insertion.alreadyMatched === true ? { inputAlreadyMatched: true } : {}),
       ...(insertion.method === undefined ? {} : { inputInsertionMethod: insertion.method }),
@@ -1085,61 +688,112 @@ export const createBrowserAgentFocusInputController = (deps: BrowserAgentFocusIn
       pageChanged,
       ...(verification === "full" ? { focusChanged: beforeFocus !== afterFocus } : {}),
       navigationStarted,
-      message:
-        insertion.alreadyMatched === true
+      message: (insertion.alreadyMatched === true
           ? `Editable element ${element.id} already contained the requested text.`
-          : `Typed into editable element ${element.id}` +
-            (insertion.method === undefined ? "." : ` via ${insertion.method}.`),
-      nextRecommendedAction: nextRecommendedActionAfterAgentAction({ navigationStarted, pageChanged })
+          : `Typed into editable element ${element.id}. The editor accepted the text at input verification.`) + inputMapFeedback(cached, after),
+      nextRecommendedAction: navigationStarted || pageChanged ? "lyra_lumen.map" : "continue_with_cached_targets"
     };
+  };
+
+  const typeIntoAgentElement = async (
+    tabId: string, request: Parameters<typeof performTypeIntoAgentElement>[1]
+  ): Promise<WorkbenchBrowserAgentActionResult> => {
+    const receipts: InputReceipt[] = [];
+    try {
+      const result = await performTypeIntoAgentElement(tabId, request, receipts);
+      if (!result.ok) return result;
+      // Verify after the render boundary even when no feedback map is collected:
+      // an input handler can replace/reset the editor asynchronously.
+      const invalidFields: string[] = [];
+      const fieldFeedback: string[] = [];
+      for (const receipt of receipts) {
+        const current = await receipt.verify().catch((): BrowserTextInsertionResult => ({ok:false, errorKind:"editable_changed"}));
+        if (current.validation?.valid === false) invalidFields.push(current.validation.message);
+        if (!current.ok) {
+          const { inputValuePreview: _preview, inputTextChanged: _changed, inputEvidence: _evidence, inputAlreadyMatched: _matched, message: _message, ...base } = result;
+          const message = current.message ?? "The editor changed after input. Read the current page before retrying; do not repeat the write automatically.";
+          return { ...base, ...inputFacts(current), ...(receipt.targetRef === undefined ? {} : {targetRef:receipt.targetRef}), ok:false, message,
+            error:{kind:current.errorKind ?? "input_not_accepted",message}, nextRecommendedAction:"lyra_lumen.map" };
+        }
+        const facts = current.fieldState;
+        if (facts) fieldFeedback.push([
+          receipt.targetRef ?? "Focused field",
+          facts.invalid ? `invalid=${facts.invalid}` : "invalid=false",
+          `error=${JSON.stringify(facts.validationMessage ?? "")}`,
+          ...(facts.description ? [`description=${JSON.stringify(facts.description)}`] : []),
+          ...Object.entries(facts.constraints ?? {}).map(([key,value]) => `${key}=${JSON.stringify(value)}`)
+        ].join(" "));
+      }
+      return { ...result, message:[result.message,...fieldFeedback].filter(Boolean).join("\n"),
+        inputValidation: { valid: invalidFields.length === 0, messages: invalidFields } };
+    } finally {
+      await Promise.allSettled(receipts.map(receipt => receipt.dispose()));
+    }
   };
 
   const pressAgentKey = async (
     tabId: string,
     request: WorkbenchBrowserAgentModeRequest & {
       readonly key: string;
+      readonly repeat?: number;
+      readonly selectText?: string;
+      readonly occurrence?: number;
       readonly effect?: BrowserActionEffect;
+      readonly awaitResponse?: boolean;
       readonly elementId?: number;
       readonly targetRef?: string;
       readonly timeoutMs?: number;
       readonly verification?: WorkbenchBrowserAgentVerification;
     }
   ): Promise<WorkbenchBrowserAgentActionResult> => {
+    const events = browserKeyEvents(request.key);
+    const repeat = browserKeyRepeat(request.key, request.repeat);
+    if (request.selectText !== undefined && request.targetRef === undefined && request.elementId === undefined) {
+      throw new Error("selectText requires an explicit mapped target");
+    }
     const target = await resolveBrowserAgentTarget(tabId, request, request.timeoutMs);
-    const verification = normalizeAgentVerification(request.verification);
-    let beforeObservationId = readBrowserAgentCacheEntry(tabId, target.targetMode)?.observationId;
+    if (target.targetMode === "live") assertSharedControlCanContinue(tabId);
+    const historyDirection = browserHistoryDirection(request.key);
+    if (historyDirection) {
+      if (request.effect !== undefined && request.effect !== "navigate") throw new Error("Browser history navigation requires effect=navigate");
+      if (repeat !== 1) throw new Error("History navigation accepts one step at a time; verify the destination before another step.");
+      publishBrowserAgentActivity({ tabId, targetMode: target.targetMode, action: "press", inputActive: true,
+        visibleFollow: target.browserMode.visibleFollow, durationMs: 1_000 });
+      const result = await navigateAgentHistory(target.webContents, historyDirection, request.timeoutMs);
+      return { ...result, kind:"lyraLumenActionResult",tabId,targetMode:target.targetMode,inputMode:"chromium",
+        message:result.ok ? `Browser history ${historyDirection}: ${result.status}. Page: ${result.url}.`
+          : result.error!.message,
+        nextRecommendedAction:"lyra_lumen.map" };
+    }
+    const verification = normalizeAgentVerification(request.verification ?? "fast");
+    const cached = readBrowserAgentCacheEntry(tabId, target.targetMode);
+    let beforeObservationId = cached?.observationId;
     let elementId = request.elementId;
     let targetRef = request.targetRef;
     let x: number | undefined;
     let y: number | undefined;
     let autoScroll: WorkbenchBrowserAgentScrollEffect | undefined;
     if (elementId !== undefined || targetRef !== undefined) {
-      const focused = await actOnAgentElement(tabId, {
-        ...(elementId === undefined ? {} : { elementId }),
-        ...(targetRef === undefined ? {} : { targetRef }),
-        ...(request.effect === undefined ? {} : { effect: request.effect }),
-        interaction: "click",
-        targetMode: target.targetMode,
-        visibleFollow: target.browserMode.visibleFollow,
-        authState: target.browserMode.authState === "borrowedLiveLogin" ? "borrowLiveLogin" : "none",
-        useLiveLoginState: target.browserMode.authState === "borrowedLiveLogin",
-        verification: "none",
-        ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs })
-      });
-      if (focused.ok === false) {
-        recordFollowAction(tabId, target.targetMode, "press", {
-          visibleFollow: target.browserMode.visibleFollow,
-          inputActive: false,
-          result: "failure"
-        });
-        return focused;
-      }
-      beforeObservationId = focused.beforeObservationId;
-      elementId = focused.elementId;
-      targetRef = focused.targetRef;
-      x = focused.x;
-      y = focused.y;
-      autoScroll = focused.autoScroll;
+      const located = await findAgentElement(tabId, { ...(elementId === undefined ? {} : { elementId }), ...(targetRef === undefined ? {} : { targetRef }) }, target.targetMode, request.timeoutMs);
+      if (!located.element) return staleElementResult(tabId, elementId, targetRef, target.targetMode,
+        target.browserMode, located.observationId, located.staleTarget, "press");
+      const element = located.element;
+      beforeObservationId = located.observationId;
+      elementId = element.id;
+      targetRef = element.targetRef;
+      ({ x, y } = centerOfAgentElement(element));
+      const frame = findFrameInWebContents(target.webContents, element.frameTreeNodeId);
+      const conflict = browserElementEffectConflict(element, request.effect);
+      const prepared: BrowserEditorPreparation = conflict !== null && ["Enter", " "].includes(events[0]!.keyCode)
+        ? { ok: false, errorKind: "browserActionEffectConflict", message: conflict }
+        : frame === null || frame === undefined ? { ok: false, errorKind: "target_frame_gone" }
+        : await runFrameScriptWithTimeout(() => frame.executeJavaScript(
+          prepareBrowserKeyTargetScript(targetRef!, request.selectText, request.occurrence), true
+        ), normalizeExecuteScriptTimeoutMs(request.timeoutMs)) as BrowserEditorPreparation;
+      if (!prepared.ok) return { ok: false, kind: "lyraLumenActionResult", tabId,
+        inputMode: "chromium", targetMode: target.targetMode, elementId, targetRef,
+        error: { kind: prepared.errorKind ?? "focus_failed", message: prepared.message ?? "Unable to focus/select the current mapped target; no key was sent." },
+        nextRecommendedAction: "lyra_lumen.map" };
     }
     publishBrowserAgentActivity({
       tabId,
@@ -1154,16 +808,17 @@ export const createBrowserAgentFocusInputController = (deps: BrowserAgentFocusIn
     const beforeFocus = verification === "full"
       ? await readFocusedElementSignature(target, request.timeoutMs)
       : "";
-    target.webContents.focus();
-    sendAgentInputEvent(target, { type: "keyDown", keyCode: request.key });
-    if (request.key.length === 1) {
-      sendAgentInputEvent(target, { type: "char", keyCode: request.key });
+    await focusBrowserPageForInput(target.webContents);
+    const responseFrame = targetRef ? findFrameInWebContents(target.webContents,
+      cached?.elementsByTargetRef.get(targetRef)?.frameTreeNodeId ?? target.webContents.mainFrame.frameTreeNodeId) : undefined;
+    const responseWatch = request.effect === "communicate" && events.some(event => event.keyCode === "Enter") && targetRef && responseFrame
+      ? await armResponseWatch(responseFrame, targetRef) : undefined;
+    for (let index = 0; index < repeat; index += 1) {
+      assertSharedControlCanContinue(tabId);
+      dispatchBrowserKeys(events, event => sendAgentInputEvent(target, event));
     }
-    sendAgentInputEvent(target, { type: "keyUp", keyCode: request.key });
     await delay(30);
-    const after = verification === "full"
-      ? await observeAfterAgentInput(tabId, target.targetMode, request.timeoutMs)
-      : null;
+    const after = responseWatch && request.awaitResponse ? null : await observeInputResult(tabId, target.targetMode, verification, request.timeoutMs, true);
     const afterFocus = verification === "full"
       ? await readFocusedElementSignature(target, request.timeoutMs)
       : "";
@@ -1187,7 +842,8 @@ export const createBrowserAgentFocusInputController = (deps: BrowserAgentFocusIn
       pageChanged,
       ...(verification === "full" ? { focusChanged: beforeFocus !== afterFocus } : {}),
       navigationStarted,
-      message: `Pressed ${request.key} with Chromium virtual keyboard.`,
+      message: `Pressed ${request.key}${repeat > 1 ? ` × ${repeat}` : ""} with Chromium virtual keyboard.${inputMapFeedback(cached, after)}`,
+      ...(responseWatch === undefined ? {} : { responseWatch: { ...responseWatch, targetRef: targetRef! } }),
       nextRecommendedAction: nextRecommendedActionAfterAgentAction({ navigationStarted, pageChanged })
     };
   };

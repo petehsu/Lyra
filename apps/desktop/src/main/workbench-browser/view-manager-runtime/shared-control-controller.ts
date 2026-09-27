@@ -1,3 +1,4 @@
+import { browserAgentOperationContext } from "../agent-operation-context";
 import type { WebContents } from "electron";
 
 import type {
@@ -7,9 +8,11 @@ import type {
 } from "../../../shared/desktop-bridge";
 import {
   buildAgentCursorOverlayScript,
+  buildAgentCursorThoughtScript,
   type BrowserAgentCursorOverlayAction,
   type BrowserAgentCursorOverlayPhase
 } from "../agent-cursor-overlay";
+import { readAgentCursorThought, registerAgentCursorThoughtPaint } from "../agent-cursor-thought";
 import { compactFollowSession } from "../lumen-follow-audit";
 import {
   createIdleSharedControlSnapshot,
@@ -55,11 +58,20 @@ export const createSharedControlController = ({
   readAgentFollowFinalPageState
 }: SharedControlControllerHost) => {
   const followSessions = new Map<string, BrowserAgentFollowSession>();
+  const taskTurnsByPage = new Map<string, Set<string>>();
   const agentSyntheticInputUntil = new Map<string, number>();
   const userInputDirtyTabs = new Set<string>();
   const sharedControlStates = new Map<string, SharedControlSnapshot>();
   const sharedControlTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const lastControlHandoffByTabId = new Map<string, WorkbenchBrowserSharedControlEvent>();
+  let cursorThoughtTabId: string | null = null;
+
+  registerAgentCursorThoughtPaint((thought) => {
+    if (cursorThoughtTabId === null) return;
+    const entry = getLiveEntry(cursorThoughtTabId);
+    if (entry === undefined || entry.webContents.isDestroyed()) return;
+    void entry.webContents.executeJavaScript(buildAgentCursorThoughtScript(thought), true).catch(() => undefined);
+  });
 
   const followSessionKey = (
     tabId: string,
@@ -72,7 +84,7 @@ export const createSharedControlController = ({
   ): BrowserAgentFollowSession => {
     const key = followSessionKey(tabId, targetMode);
     const existing = followSessions.get(key);
-    if (existing !== undefined) {
+    if (existing !== undefined && existing.endedAt === null) {
       return existing;
     }
     const created: BrowserAgentFollowSession = {
@@ -225,11 +237,14 @@ export const createSharedControlController = ({
       readonly redacted?: boolean;
     }
   ): BrowserAgentFollowSession | null => {
-    if (request.visibleFollow !== true) {
-      return null;
+    const task = browserAgentOperationContext.getStore();
+    if (targetMode === "live" && task?.turnId) {
+      const turns = taskTurnsByPage.get(tabId) ?? new Set<string>();
+      turns.add(task.turnId); taskTurnsByPage.set(tabId, turns);
     }
-    const existing = followSessions.get(followSessionKey(tabId, targetMode));
-    const session = existing ?? ensureFollowSession(tabId, targetMode);
+    if (request.visibleFollow !== true) return null;
+    const session = ensureFollowSession(tabId, targetMode);
+    if (task?.turnId) session.turnId = task.turnId;
     const at = Date.now();
     session.updatedAt = at;
     session.totalActions += 1;
@@ -405,7 +420,7 @@ export const createSharedControlController = ({
     target.webContents.sendInputEvent(event);
   };
 
-  const publishBrowserAgentActivity = ({
+  const publishBrowserAgentActivity = async ({
     tabId,
     targetMode,
     action,
@@ -414,7 +429,9 @@ export const createSharedControlController = ({
     inputActive = false,
     visibleFollow = false,
     durationMs = inputActive ? 1_800 : 1_250,
-    cursor
+    hold = true,
+    cursor,
+    points
   }: {
     readonly tabId: string;
     readonly targetMode: WorkbenchBrowserAgentTargetMode;
@@ -424,8 +441,10 @@ export const createSharedControlController = ({
     readonly inputActive?: boolean;
     readonly visibleFollow?: boolean;
     readonly durationMs?: number;
+    readonly hold?: boolean;
     readonly cursor?: { readonly x: number; readonly y: number };
-  }): void => {
+    readonly points?: readonly { readonly x: number; readonly y: number }[];
+  }): Promise<void> => {
     const criticalInput = isCriticalBrowserAgentAction(action, interaction);
     let sharedControlState: SharedControlSnapshot["state"] | undefined;
     if (targetMode === "live" && visibleFollow) {
@@ -453,18 +472,23 @@ export const createSharedControlController = ({
       redacted: action === "type" || action === "press"
     });
     if (followSession === null) {
-      return;
+      return Promise.resolve();
     }
     const followAction = followSession.actions[followSession.actions.length - 1];
-    if (inputActive && targetMode === "live" && visibleFollow) {
+    let painted: Promise<unknown> = Promise.resolve();
+    if (targetMode === "live" && visibleFollow) {
+      cursorThoughtTabId = tabId;
       const entry = getLiveEntry(tabId);
       if (entry !== undefined && entry.webContents.isDestroyed() === false) {
-        void entry.webContents.executeJavaScript(
+        painted = entry.webContents.executeJavaScript(
           buildAgentCursorOverlayScript({
             action,
             phase: cursorPhase,
-            durationMs,
-            ...(cursor === undefined ? {} : { cursor })
+            durationMs: hold ? Math.max(durationMs, 60_000) : durationMs,
+            hold,
+            thought: readAgentCursorThought(),
+            ...(cursor === undefined ? {} : { cursor }),
+            ...(points === undefined ? {} : { points })
           }),
           true
         ).catch((error: unknown) => {
@@ -492,15 +516,17 @@ export const createSharedControlController = ({
       redacted: action === "type" || action === "press",
       ...(cursor === undefined ? {} : { cursor })
     });
+    await painted;
   };
 
   const hasActiveLiveAgentBrowserTask = (tabId: string): boolean => {
+    if (taskTurnsByPage.get(tabId)?.size) return true;
     for (const session of followSessions.values()) {
       if (
         session.tabId === tabId
         && session.targetMode === "live"
+        // An operation failure does not end the task or release its page.
         && session.endedAt === null
-        && (session.status === "running" || session.status === "interrupted")
       ) {
         return true;
       }
@@ -575,13 +601,18 @@ export const createSharedControlController = ({
     }
   ): void => {
     const endedAt = Date.now();
+    const endedPageOwners = new Set<string>();
+    for (const [tabId, turns] of taskTurnsByPage) {
+      if (request.turnId) turns.delete(request.turnId); else turns.clear();
+      if (!turns.size) { taskTurnsByPage.delete(tabId); endedPageOwners.add(tabId); }
+    }
     for (const session of followSessions.values()) {
-      if (session.status !== "running") {
+      if (session.endedAt !== null) {
         continue;
       }
-      if (request.turnId !== undefined && session.turnId !== null && session.turnId !== request.turnId) {
-        continue;
-      }
+      if (taskTurnsByPage.get(session.tabId)?.size) continue;
+      if (request.turnId !== undefined && session.turnId !== null && session.turnId !== request.turnId
+        && !endedPageOwners.has(session.tabId)) continue;
       if (session.turnId === null && request.turnId !== undefined) {
         session.turnId = request.turnId;
       }
@@ -645,6 +676,7 @@ export const createSharedControlController = ({
 
   const dispose = (): void => {
     followSessions.clear();
+    taskTurnsByPage.clear();
     agentSyntheticInputUntil.clear();
     userInputDirtyTabs.clear();
     for (const timer of sharedControlTimers.values()) {

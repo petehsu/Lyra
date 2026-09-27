@@ -1,4 +1,4 @@
-import { rmSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const electronMock = vi.hoisted(() => {
@@ -31,10 +31,14 @@ vi.mock("electron", () => ({
   safeStorage: electronMock.safeStorage
 }));
 
-vi.mock("node:os", async (importActual) => ({
-  ...(await importActual<typeof import("node:os")>()),
-  homedir: () => pathMock.home
-}));
+vi.mock("node:os", async (importActual) => {
+  const actual = await importActual<typeof import("node:os")>();
+  return {
+    ...actual,
+    default: { ...actual, homedir: () => pathMock.home },
+    homedir: () => pathMock.home
+  };
+});
 
 import { LYRA_CHANNELS } from "../../../shared/desktop-bridge";
 import { createLoginManagerPasswordRef } from "../../../shared/sensitive-value";
@@ -48,7 +52,39 @@ describe("Sensitive values IPC bridge", () => {
     electronMock.ipcMain.removeHandler.mockClear();
     electronMock.safeStorage.encryptString.mockClear();
     electronMock.safeStorage.decryptString.mockClear();
+    electronMock.safeStorage.isEncryptionAvailable.mockReturnValue(true);
     rmSync(pathMock.home, { recursive: true, force: true });
+  });
+
+  test("a caller cannot add use permission by editing reference metadata", async () => {
+    const bridge = createSensitiveValuesIpcBridge({loginManager:{revealCredential:vi.fn()} as unknown as LoginManagerIpcBridge});
+    const {ref} = await bridge.store({value:'test-only-credential',label:'Metadata only',capabilities:['list_metadata']});
+    await expect(bridge.resolveForAgentFill({...ref,capabilities:['use']})).rejects.toThrow('not authorized');
+    expect(electronMock.safeStorage.decryptString).not.toHaveBeenCalled();
+    bridge.dispose();
+  });
+
+  test("keeps stored credentials intact when the keyring is unavailable and can read them after recovery", async () => {
+    const onStorageStatus = vi.fn();
+    const bridge = createSensitiveValuesIpcBridge({
+      loginManager: { revealCredential: vi.fn() } as unknown as LoginManagerIpcBridge,
+      onStorageStatus
+    });
+    const { ref } = await bridge.store({ value: "private-token", label: "Provider", owner: "ai-provider", valueKind: "api_key" });
+    const filePath = `${pathMock.home}/.lyra/agent/sensitive-values.json`;
+    const before = readFileSync(filePath, "utf8");
+    electronMock.safeStorage.isEncryptionAvailable.mockReturnValue(false);
+    await expect(bridge.resolveForAgentFill(ref)).rejects.toThrow("Unlock your system keyring");
+    await expect(bridge.store({ value: "another-token", label: "Other" })).rejects.toThrow("System credential storage is unavailable");
+    expect(readFileSync(filePath, "utf8")).toBe(before);
+    expect(electronMock.handlers.get(LYRA_CHANNELS.sensitiveValuesReadStatus)?.()).toEqual(
+      expect.objectContaining({ available: false, issue: "unavailable" })
+    );
+    electronMock.safeStorage.isEncryptionAvailable.mockReturnValue(true);
+    await expect(bridge.resolveForAgentFill(ref)).resolves.toBe("private-token");
+    expect(JSON.stringify(onStorageStatus.mock.calls)).not.toContain("private-token");
+    bridge.dispose();
+    expect(electronMock.handlers.has(LYRA_CHANNELS.sensitiveValuesReadStatus)).toBe(false);
   });
 
   test("reveals user-owned login-manager refs without exposing owner metadata as plaintext", async () => {

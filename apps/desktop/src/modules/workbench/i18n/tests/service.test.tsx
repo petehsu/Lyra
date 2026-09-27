@@ -1,4 +1,5 @@
 import { act, render, screen } from "@testing-library/react";
+import { useMemo } from "react";
 import { afterEach, describe, expect, test } from "vitest";
 
 // This suite exercises React subscription behavior as well as imperative translation.
@@ -108,13 +109,15 @@ describe("i18n translator", () => {
     expect(document.documentElement.lang).toBe("en-US");
   });
 
-  test("rerenders a selected locale when its async package resource arrives", () => {
+  test("rebuilds memoized chrome labels when the selected locale's async resources arrive", () => {
     registerWorkbenchLocales(["ja-JP"]);
     setWorkbenchLocale("ja-JP");
 
     function DynamicSurface() {
-      const { locale } = useWorkbenchLocaleSnapshot();
-      return <span>{createTranslator(locale)("settings.pageTitle")}</span>;
+      const { locale, revision } = useWorkbenchLocaleSnapshot();
+      const translate = useMemo(() => createTranslator(locale), [locale, revision]);
+      const label = useMemo(() => translate("settings.pageTitle"), [translate]);
+      return <span>{label}</span>;
     }
 
     render(

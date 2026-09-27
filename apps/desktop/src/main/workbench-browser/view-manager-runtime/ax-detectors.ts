@@ -5,7 +5,7 @@ import type {
 } from "../types";
 import { hashStableString } from "./normalizers";
 
-// --- axRef generation (ax:<snapshotHash>:<nodeHash>) ---
+// --- axRef generation (ax:<documentHash>:<nodeHash>) ---
 
 export const browserAxSnapshotHash = (
   tabId: string,
@@ -22,8 +22,12 @@ export const browserAxNodeHash = (input: {
   readonly boundsX?: number;
   readonly boundsY?: number;
   readonly frameUrl?: string;
+  readonly frameRef?: string;
 }): string =>
   hashStableString(
+    input.backendDOMNodeId !== undefined || input.nodeId !== undefined
+      ? [input.frameRef ?? input.frameUrl ?? "", input.backendDOMNodeId ?? input.nodeId].join("|")
+      :
     [
       input.backendDOMNodeId ?? input.nodeId ?? "",
       input.role,

@@ -133,6 +133,10 @@ export const executeWorkflowReplay = async (request: {
     }
     const result = await request.actStep(step, resolved);
     lastResult = result;
+    if ("status" in result && result.status === "dialogPending" || result.selectionOptions !== undefined) {
+      invalidateWorkflowCache(request.workflowId);
+      return {...result, pathTaken:"cached"};
+    }
     if (result.ok === false) {
       invalidateWorkflowCache(request.workflowId);
       return {
@@ -145,6 +149,7 @@ export const executeWorkflowReplay = async (request: {
     }
     if (
       result.elementDiff?.noObservableChange === true
+      && result.surfaceChange?.changed !== true
       && step.interaction !== "hover"
     ) {
       invalidateWorkflowCache(request.workflowId);

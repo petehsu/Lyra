@@ -500,6 +500,7 @@ fn structured_tool_call_is_ignored_when_no_tools_are_advertised() {
             }
         }),
         &HashSet::new(),
+        0,
     );
 
     assert!(parsed.is_none());
@@ -586,7 +587,7 @@ fn streaming_parser_handles_usage_only_chunk_and_repairs_tool_call() {
     assert_eq!(reply.content, None);
     assert_eq!(reply.tool_calls.len(), 1);
     assert_eq!(reply.tool_calls[0].name, "read_file");
-    assert!(reply.tool_calls[0].id.starts_with("tool-"));
+    assert_eq!(reply.tool_calls[0].id, "call-0");
     assert_eq!(
         reply.tool_calls[0].arguments,
         json!({ "path": "/tools/workbench/list_tabs", "args": {} })
@@ -789,6 +790,14 @@ fn model_loop_retries_reasoning_only_once_without_non_streaming_or_history_pollu
     );
     assert_eq!(attempts[1]["outcome"], "visible_final");
     assert_eq!(attempts[0]["usage"]["reasoning"], 7);
+    for attempt in attempts {
+        let total = attempt["latencyMs"].as_u64().expect("total duration");
+        let queued = attempt["schedulerWaitMs"].as_u64().expect("queue duration");
+        let request = attempt["requestDurationMs"]
+            .as_u64()
+            .expect("request duration");
+        assert!(queued + request <= total && total - queued - request <= 1);
+    }
 }
 
 #[test]
@@ -4003,5 +4012,6 @@ fn media_video_tool_reports_xai_polling_progress() {
 }
 
 mod model_discovery;
+mod reasoning_replay;
 mod refresh_and_runtime;
 mod reply_protocol;

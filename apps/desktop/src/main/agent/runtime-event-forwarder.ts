@@ -17,6 +17,10 @@ import type { LyraRuntimeClient } from "../runtime-client";
 import { sendToWindow } from "../web-contents-ipc";
 import type { WorkbenchBrowserIpcBridge } from "../workbench-browser/service";
 import { isRecord } from "./host-payload";
+import {
+  clearAgentCursorThought,
+  rememberAgentCursorThought
+} from "../workbench-browser/agent-cursor-thought";
 
 const AGENT_RUNTIME_EVENT_NAME = "agent.runtime";
 const TERMINAL_RUNTIME_EVENT_NAME = "terminal.runtime";
@@ -208,6 +212,18 @@ export const createRuntimeEventForwarder = ({
       // events. Forwarding a full, growing snapshot for every mutation was the
       // dominant Rust -> Electron traffic source and retained duplicate trees.
       return;
+    }
+    if (event.kind === "messageReasoningDelta") {
+      rememberAgentCursorThought(event.blockId ?? "", event.delta);
+    } else if (
+      event.kind === "messageDelta"
+      || event.kind === "messageCommitted"
+      || event.kind === "toolStarted"
+    ) {
+      clearAgentCursorThought();
+    }
+    if (event.kind === "turnFinished" || event.kind === "turnFailed" || event.kind === "turnInterrupted") {
+      clearAgentCursorThought();
     }
     const browser = getBrowserBridge();
     if (browser !== null) {

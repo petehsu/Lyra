@@ -18,6 +18,9 @@ mod model_loop;
 mod protocol_io;
 mod protocol_mapping;
 #[cfg(test)]
+#[path = "provider/scheduler_tests.test.rs"]
+mod scheduler_tests;
+#[cfg(test)]
 #[path = "provider/stop_signal_tests.test.rs"]
 mod stop_signal_tests;
 mod usage;
@@ -81,6 +84,34 @@ struct ProviderRequestPermit {
     key: String,
 }
 
+// Both stages own their occupancy. Dropping an async request (cancellation,
+// timeout or panic) must not strand a queue head or an in-flight slot.
+struct ProviderQueueTicket {
+    key: String,
+    ticket: u64,
+}
+
+impl Drop for ProviderQueueTicket {
+    fn drop(&mut self) {
+        remove_waiting_ticket(provider_request_scheduler(), &self.key, self.ticket);
+    }
+}
+
+impl Drop for ProviderRequestPermit {
+    fn drop(&mut self) {
+        let scheduler = provider_request_scheduler();
+        let mut state = scheduler
+            .state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(lane) = state.get_mut(&self.key) {
+            lane.in_flight = lane.in_flight.saturating_sub(1);
+        }
+        drop(state);
+        scheduler.wake.notify_waiters();
+    }
+}
+
 static PROVIDER_REQUEST_SCHEDULER: OnceLock<ProviderRequestScheduler> = OnceLock::new();
 
 fn provider_request_scheduler() -> &'static ProviderRequestScheduler {
@@ -125,9 +156,12 @@ async fn acquire_provider_request_permit(
         enqueue_lane_ticket(&mut lane.waiting, ticket, worker);
         ticket
     };
+    let _queued = ProviderQueueTicket {
+        key: key.clone(),
+        ticket,
+    };
     loop {
         if cancellation.is_cancelled() {
-            remove_waiting_ticket(scheduler, &key, ticket);
             return Err(AgentRuntimeError::Cancelled);
         }
         let acquired = {
@@ -166,7 +200,6 @@ async fn acquire_provider_request_permit(
             _ = scheduler.wake.notified() => {},
             _ = tokio::time::sleep(wait_for) => {},
             _ = cancellation.cancelled() => {
-                remove_waiting_ticket(scheduler, &key, ticket);
                 return Err(AgentRuntimeError::Cancelled);
             }
         }
@@ -184,12 +217,15 @@ fn enqueue_lane_ticket(waiting: &mut VecDeque<(u64, bool)>, ticket: u64, worker:
 }
 
 fn remove_waiting_ticket(scheduler: &ProviderRequestScheduler, key: &str, ticket: u64) {
-    if let Ok(mut state) = scheduler.state.lock() {
-        if let Some(lane) = state.get_mut(key) {
-            lane.waiting.retain(|(queued, _)| *queued != ticket);
-        }
+    let mut state = scheduler
+        .state
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(lane) = state.get_mut(key) {
+        lane.waiting.retain(|(queued, _)| *queued != ticket);
     }
-    scheduler.wake.notify_one();
+    drop(state);
+    scheduler.wake.notify_waiters();
 }
 
 fn release_provider_request_permit(
@@ -204,7 +240,7 @@ fn release_provider_request_permit(
     let lane = state
         .get_mut(&permit.key)
         .expect("provider lane exists while its permit is held");
-    lane.in_flight = lane.in_flight.saturating_sub(1);
+    // Occupancy is released by the permit's Drop after this feedback lock.
     if result.is_ok() {
         lane.consecutive_successes = lane.consecutive_successes.saturating_add(1);
         if lane.consecutive_successes >= PROVIDER_SUCCESSES_TO_GROW
@@ -230,7 +266,7 @@ fn release_provider_request_permit(
             });
         lane.cooldown_until = Some(Instant::now() + cooldown);
     }
-    scheduler.wake.notify_one();
+    drop(state);
 }
 
 fn is_provider_rate_limited_error(error: &AgentRuntimeError) -> bool {
@@ -375,8 +411,7 @@ pub(crate) struct ProviderStreamState {
     pub(crate) reasoning_content: String,
     pub(crate) reasoning_chars: usize,
     pub(crate) saw_refusal: bool,
-    pub(crate) reasoning_replay_field: Option<String>,
-    pub(crate) reasoning_replay_value: Option<Value>,
+    pub(crate) reasoning_replay: openai_chat::ReasoningAccumulator,
     pub(crate) tool_calls: HashMap<usize, openai_chat::StreamingToolCallAccumulator>,
     pub(crate) saw_choice: bool,
     pub(crate) finish_reason: Option<String>,

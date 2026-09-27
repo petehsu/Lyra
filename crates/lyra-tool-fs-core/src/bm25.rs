@@ -1,5 +1,5 @@
-//! Hermes-style BM25 catalog search plus budgeted deferred-tool listings.
-//! Copied from 參考/hermes-agent/tools/tool_search_catalog.py (no Snowball stemmer).
+//! BM25 catalog search plus budgeted deferred-tool listings.
+//! Adapted from 參考/hermes-agent/tools/tool_search_catalog.py (no Snowball stemmer).
 
 use regex::Regex;
 use serde_json::Value;
@@ -165,32 +165,12 @@ fn bm25_score(
     score
 }
 
-fn gate_token<'a>(
-    query_tokens: &'a [String],
-    doc_freq: &HashMap<String, usize>,
-    n_docs: usize,
-) -> &'a str {
-    query_tokens
-        .iter()
-        .max_by(|left, right| {
-            let idf = |token: &str| {
-                let df = *doc_freq.get(token).unwrap_or(&0);
-                (1.0 + (n_docs as f64 - df as f64 + 0.5) / (df as f64 + 0.5)).ln()
-            };
-            idf(left)
-                .partial_cmp(&idf(right))
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-        .map(String::as_str)
-        .unwrap_or("")
-}
-
 pub fn search_catalog<'a>(
     catalog: &'a [CatalogEntry],
     query: &str,
     limit: usize,
 ) -> Vec<&'a CatalogEntry> {
-    let query_tokens = if catalog.is_empty() || limit == 0 {
+    let mut query_tokens = if catalog.is_empty() || limit == 0 {
         Vec::new()
     } else {
         tokenize(query)
@@ -198,23 +178,24 @@ pub fn search_catalog<'a>(
     if query_tokens.is_empty() {
         return Vec::new();
     }
+    query_tokens.sort_unstable();
+    query_tokens.dedup();
     let (doc_lengths, avg_dl, doc_freq, n_docs) = corpus_stats(catalog);
     let _ = doc_lengths;
-    let gate = gate_token(&query_tokens, &doc_freq, n_docs);
     let exact_name = query.trim().to_ascii_lowercase();
     let mut scored: Vec<(f64, &CatalogEntry)> = catalog
         .iter()
-        .filter(|entry| {
-            entry.name.to_ascii_lowercase() == exact_name
-                || entry.tokens.iter().any(|token| token == gate)
-        })
-        .map(|entry| {
+        .filter_map(|entry| {
             let score = if entry.name.to_ascii_lowercase() == exact_name {
                 f64::INFINITY
             } else {
                 bm25_score(&query_tokens, &entry.tokens, &doc_freq, n_docs, avg_dl)
             };
-            (score, entry)
+            // Keyword queries contain alternatives and unfamiliar words.
+            // A rare (or absent) word is ranking evidence, not a mandatory
+            // filter that can veto a tool matching the rest of the query.
+            // No overlap still returns nothing; discovery never executes a hit.
+            (score > 0.0).then_some((score, entry))
         })
         .collect();
     scored.sort_by(|left, right| {
@@ -364,6 +345,71 @@ pub fn build_catalog_listing(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn entry(name: &str, text: &str) -> CatalogEntry {
+        CatalogEntry {
+            name: name.to_string(),
+            description: text.to_string(),
+            source_name: String::new(),
+            tokens: tokenize(text),
+        }
+    }
+
+    #[test]
+    fn unknown_query_words_do_not_veto_matching_capabilities() {
+        let catalog = vec![
+            entry("browser_upload", "browser upload local files attachment"),
+            entry("browser_type", "browser type input text"),
+        ];
+        let hits = search_catalog(&catalog, "upload filechooser", 5);
+        assert_eq!(
+            hits.iter()
+                .map(|entry| entry.name.as_str())
+                .collect::<Vec<_>>(),
+            ["browser_upload"]
+        );
+        assert!(search_catalog(&catalog, "nonexistentcapability", 5).is_empty());
+        assert!(search_catalog(&catalog, "", 5).is_empty());
+        assert!(search_catalog(&catalog, "upload", 0).is_empty());
+    }
+
+    #[test]
+    fn rare_alternative_words_do_not_exclude_other_matching_tools() {
+        let catalog = vec![
+            entry("browser_upload", "upload attach local file"),
+            entry("document_insert", "insert document"),
+            entry("file_read", "read local file"),
+        ];
+        let names = |query| {
+            search_catalog(&catalog, query, 2)
+                .into_iter()
+                .map(|entry| entry.name.as_str())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            names("upload attach insert file"),
+            ["browser_upload", "document_insert"]
+        );
+        assert_eq!(
+            names("file insert attach upload"),
+            names("upload attach insert file")
+        );
+    }
+
+    #[test]
+    fn service_specific_matches_outrank_generic_action_matches() {
+        let mut catalog = vec![entry("gmail_send", "gmail send email")];
+        for index in 0..20 {
+            catalog.push(entry(
+                &format!("incident_{index}"),
+                "send incident notification email",
+            ));
+        }
+        assert_eq!(
+            search_catalog(&catalog, "send gmail email", 5)[0].name,
+            "gmail_send"
+        );
+    }
 
     #[test]
     fn exact_name_ranks_first() {

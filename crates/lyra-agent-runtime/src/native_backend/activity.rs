@@ -1399,7 +1399,52 @@ pub(crate) fn format_software_output(action: &str, value: &Value) -> String {
 }
 
 pub(crate) fn format_lumen_output(action: &str, value: &Value) -> String {
+    // A pending dialog can be returned by any operation, including map/read.
+    // Never discard the opaque ID or paused status in a human-readable summary.
+    if value.get("status").and_then(Value::as_str) == Some("dialogPending")
+        || value.get("selectionOptions").is_some()
+    {
+        return serde_json::to_string(value).unwrap_or_default();
+    }
+
+    // A readable content field must never hide an execution failure from the
+    // model. The activity UI retains raw JSON, but the provider only sees this.
+    if value.get("ok").and_then(Value::as_bool) == Some(false)
+        || value.get("error").is_some_and(|error| !error.is_null())
+    {
+        return serde_json::to_string_pretty(value).unwrap_or_default();
+    }
     match action {
+        "read" => value
+            .get("content")
+            .and_then(Value::as_str)
+            .filter(|content| !content.trim().is_empty())
+            .map(|content| {
+                let context: serde_json::Map<String, Value> = [
+                    "tabId",
+                    "targetMode",
+                    "url",
+                    "title",
+                    "scope",
+                    "truncated",
+                    "schemaHint",
+                    "instruction",
+                ]
+                .into_iter()
+                .filter_map(|key| {
+                    value
+                        .get(key)
+                        .filter(|value| !value.is_null())
+                        .map(|value| (key.to_string(), value.clone()))
+                })
+                .collect();
+                if context.is_empty() {
+                    content.to_string()
+                } else {
+                    format!("Page {}\n{content}", Value::Object(context))
+                }
+            })
+            .unwrap_or_else(|| serde_json::to_string_pretty(value).unwrap_or_default()),
         "map" => {
             let observation_id = value
                 .get("observationId")
@@ -1417,7 +1462,7 @@ pub(crate) fn format_lumen_output(action: &str, value: &Value) -> String {
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .trim();
-            let two_column_lists = appendix.starts_with("Now clickable:");
+            let two_column_lists = !appendix.is_empty();
             if two_column_lists {
                 lines.push(appendix.to_string());
             } else if let Some(elements) = value.get("elements").and_then(Value::as_array) {
@@ -1580,12 +1625,11 @@ pub(crate) fn format_lumen_output(action: &str, value: &Value) -> String {
                 )
             }
         }
-        "read_until" | "wait" => value
-            .get("content")
-            .and_then(Value::as_str)
-            .or_else(|| value.get("message").and_then(Value::as_str))
-            .map(str::to_string)
-            .unwrap_or_else(|| serde_json::to_string_pretty(value).unwrap_or_default()),
+        // A timeout can still contain useful partial text. Preserve the
+        // condition and completion state so it cannot masquerade as success.
+        "read_until" | "wait" | "drag" | "dialog" => {
+            serde_json::to_string(value).unwrap_or_default()
+        }
         "audit" => {
             let summary = value.get("summary").unwrap_or(&Value::Null);
             let errors = summary.get("errors").and_then(Value::as_i64).unwrap_or(0);

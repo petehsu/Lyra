@@ -4,6 +4,54 @@
 //! structural boundary at or before the limit (a blank line between blocks, then
 //! a line break, then a word boundary) so output never ends mid-construct.
 
+#[cfg(feature = "tokenizer-tiktoken")]
+mod token_counts {
+    use sha2::{Digest, Sha256};
+    use std::{
+        collections::{HashMap, VecDeque},
+        sync::{Mutex, OnceLock},
+    };
+    const CAPACITY: usize = 8192;
+    #[derive(Default)]
+    struct Cache {
+        counts: HashMap<[u8; 32], usize>,
+        order: VecDeque<[u8; 32]>,
+    }
+    static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
+    pub(super) fn estimate(text: &str) -> usize {
+        if text.is_empty() {
+            return 0;
+        }
+        // Store fingerprints and counts, never another copy of chat text.
+        // Edits invalidate by content; message IDs alone are unsafe.
+        let key: [u8; 32] = Sha256::digest(text.as_bytes()).into();
+        let cache = CACHE.get_or_init(|| Mutex::new(Cache::default()));
+        if let Some(count) = cache
+            .lock()
+            .ok()
+            .and_then(|cache| cache.counts.get(&key).copied())
+        {
+            return count;
+        }
+        let count = tiktoken_rs::o200k_base_singleton()
+            .encode_with_special_tokens(text)
+            .len()
+            .max(1);
+        if let Ok(mut cache) = cache.lock()
+            && !cache.counts.contains_key(&key)
+        {
+            if cache.order.len() >= CAPACITY
+                && let Some(oldest) = cache.order.pop_front()
+            {
+                cache.counts.remove(&oldest);
+            }
+            cache.order.push_back(key);
+            cache.counts.insert(key, count);
+        }
+        count
+    }
+}
+
 /// The outcome of applying a budget.
 pub struct Budgeted {
     /// Possibly-truncated text.
@@ -29,11 +77,7 @@ pub struct Budgeted {
 pub fn estimate_tokens(text: &str) -> usize {
     #[cfg(feature = "tokenizer-tiktoken")]
     {
-        if text.is_empty() {
-            return 0;
-        }
-        let bpe = tiktoken_rs::o200k_base_singleton();
-        return bpe.encode_with_special_tokens(text).len().max(1);
+        token_counts::estimate(text)
     }
     #[cfg(not(feature = "tokenizer-tiktoken"))]
     {
@@ -199,6 +243,29 @@ mod tests {
             "expected BPE estimate {bpe} to exceed heuristic {heuristic}"
         );
         assert_eq!(estimate_tokens(""), 0);
+    }
+
+    #[cfg(feature = "tokenizer-tiktoken")]
+    #[test]
+    fn cached_counts_match_bpe_after_content_changes() {
+        let bpe = tiktoken_rs::o200k_base_singleton();
+        for text in [
+            "",
+            "中文内容",
+            "中文内容 modified",
+            "emoji 🧑‍💻",
+            "<|endoftext|>",
+            "中文内容",
+        ] {
+            assert_eq!(
+                estimate_tokens(text),
+                bpe.encode_with_special_tokens(text).len()
+            );
+            assert_eq!(
+                estimate_tokens(text),
+                bpe.encode_with_special_tokens(text).len()
+            );
+        }
     }
 
     #[test]

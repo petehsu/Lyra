@@ -176,6 +176,46 @@ pub(crate) fn append_turn_provider_attempt(session_id: &str, turn_id: &str, atte
     }
 }
 
+/// Aggregate local work separately from provider/tool latency. Only numbers
+/// are retained; timing does not add synchronous disk writes or UI events.
+pub(crate) struct LocalPhaseTimer<'a> {
+    session_id: &'a str,
+    turn_id: &'a str,
+    phase: &'static str,
+    started: Instant,
+}
+impl<'a> LocalPhaseTimer<'a> {
+    pub(crate) fn start(session_id: &'a str, turn_id: &'a str, phase: &'static str) -> Self {
+        Self {
+            session_id,
+            turn_id,
+            phase,
+            started: Instant::now(),
+        }
+    }
+}
+impl Drop for LocalPhaseTimer<'_> {
+    fn drop(&mut self) {
+        let elapsed = self.started.elapsed().as_secs_f64() * 1000.0;
+        if let Ok(mut entries) = turn_provider_metadata().lock() {
+            let entry = entries
+                .entry(turn_key(self.session_id, self.turn_id))
+                .or_insert_with(|| json!({}));
+            if !entry.is_object() {
+                *entry = json!({});
+            }
+            if !entry["localPhases"].is_object() {
+                entry["localPhases"] = json!({});
+            }
+            let stats = &mut entry["localPhases"][self.phase];
+            let count = stats["count"].as_u64().unwrap_or(0) + 1;
+            let total = stats["totalMs"].as_f64().unwrap_or(0.0) + elapsed;
+            let max = stats["maxMs"].as_f64().unwrap_or(0.0).max(elapsed);
+            *stats = json!({"count":count,"totalMs":total,"maxMs":max});
+        }
+    }
+}
+
 pub(crate) fn set_last_provider_attempt_recovery(
     session_id: &str,
     turn_id: &str,
@@ -259,6 +299,7 @@ pub(crate) fn unregister_turn_cancellation(turn_id: &str) {
 }
 
 pub(crate) fn clear_active_turn(session_id: &str, turn_id: &str) {
+    super::tools::finish_foreground_shells(turn_id);
     if let Ok(mut active) = active_turns().lock()
         && active
             .get(session_id)
@@ -363,6 +404,32 @@ pub(crate) fn clear_active_ui_message_if_matches(session_id: &str, message_id: &
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_phase_timings_survive_provider_metadata_updates() {
+        let session_id = format!("session-{}", Uuid::new_v4());
+        let turn_id = format!("turn-{}", Uuid::new_v4());
+        append_turn_provider_attempt(&session_id, &turn_id, json!({"status":"success"}));
+        for _ in 0..2 {
+            drop(LocalPhaseTimer::start(
+                &session_id,
+                &turn_id,
+                "contextAccounting",
+            ));
+        }
+        record_turn_provider_metadata(
+            &session_id,
+            &turn_id,
+            json!({"protocol":"chat-completions"}),
+        );
+        let metadata = take_turn_provider_metadata(&session_id, &turn_id).unwrap();
+        assert_eq!(metadata["providerAttempts"][0]["status"], "success");
+        assert_eq!(metadata["protocol"], "chat-completions");
+        let stats = &metadata["localPhases"]["contextAccounting"];
+        assert_eq!(stats["count"], 2);
+        assert!(stats["totalMs"].as_f64().unwrap() >= stats["maxMs"].as_f64().unwrap());
+        assert!(take_turn_provider_metadata(&session_id, &turn_id).is_none());
+    }
 
     #[test]
     fn removing_a_draft_clears_only_its_matching_active_ui_anchor() {

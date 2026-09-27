@@ -3,12 +3,8 @@ export const SITE_LOCALES = ["zh", "en"] as const;
 export type SiteLocale = (typeof SITE_LOCALES)[number];
 
 export type SiteCopy = {
-  readonly metadata: {
-    readonly title: string;
-    readonly description: string;
-  };
+  readonly metadata: { readonly title: string; readonly description: string };
   readonly nav: {
-    readonly product: string;
     readonly details: string;
     readonly local: string;
     readonly pricing: string;
@@ -18,183 +14,30 @@ export type SiteCopy = {
     readonly lightTheme: string;
     readonly darkTheme: string;
   };
-  readonly hero: {
-    readonly title: string;
-    readonly titleLines: readonly string[];
-    readonly body: string;
-    readonly primary: string;
-    readonly secondary: string;
-    readonly note: string;
-    readonly imageAlt: string;
-    readonly keywords: readonly [
-      {
-        readonly title: string;
-        readonly body: string;
-      },
-      {
-        readonly title: string;
-        readonly body: string;
-      },
-      {
-        readonly title: string;
-        readonly body: string;
-      }
-    ];
-  };
-  readonly demo: {
-    readonly windowLabel: string;
-    readonly windowTitle: string;
-    readonly actions: {
-      readonly notifications: string;
-      readonly history: string;
-      readonly terminal: string;
-      readonly settings: string;
-      readonly store: string;
-      readonly files: string;
-      readonly discuss: string;
-      readonly newSession: string;
-      readonly more: string;
-      readonly attach: string;
-      readonly send: string;
-      readonly back: string;
-      readonly forward: string;
-      readonly layers: string;
-      readonly newTab: string;
-    };
-    readonly tabs: {
-      readonly hello: string;
-      readonly newSession: string;
-      readonly files: string;
-      readonly site: string;
-      readonly home: string;
-      readonly settings: string;
-      readonly docs: string;
-    };
-    readonly chat: {
-      readonly questionPrefix: string;
-      readonly questionSuffix: string;
-      readonly home: string;
-      readonly placeholder: string;
-      readonly model: string;
-      readonly permission: string;
-      readonly backend: string;
-      readonly plan: string;
-      readonly location: string;
-      readonly reply: string;
-    };
-    readonly settings: {
-      readonly title: string;
-      readonly general: string;
-      readonly appearance: string;
-      readonly workspace: string;
-      readonly notifications: string;
-      readonly login: string;
-      readonly lyra: string;
-      readonly search: string;
-      readonly agents: string;
-      readonly models: string;
-      readonly skills: string;
-      readonly mcp: string;
-      readonly experimental: string;
-      readonly docs: string;
-      readonly theme: string;
-      readonly dark: string;
-      readonly light: string;
-      readonly material: string;
-      readonly materialDescription: string;
-      readonly language: string;
-      readonly languageValue: string;
-      readonly updates: string;
-      readonly updatesDescription: string;
-      readonly updatesValue: string;
-      readonly terminalPosition: string;
-      readonly bottom: string;
-      readonly restore: string;
-      readonly restoreDescription: string;
-    };
-    readonly workspace: {
-      readonly search: string;
-      readonly openProject: string;
-      readonly newAgent: string;
-      readonly recent: string;
-      readonly omnibox: string;
-      readonly siteUrl: string;
-      readonly docsKicker: string;
-      readonly docsTitle: string;
-      readonly docsBody: string;
-      readonly docsItems: readonly [string, string, string];
-    };
-    readonly terminal: {
-      readonly tab: string;
-      readonly prompt: string;
-      readonly command: string;
-      readonly output: string;
-    };
-  };
+  readonly hero: { readonly title: string; readonly previewCaption: string };
   readonly product: {
     readonly title: string;
     readonly body: string;
-    readonly imageAlt: string;
-    readonly items: readonly [
-      {
-        readonly title: string;
-        readonly body: string;
-        readonly alt: string;
-      },
-      {
-        readonly title: string;
-        readonly body: string;
-        readonly alt: string;
-      },
-      {
-        readonly title: string;
-        readonly body: string;
-        readonly alt: string;
-      }
-    ];
+    readonly items: readonly { readonly title: string; readonly body: string }[];
   };
   readonly local: {
     readonly title: string;
     readonly body: string;
-    readonly points: readonly [string, string, string];
+    readonly points: readonly string[];
   };
-  readonly video: {
-    readonly title: string;
-    readonly body: string;
-    readonly frameTitle: string;
-  };
+  readonly video: { readonly title: string; readonly frameTitle: string };
   readonly pricing: {
     readonly title: string;
     readonly body: string;
-    readonly plans: readonly [
-      {
-        readonly name: string;
-        readonly status: string;
-        readonly price: string;
-        readonly description: string;
-        readonly points: readonly [string, string, string];
-        readonly note: string;
-        readonly available: true;
-      },
-      {
-        readonly name: string;
-        readonly status: string;
-        readonly price: string;
-        readonly description: string;
-        readonly points: readonly [string, string, string];
-        readonly note: string;
-        readonly available: false;
-      },
-      {
-        readonly name: string;
-        readonly status: string;
-        readonly price: string;
-        readonly description: string;
-        readonly points: readonly [string, string, string];
-        readonly note: string;
-        readonly available: false;
-      }
-    ];
+    readonly note: string;
+    readonly plans: readonly {
+      readonly name: string;
+      readonly status: string;
+      readonly price: string;
+      readonly description: string;
+      readonly points: readonly string[];
+      readonly available: boolean;
+    }[];
   };
   readonly download: {
     readonly title: string;
@@ -203,14 +46,15 @@ export type SiteCopy = {
     readonly select: string;
     readonly otherVersions: string;
     readonly recommended: string;
+    readonly upcomingTitle: string;
+    readonly upcoming: readonly [string, string];
+    readonly waiting: string;
+    readonly upcomingNote: string;
     readonly platforms: readonly [
       { readonly id: "macos"; readonly name: string; readonly detail: string },
       { readonly id: "windows"; readonly name: string; readonly detail: string },
       { readonly id: "linux"; readonly name: string; readonly detail: string }
     ];
-    readonly upcomingTitle: string;
-    readonly upcoming: readonly [string, string];
-    readonly waiting: string;
   };
   readonly contact: {
     readonly title: string;
@@ -237,14 +81,13 @@ export type SiteCopy = {
 const dictionaries: Record<SiteLocale, SiteCopy> = {
   zh: {
     metadata: {
-      title: "Lyra Agent 工作台",
-      description: "Lyra 是一张由您与 Agent 共同使用的桌面工作台，让任务在网页、终端、文件与应用之间连续推进。"
+      title: "Lyra — 电脑上的通用 Agent",
+      description: "用 Lyra 查阅网页、处理文件、修改代码和运行命令。支持桌面应用操作、自选模型、Skills 与 MCP。提供 macOS、Windows 和 Linux 预览版。"
     },
     nav: {
-      product: "Lyra",
-      details: "工作台",
-      local: "选择权",
-      pricing: "定价",
+      details: "功能",
+      local: "模型与工具",
+      pricing: "费用",
       docs: "文档",
       download: "下载",
       language: "English",
@@ -252,225 +95,98 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
       darkTheme: "切换为深色主题"
     },
     hero: {
-      title: "一处现场。",
-      titleLines: ["一处现场。", "由您与 Agent 共用。"],
-      body: "网页、终端、文件和桌面应用留在同一张工作台。您可以随时接手，也可以让 Agent 从眼前的状态继续。",
-      primary: "查看工作台",
-      secondary: "观看影片",
-      note: "Lyra Preview · macOS、Windows、Linux",
-      imageAlt: "Lyra 桌面工作台，包含 Agent 会话、网页、设置与终端",
-      keywords: [
-        {
-          title: "快速",
-          body: "速度不只来自更快的回复。网页、终端、文件与任务上下文留在同一个工作现场，少一点切换、复制与重复解释，下一步就能更早发生。"
-        },
-        {
-          title: "本地",
-          body: "项目、会话与偏好优先留在您的设备上。无需账户也能进入完整工作台，并由您决定什么时候让云端能力参与其中。"
-        },
-        {
-          title: "智能",
-          body: "Agent 看到的不只是一段提示词。它能理解眼前的网页、终端、文件与任务状态，再调用合适的工具把工作继续推进。"
-        }
-      ]
-    },
-    demo: {
-      windowLabel: "Lyra 桌面工作台交互预览",
-      windowTitle: "Lyra",
-      actions: {
-        notifications: "通知",
-        history: "历史记录",
-        terminal: "显示或隐藏终端",
-        settings: "打开设置",
-        store: "软件商店",
-        files: "文件",
-        discuss: "和 Lyra 讨论",
-        newSession: "新会话",
-        more: "更多",
-        attach: "添加上下文",
-        send: "发送",
-        back: "后退",
-        forward: "前进",
-        layers: "标签布局",
-        newTab: "新标签"
-      },
-      tabs: {
-        hello: "你好",
-        newSession: "新会话",
-        files: "文件管理",
-        site: "Lyra 官网",
-        home: "首页",
-        settings: "设置",
-        docs: "Lyra 文档"
-      },
-      chat: {
-        questionPrefix: "想要在",
-        questionSuffix: "中做什么？",
-        home: "Home",
-        placeholder: "给 Lyra 发送消息",
-        model: "DeepSeek V4 Flash Free",
-        permission: "全自动",
-        backend: "后台终端",
-        plan: "规划",
-        location: "未定位",
-        reply: "我会从当前工作区继续，先确认页面和项目状态，再完成下一步。"
-      },
-      settings: {
-        title: "设置",
-        general: "通用",
-        appearance: "外观",
-        workspace: "工作区",
-        notifications: "通知",
-        login: "登录管理器",
-        lyra: "Lyra 软件",
-        search: "搜索",
-        agents: "Lyra Agents",
-        models: "模型",
-        skills: "技能",
-        mcp: "MCP",
-        experimental: "试验性功能",
-        docs: "文档",
-        theme: "主题",
-        dark: "深色",
-        light: "浅色",
-        material: "系统材质背景",
-        materialDescription: "使用系统的模糊与半透明窗口背景。",
-        language: "界面语言",
-        languageValue: "跟随系统",
-        updates: "自动更新",
-        updatesDescription: "在新版本可用时提醒您。",
-        updatesValue: "已开启",
-        terminalPosition: "终端位置",
-        bottom: "底部",
-        restore: "恢复上次工作区",
-        restoreDescription: "重新打开上次保留的标签和终端。"
-      },
-      workspace: {
-        search: "搜索、输入网址或文件路径",
-        openProject: "打开项目",
-        newAgent: "新建 Agent 会话",
-        recent: "最近使用",
-        omnibox: "搜索、输入网址或文件路径",
-        siteUrl: "lyra.ltd",
-        docsKicker: "LYRA DOCUMENTATION",
-        docsTitle: "一个任务，一张工作台。",
-        docsBody: "网页、文件、终端与 Agent 会话都在这里成为任务的一部分。您和 Agent 面对的是同一个工作现场。",
-        docsItems: ["Agent 会话", "网页与桌面操作", "模型、Skills 与 MCP"]
-      },
-      terminal: {
-        tab: "petehsu%",
-        prompt: "petehsu@Lyra ~ %",
-        command: "pnpm dev",
-        output: "Lyra workspace ready on localhost:5180"
-      }
+      title: "Anything? Lyra.",
+      previewCaption: "界面预览 · 拖动分隔线调整布局"
     },
     product: {
-      title: "一个任务，一张工作台。",
-      body: "在 Lyra 中，网页、终端、文件和应用不是发给 Agent 的零散附件，而是您与 Agent 正在共同使用的工作空间。任务转向哪里，工作台就跟到哪里。",
-      imageAlt: "Lyra 中由用户与 Agent 共同使用的桌面工作台",
+      title: "电脑上的通用 Agent。",
+      body: "把要做的事告诉 Lyra。它可以查阅网页、处理本地文件、编写代码和运行命令。浏览器、编辑器和终端都在同一个窗口里，方便你查看过程和结果。",
       items: [
         {
-          title: "从网页到本机，任务不用中断。",
-          body: "查阅网页、操作页面、运行命令、打开文件或切换桌面应用，Agent 可以沿着同一个任务继续工作，不必由您在不同工具之间反复转述。",
-          alt: "Lyra 在网页、终端、文件与桌面应用之间继续任务"
+          title: "查资料，处理文件。",
+          body: "让 Lyra 查找网页、阅读材料，把结果整理成文件。你可以在工作区打开原始材料，对照检查，也可以直接修改。"
         },
         {
-          title: "您与 Agent 看见同一处现场。",
-          body: "标签、分屏、终端窗格和当前工作区都是明确的工作对象。您可以随时接手，也可以让 Agent 读取现状、切换界面并在原处继续。",
-          alt: "用户与 Agent 共同操作 Lyra 工作区"
+          title: "改代码，运行命令。",
+          body: "让 Lyra 修改项目、运行脚本或排查报错。打开文件查看改动，在终端检查输出，再决定下一步。"
         },
         {
-          title: "让工作台适应您的方法。",
-          body: "在同一运行环境中选择模型与服务商，并通过 Skills、MCP 和本地 Agent 包扩展能力。Lyra 把它们带回正在发生的任务，而不是拆成彼此孤立的入口。",
-          alt: "Lyra 的模型、Skills、MCP 与 Agent 配置"
+          title: "操作应用，随时接手。",
+          body: "授权后，Lyra 可以通过屏幕和键鼠操作支持的桌面应用。你可以在过程中补充要求，也可以亲自接手。可用操作取决于应用和系统权限。"
         }
       ]
     },
     local: {
-      title: "工作台属于您。",
-      body: "Lyra 可以在不登录的情况下使用。账户只负责资料与偏好的同步；本地项目、模型选择和能力扩展不需要先经过某个云端入口。",
+      title: "用你选的模型。",
+      body: "连接自己的模型服务，或使用本地模型。通过 Skills 加入任务说明，通过 MCP 连接外部工具和数据。",
       points: [
-        "本地模式是完整入口，不是试用页面",
-        "账户只同步资料与偏好",
-        "模型、服务商、Skills 与 MCP 由您配置"
+        "本地模式无需登录 Lyra 账户",
+        "支持自带 API Key 和兼容模型接口",
+        "云端模型会接收任务相关内容"
       ]
     },
     video: {
-      title: "看它实际工作。",
-      body: "一段影片，展示 Lyra 如何把网页、终端、文件与 Agent 放进同一个工作现场，由您亲自操作，或交给 Agent 继续。",
-      frameTitle: "Lyra 宣传影片"
+      title: "看看实际操作。",
+      frameTitle: "Lyra 桌面版演示视频"
     },
     pricing: {
-      title: "从免费开始。",
-      body: "Lyra 会保留进入本地工作台的免费方案。Pro 与 Max 的价格、额度和具体权益仍在评估，在正式确认之前，我不会提前承诺一个数字。",
+      title: "选择方案。",
+      body: "当前可下载免费测试版。Pro 与 Max 为规划方案，尚未开放订阅。",
+      note: "模型服务可能另行收费，费用和额度由所选服务商决定。",
       plans: [
         {
           name: "Free",
-          status: "当前方案",
+          status: "当前测试版",
           price: "免费",
-          description: "无需订阅即可使用本地工作台，并连接您选择的模型、服务商与能力扩展。",
-          points: [
-            "完整的本地工作台入口",
-            "自定义模型与服务商",
-            "Skills、MCP 与本地 Agent 包"
-          ],
-          note: "随首个公开版本提供。",
+          description: "下载桌面版，连接你选择的模型。",
+          points: ["无需 Lyra 账户使用本地模式", "自带 API Key 或连接本地模型", "支持 Skills 与 MCP"],
           available: true
         },
         {
           name: "Pro",
           status: "规划中",
-          price: "待定",
-          description: "面向需要更多云端能力、同步体验与使用额度的用户，具体范围仍在确认。",
-          points: [
-            "具体权益待定",
-            "使用额度待定",
-            "开放时间待定"
-          ],
-          note: "确认后再公布价格。",
+          price: "待公布",
+          description: "价格、使用额度和具体功能将在方案确定后公布。",
+          points: [],
           available: false
         },
         {
           name: "Max",
           status: "规划中",
-          price: "待定",
-          description: "面向更高强度的使用方式与更大任务规模，名称、范围和定价仍可能调整。",
-          points: [
-            "具体权益待定",
-            "使用额度待定",
-            "开放时间待定"
-          ],
-          note: "目前不接受预订。",
+          price: "待公布",
+          description: "具体权益尚未确定，暂不接受订阅或预订。",
+          points: [],
           available: false
         }
       ]
     },
     download: {
-      title: "让 Lyra 进入您的工作台。",
-      body: "Lyra Preview 现已在 macOS、Windows 和 Linux 上提供。",
+      title: "下载 Lyra。",
+      body: "选择适合你电脑的 Lyra Preview 安装包。当前为测试版，请备份重要文件。",
       action: "下载",
       select: "选择版本",
       otherVersions: "其他架构与格式",
-      recommended: "当前设备推荐",
-      platforms: [
-        { id: "macos", name: "macOS", detail: "Apple Silicon 与 Intel 安装器" },
-        { id: "windows", name: "Windows", detail: "ARM64 与 x86_64 安装器" },
-        { id: "linux", name: "Linux", detail: "AppImage、deb、rpm、Flatpak 与 Arch" }
-      ],
-      upcomingTitle: "接下来",
+      recommended: "适合当前设备",
+      upcomingTitle: "平台规划",
       upcoming: ["移动端", "CLI"],
-      waiting: "等待中"
+      waiting: "规划中",
+      upcomingNote: "独立下载入口与发布时间确认后更新。",
+      platforms: [
+        { id: "macos", name: "macOS", detail: "Apple Silicon / Intel" },
+        { id: "windows", name: "Windows", detail: "ARM64 / x86_64" },
+        { id: "linux", name: "Linux", detail: "AppImage、deb、rpm、Flatpak、Arch" }
+      ]
     },
     contact: {
-      title: "有些事情，适合认真聊一聊。",
-      body: "关于 Lyra、产品合作、开发交流，或者其他值得讨论的事情，您可以通过下面四个渠道或电子邮箱与我联系。",
+      title: "联系开发者。",
+      body: "反馈问题、交流想法或洽谈合作，可以发邮件或通过以下渠道联系我。",
       emailLabel: "个人联系邮箱",
       personalNotice:
         "以上渠道及电子邮箱均由运营者本人以个人身份提供和维护，并非专职客服或企业工单系统。受平台限制、网络状况、垃圾信息过滤或消息请求设置影响，个别消息可能无法送达或未被及时查看；如在合理时间内未收到回复，请改用其他列明渠道或重新发送邮件。请勿通过公开渠道发送密码、API 密钥或其他敏感信息。",
       channels: [
         { label: "X", value: "@Qxuzhong" },
         { label: "Telegram", value: "@PeteHsu" },
-        { label: "QQ", value: "联系群组" },
+        { label: "QQ", value: "交流群" },
         { label: "GitHub", value: "petehsu" }
       ]
     },
@@ -485,13 +201,12 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
   },
   en: {
     metadata: {
-      title: "Lyra Agent Workbench",
-      description: "A desktop workbench shared by you and your Agents, carrying tasks across the web, terminals, files, and apps."
+      title: "Lyra — A general-purpose agent for your computer",
+      description: "Use Lyra to browse the web, work with files, write code, and run commands. Choose your models and add tools with Skills and MCP. Preview for macOS, Windows, and Linux."
     },
     nav: {
-      product: "Lyra",
-      details: "Workbench",
-      local: "Control",
+      details: "Features",
+      local: "Models & tools",
       pricing: "Pricing",
       docs: "Docs",
       download: "Download",
@@ -500,225 +215,98 @@ const dictionaries: Record<SiteLocale, SiteCopy> = {
       darkTheme: "Switch to dark theme"
     },
     hero: {
-      title: "One shared workbench.",
-      titleLines: ["One shared workbench.", "For you and your Agents."],
-      body: "Pages, terminals, files, and desktop apps stay in one working scene. Take over at any point, or let an Agent continue from what is already open.",
-      primary: "See the workbench",
-      secondary: "Watch the film",
-      note: "Lyra Preview · macOS, Windows, Linux",
-      imageAlt: "The Lyra desktop workbench with an Agent session, web page, settings, and terminal",
-      keywords: [
-        {
-          title: "Fast",
-          body: "Speed is more than response time. The browser, terminal, files, and task context stay in one place, so less time disappears into switching, copying, and explaining the same work again."
-        },
-        {
-          title: "Local",
-          body: "Projects, sessions, and preferences stay on your device first. The complete workbench remains available without an account, and you decide when cloud services enter the loop."
-        },
-        {
-          title: "Smart",
-          body: "An Agent sees more than a prompt. It can understand the page, terminal, files, and task state in front of it, then use the right tool to keep the work moving."
-        }
-      ]
-    },
-    demo: {
-      windowLabel: "Interactive preview of the Lyra desktop workbench",
-      windowTitle: "Lyra",
-      actions: {
-        notifications: "Notifications",
-        history: "History",
-        terminal: "Show or hide terminal",
-        settings: "Open settings",
-        store: "Software store",
-        files: "Files",
-        discuss: "Discuss with Lyra",
-        newSession: "New session",
-        more: "More",
-        attach: "Add context",
-        send: "Send",
-        back: "Back",
-        forward: "Forward",
-        layers: "Tab layout",
-        newTab: "New tab"
-      },
-      tabs: {
-        hello: "Hello",
-        newSession: "New session",
-        files: "Files",
-        site: "Lyra",
-        home: "Home",
-        settings: "Settings",
-        docs: "Lyra Docs"
-      },
-      chat: {
-        questionPrefix: "What do you want to do in",
-        questionSuffix: "?",
-        home: "Home",
-        placeholder: "Send a message to Lyra",
-        model: "DeepSeek V4 Flash Free",
-        permission: "Full auto",
-        backend: "Terminal",
-        plan: "Plan",
-        location: "No location",
-        reply: "I will continue from the current workspace, check the page and project state, then carry out the next step."
-      },
-      settings: {
-        title: "Settings",
-        general: "General",
-        appearance: "Appearance",
-        workspace: "Workspace",
-        notifications: "Notifications",
-        login: "Login Manager",
-        lyra: "Lyra Software",
-        search: "Search",
-        agents: "Lyra Agents",
-        models: "Models",
-        skills: "Skills",
-        mcp: "MCP",
-        experimental: "Experimental",
-        docs: "Documentation",
-        theme: "Theme",
-        dark: "Dark",
-        light: "Light",
-        material: "System material background",
-        materialDescription: "Use the system blur and translucent window material.",
-        language: "Interface language",
-        languageValue: "Follow system",
-        updates: "Automatic updates",
-        updatesDescription: "Notify you when a new build is available.",
-        updatesValue: "On",
-        terminalPosition: "Terminal position",
-        bottom: "Bottom",
-        restore: "Restore previous workspace",
-        restoreDescription: "Reopen retained tabs and terminals on launch."
-      },
-      workspace: {
-        search: "Search, enter a URL, or open a file",
-        openProject: "Open project",
-        newAgent: "New Agent session",
-        recent: "Recent work",
-        omnibox: "Search, enter a URL, or open a file",
-        siteUrl: "lyra.ltd",
-        docsKicker: "LYRA DOCUMENTATION",
-        docsTitle: "One task. One workbench.",
-        docsBody: "Pages, files, terminals, and Agent sessions all become part of the task. You and your Agent work from the same place.",
-        docsItems: ["Agent sessions", "Web and desktop action", "Models, Skills, and MCP"]
-      },
-      terminal: {
-        tab: "petehsu%",
-        prompt: "petehsu@Lyra ~ %",
-        command: "pnpm dev",
-        output: "Lyra workspace ready on localhost:5180"
-      }
+      title: "Anything? Lyra.",
+      previewCaption: "Interface preview · Drag a divider to resize"
     },
     product: {
-      title: "One task. One workbench.",
-      body: "In Lyra, pages, terminals, files, and apps are not loose attachments sent into a chat. They are the workspace you and your Agent are using together. When the task moves, the workbench moves with it.",
-      imageAlt: "The Lyra desktop workbench shared by a user and an Agent",
+      title: "An agent for your computer.",
+      body: "Tell Lyra what you need to do. It can browse the web, work with local files, write code, and run commands. The browser, editor, and terminal share one window, so you can follow the work and check the results.",
       items: [
         {
-          title: "From the web to your machine, without breaking the task.",
-          body: "Research a page, act on the web, run a command, open a file, or move to a desktop app. The Agent can follow the same task through instead of asking you to relay every step between tools.",
-          alt: "A task continuing across web pages, terminals, files, and desktop apps in Lyra"
+          title: "Research and work with files.",
+          body: "Ask Lyra to find webpages, read your materials, and save its findings to a file. Open the sources in the workspace to check the results or make your own edits."
         },
         {
-          title: "You and your Agent see the same workspace.",
-          body: "Tabs, splits, terminal panes, and the active workspace are explicit objects. Take over at any point, or let the Agent read the current state, move through the interface, and continue in place.",
-          alt: "A user and an Agent working in the same Lyra workspace"
+          title: "Edit code and run commands.",
+          body: "Ask Lyra to change a project, run a script, or investigate an error. Review the file changes and terminal output before deciding what comes next."
         },
         {
-          title: "Shape the workbench around the way you work.",
-          body: "Choose models and providers within one runtime, then extend it with Skills, MCP, and local Agent packages. Lyra brings those capabilities back into the task instead of scattering them across separate entry points.",
-          alt: "Models, Skills, MCP, and Agent configuration in Lyra"
+          title: "Work in desktop apps.",
+          body: "With permission, Lyra can use the screen, keyboard, and pointer to operate supported apps. Give it more instructions or take over yourself. Available actions depend on the app and system permissions."
         }
       ]
     },
     local: {
-      title: "The workbench is yours.",
-      body: "Lyra can be used without signing in. An account only syncs profile details and preferences; local projects, model choices, and extensions do not need to pass through a cloud account first.",
+      title: "Use the model you choose.",
+      body: "Connect a model provider or a local model endpoint. Add task instructions with Skills and connect external tools and data through MCP.",
       points: [
-        "Local mode is a full entry point, not a trial screen",
-        "Accounts only sync profile details and preferences",
-        "You configure models, providers, Skills, and MCP"
+        "Use local mode without a Lyra account",
+        "Bring your API key or a compatible endpoint",
+        "Cloud models receive task-related content"
       ]
     },
     video: {
-      title: "See it at work.",
-      body: "A short film showing how Lyra brings web pages, terminals, files, and Agents into one working scene — operated by you, or carried on by an Agent.",
-      frameTitle: "Lyra promotional film"
+      title: "See Lyra in use.",
+      frameTitle: "Lyra desktop demo video"
     },
     pricing: {
-      title: "Start free.",
-      body: "Lyra will keep a free path into the local workbench. Pricing, allowances, and exact benefits for Pro and Max are still being evaluated; I will not promise numbers before they are ready.",
+      title: "Plans.",
+      body: "The free beta is available now. Pro and Max are planned tiers; subscriptions are not open.",
+      note: "Model services may charge separately. Costs and limits depend on your provider.",
       plans: [
         {
           name: "Free",
-          status: "Current plan",
+          status: "Current beta",
           price: "$0",
-          description: "Use the local workbench without a subscription, then connect the models, providers, and extensions you choose.",
-          points: [
-            "Full local workbench entry",
-            "Your choice of models and providers",
-            "Skills, MCP, and local Agent packages"
-          ],
-          note: "Included with the first public release.",
+          description: "Download the desktop app and connect your chosen model.",
+          points: ["Local mode without a Lyra account", "Your API key or a local model", "Skills and MCP support"],
           available: true
         },
         {
           name: "Pro",
-          status: "In planning",
-          price: "TBD",
-          description: "For people who need more cloud capability, synchronization, and usage allowance. The exact scope is still being decided.",
-          points: [
-            "Benefits to be confirmed",
-            "Usage allowance to be confirmed",
-            "Availability to be confirmed"
-          ],
-          note: "Pricing will be published when it is ready.",
+          status: "Planned",
+          price: "Not yet priced",
+          description: "Pricing, usage limits, and included features will be published once confirmed.",
+          points: [],
           available: false
         },
         {
           name: "Max",
-          status: "In planning",
-          price: "TBD",
-          description: "For heavier use and larger task scales. The name, scope, and pricing may still change.",
-          points: [
-            "Benefits to be confirmed",
-            "Usage allowance to be confirmed",
-            "Availability to be confirmed"
-          ],
-          note: "Reservations are not open.",
+          status: "Planned",
+          price: "Not yet priced",
+          description: "Included features are still being decided. No subscriptions or reservations yet.",
+          points: [],
           available: false
         }
       ]
     },
     download: {
-      title: "Bring Lyra to your workbench.",
-      body: "Lyra Preview is available for macOS, Windows, and Linux.",
+      title: "Download Lyra.",
+      body: "Choose the Lyra Preview installer for your computer. This is a beta; back up important files.",
       action: "Download",
       select: "Choose version",
       otherVersions: "Other architectures and formats",
-      recommended: "Recommended for this device",
-      platforms: [
-        { id: "macos", name: "macOS", detail: "Apple Silicon and Intel installers" },
-        { id: "windows", name: "Windows", detail: "ARM64 and x86_64 installers" },
-        { id: "linux", name: "Linux", detail: "AppImage, deb, rpm, Flatpak, and Arch" }
-      ],
-      upcomingTitle: "Coming next",
+      recommended: "For this device",
+      upcomingTitle: "Planned platforms",
       upcoming: ["Mobile", "CLI"],
-      waiting: "Waiting"
+      waiting: "Planned",
+      upcomingNote: "Standalone downloads and release dates will be listed once confirmed.",
+      platforms: [
+        { id: "macos", name: "macOS", detail: "Apple Silicon / Intel" },
+        { id: "windows", name: "Windows", detail: "ARM64 / x86_64" },
+        { id: "linux", name: "Linux", detail: "AppImage, deb, rpm, Flatpak, Arch" }
+      ]
     },
     contact: {
-      title: "Some things deserve a proper conversation.",
-      body: "For Lyra, product collaboration, development conversations, or anything else worth discussing, you can reach me through any of the four channels below or by email.",
+      title: "Contact the developer.",
+      body: "Report an issue, share feedback, or discuss a collaboration. Email me or use one of the channels below.",
       emailLabel: "Personal contact email",
       personalNotice:
         "All listed channels and the email address are provided and maintained personally by the operator, not by a staffed support desk or corporate ticketing system. Platform restrictions, network conditions, spam filtering, or message-request settings may prevent delivery or timely review. If you do not receive a response within a reasonable time, please try another listed channel or resend your email. Do not send passwords, API keys, or other sensitive information through public channels.",
       channels: [
         { label: "X", value: "@Qxuzhong" },
         { label: "Telegram", value: "@PeteHsu" },
-        { label: "QQ", value: "Community group" },
+        { label: "QQ", value: "Community" },
         { label: "GitHub", value: "petehsu" }
       ]
     },

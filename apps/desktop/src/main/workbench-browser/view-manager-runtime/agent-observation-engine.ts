@@ -1,3 +1,7 @@
+import { browserSensitiveBoundary } from "../../sensitive-values/browser-boundary";
+import { presentBrowserMap } from "./agent-map-presentation";
+import { formatPageNotes, readControlSemantics, readPageNotes } from "./agent-page-semantics";
+import { readCursorObservation } from "./agent-cursor-semantics";
 import { sanitizeBrowserPageRestoreState } from "../../../shared/workbench-browser";
 import type {
   WorkbenchBrowserPageRuntimeState,
@@ -32,16 +36,19 @@ import {
   normalizeAuthChallengeSignals
 } from "./agent-observation-runtime";
 import {
-  collapseNestedAffordances,
+  dropLabelContainers,
   formatAffordanceListsForMap,
   scrollHintsFromNeedsScroll,
-  splitAffordanceColumns
+  splitAffordanceColumns,
+  surfaceMapElements
 } from "./agent-affordance-lists";
 import {
   observeCrossOriginFrameViaCdp,
   resolveCrossOriginBlockedFallback
 } from "./agent-oopif-observation";
 import { shouldSettleBeforeObserve, waitForDomNetworkQuiet } from "./agent-dom-settle";
+import { fillBlankSurfaceLabels } from "./surface-control-names";
+import { probeUnnamedSurfaceControls } from "./surface-name-probe";
 import { browserHealthWarningsFromAlerts } from "./browser-health-watchdog";
 import { agentTargetAddress, agentTargetTitle } from "./agent-target-runtime";
 import type { WorkbenchBrowserAgentControllerHost } from "./agent-controller-types";
@@ -56,6 +63,7 @@ import {
   coerceFrameOwnerCandidates,
   createBrowserAgentFrameRef,
   createBrowserAgentTargetRef,
+  disambiguateTargetRefs,
   hashStableString,
   matchFrameOwnerCandidates,
   normalizeExecuteScriptTimeoutMs,
@@ -74,12 +82,14 @@ import type {
 
 type BrowserAgentObservationEngineDeps = Pick<
   WorkbenchBrowserAgentControllerHost,
+  | "assertSharedControlCanContinue"
   | "findFrameInWebContents"
   | "openDebuggerSessionForTarget"
   | "publishBrowserAgentActivity"
   | "readPageDiagnostics"
   | "rememberBrowserRestoreState"
   | "resolveBrowserAgentTarget"
+  | "sendAgentInputEvent"
   | "updateRuntimeState"
 > & {
   readonly stateStore: BrowserAgentStateStore;
@@ -311,7 +321,7 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
           fallback: "ax",
           confidence: signal.confidence
         });
-      } else if (signal.kind === "active_file_chooser" || signal.kind === "payment_auth") {
+      } else if ((signal.kind === "active_file_chooser" && signal.actionability === "user_only") || signal.kind === "payment_auth") {
         blockedRegions.push({
           id: `${signal.kind}-${hashStableString(`${signal.url ?? ""}|${signal.label ?? ""}`)}`,
           kind: "permission-prompt",
@@ -605,16 +615,24 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
     const strategy = normalizeAgentObserveStrategy(request?.strategy);
     const timeoutMs = normalizeExecuteScriptTimeoutMs(request?.timeoutMs, 8_000);
     const activeFileChooserPending = isActiveFileChooserPending(tabId, target.targetMode);
-    const lightweightObservation = isLightweightAgentObserveStrategy(strategy);
+    // A main-document crawl cannot cross an origin boundary. Use the existing
+    // per-frame path only when needed, so embedded upload controls remain mapped.
+    const mainFrame = target.webContents.mainFrame;
+    const needsFrameTraversal = mainFrame.framesInSubtree.some(frame =>
+      frame.isDestroyed() === false && frame !== mainFrame && frame.origin !== mainFrame.origin);
+    const lightweightObservation = isLightweightAgentObserveStrategy(strategy) && !needsFrameTraversal;
     if (request?.suppressActivity !== true) {
-      publishBrowserAgentActivity({
+      await publishBrowserAgentActivity({
         tabId,
         targetMode: target.targetMode,
         action: "observe",
         visibleFollow: target.browserMode.visibleFollow,
-        durationMs: lightweightObservation
-          ? Math.max(650, Math.min(1_600, timeoutMs))
-          : Math.max(1_250, Math.min(3_200, timeoutMs))
+        hold: strategy === "interactiveOnly",
+        durationMs: strategy === "interactiveOnly"
+          ? 60_000
+          : lightweightObservation
+            ? Math.max(650, Math.min(1_600, timeoutMs))
+            : Math.max(1_250, Math.min(3_200, timeoutMs))
       });
     }
     const frameObservations: BrowserAgentRawFrameObservation[] = [];
@@ -651,11 +669,12 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
               strategy,
               includeChildFrames: true,
               isMainFrame: true,
-              activeFileChooserPending
+              activeFileChooserPending,
+              followCursor: request?.suppressActivity !== true && target.browserMode.visibleFollow === true
             }),
             true
           ),
-          Math.max(350, Math.min(1_500, timeoutMs))
+          Math.max(350, Math.min(8_000, timeoutMs))
         );
         frameObservations.push({
           frame: mainSemanticFrame,
@@ -686,86 +705,81 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
         }
         return oopifDebuggerSession;
       };
-      for (const semanticFrame of frameGraph.frames.slice(0, 48)) {
-        if (semanticFrame.domAccess === "cdp") {
-          try {
-            const session = await ensureOopifDebuggerSession();
-            const rawFrame = await observeCrossOriginFrameViaCdp({
-              session,
-              semanticFrame,
-              frameGraph,
-              strategy,
-              activeFileChooserPending,
-              frameBounds: semanticFrame.bounds ?? { x: 0, y: 0, width: 1, height: 1 }
-            });
-            if (rawFrame !== null) {
-              frameObservations.push({ frame: semanticFrame, raw: rawFrame });
-              continue;
-            }
-            graphWarnings.push(`oopif_observe_empty:${semanticFrame.frameTreeNodeId}`);
-          } catch (error) {
-            graphWarnings.push(`oopif_observe_failed:${semanticFrame.frameTreeNodeId}`);
+      try {
+        for (const semanticFrame of frameGraph.frames.slice(0, 48)) {
+          // Zero-size hidden owners remain in the identity graph, but their
+          // contents are not exposed as operable controls.
+          if (!semanticFrame.isMainFrame && semanticFrame.bounds
+            && (semanticFrame.bounds.width <= 0 || semanticFrame.bounds.height <= 0)) continue;
+          const frame = findFrameInWebContents(target.webContents, semanticFrame.frameTreeNodeId);
+          if (frame === null) {
+            graphWarnings.push(`frame_missing:${semanticFrame.frameTreeNodeId}`);
+            continue;
           }
-          graphBlockedRegions.push({
-            id: `frame-observe-${semanticFrame.frameTreeNodeId}`,
-            kind: "cross-origin",
-            frameRef: semanticFrame.frameRef,
-            frameTreeNodeId: semanticFrame.frameTreeNodeId,
-            ...(semanticFrame.bounds === undefined ? {} : { bounds: semanticFrame.bounds }),
-            reason: "Cross-origin iframe DOM is not reachable from the parent frame session.",
-            ...(semanticFrame.url.length > 0 ? { url: semanticFrame.url } : {}),
-            fallback: resolveCrossOriginBlockedFallback(semanticFrame),
-            confidence: "high"
-          });
-          continue;
+          try {
+            const rawFrame = await runFrameScriptWithTimeout(
+              () => frame.executeJavaScript(
+                buildBrowserAgentObservationScript({
+                  frameTreeNodeId: semanticFrame.frameTreeNodeId,
+                  frameRef: semanticFrame.frameRef,
+                  frameBounds: semanticFrame.bounds ?? { x: 0, y: 0, width: 1, height: 1 },
+                  strategy,
+                  includeChildFrames: false,
+                  isMainFrame: semanticFrame.isMainFrame,
+                  activeFileChooserPending,
+                  followCursor: false
+                }),
+                true
+              ),
+              Math.max(500, Math.min(3_000, timeoutMs))
+            );
+            frameObservations.push({
+              frame: semanticFrame,
+              raw: rawFrame !== null && typeof rawFrame === "object" ? rawFrame as Record<string, unknown> : {}
+            });
+          } catch (error) {
+            if (semanticFrame.domAccess === "cdp") {
+              try {
+                const session = await ensureOopifDebuggerSession();
+                const rawFrame = await observeCrossOriginFrameViaCdp({
+                  session,
+                  semanticFrame,
+                  frameGraph,
+                  strategy,
+                  activeFileChooserPending,
+                  frameBounds: semanticFrame.bounds ?? { x: 0, y: 0, width: 1, height: 1 }
+                });
+                if (rawFrame !== null) {
+                  frameObservations.push({ frame: semanticFrame, raw: rawFrame });
+                  continue;
+                }
+                graphWarnings.push(`oopif_observe_empty:${semanticFrame.frameTreeNodeId}`);
+              } catch (error) {
+                graphWarnings.push(`oopif_observe_failed:${semanticFrame.frameTreeNodeId}`);
+              }
+            }
+            graphWarnings.push(`frame_observe_failed:${semanticFrame.frameTreeNodeId}`);
+            graphBlockedRegions.push({
+              id: `frame-observe-${semanticFrame.frameTreeNodeId}`,
+              kind: "frame-unavailable",
+              frameRef: semanticFrame.frameRef,
+              frameTreeNodeId: semanticFrame.frameTreeNodeId,
+              ...(semanticFrame.bounds === undefined ? {} : { bounds: semanticFrame.bounds }),
+              reason: error instanceof Error ? error.message : String(error),
+              ...(semanticFrame.url.length > 0 ? { url: semanticFrame.url } : {}),
+              fallback: resolveCrossOriginBlockedFallback(semanticFrame),
+              confidence: "medium"
+            });
+          }
         }
-
-        const frame = findFrameInWebContents(target.webContents, semanticFrame.frameTreeNodeId);
-        if (frame === null) {
-          graphWarnings.push(`frame_missing:${semanticFrame.frameTreeNodeId}`);
-          continue;
-        }
-        try {
-          const rawFrame = await runFrameScriptWithTimeout(
-            () => frame.executeJavaScript(
-              buildBrowserAgentObservationScript({
-                frameTreeNodeId: semanticFrame.frameTreeNodeId,
-                frameRef: semanticFrame.frameRef,
-                frameBounds: semanticFrame.bounds ?? { x: 0, y: 0, width: 1, height: 1 },
-                strategy,
-                includeChildFrames: false,
-                isMainFrame: false,
-                activeFileChooserPending
-              }),
-              true
-            ),
-            Math.max(500, Math.min(3_000, timeoutMs))
-          );
-          frameObservations.push({
-            frame: semanticFrame,
-            raw: rawFrame !== null && typeof rawFrame === "object" ? rawFrame as Record<string, unknown> : {}
-          });
-        } catch (error) {
-          graphWarnings.push(`frame_observe_failed:${semanticFrame.frameTreeNodeId}`);
-          graphBlockedRegions.push({
-            id: `frame-observe-${semanticFrame.frameTreeNodeId}`,
-            kind: "frame-unavailable",
-            frameRef: semanticFrame.frameRef,
-            frameTreeNodeId: semanticFrame.frameTreeNodeId,
-            ...(semanticFrame.bounds === undefined ? {} : { bounds: semanticFrame.bounds }),
-            reason: error instanceof Error ? error.message : String(error),
-            ...(semanticFrame.url.length > 0 ? { url: semanticFrame.url } : {}),
-            fallback: resolveCrossOriginBlockedFallback(semanticFrame),
-            confidence: "medium"
-          });
-        }
+      } finally {
+        await (oopifDebuggerSession as WorkbenchBrowserDebuggerSession | null)?.close().catch(() => undefined);
       }
     }
 
     let cdpEnhancements: DomObservationEnhancements | null = null;
     if (
-      strategy === "interactiveOnly"
-      || strategy === "picker"
+      strategy === "picker"
       || strategy === "focus"
       || strategy === "hybrid"
     ) {
@@ -783,8 +797,13 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
       }
     }
 
+    for (let index = 0; index < frameObservations.length; index++) {
+      const entry = frameObservations[index]!;
+      frameObservations[index] = { ...entry, raw: await browserSensitiveBoundary.sanitize(entry.raw) };
+    }
     const mainRaw = frameObservations.find((entry) => entry.frame.isMainFrame)?.raw ?? {};
     const rawUrl = typeof mainRaw.url === "string" ? mainRaw.url : agentTargetAddress(target);
+    const pageNotes = frameObservations.flatMap(entry => readPageNotes(entry.raw.pageNotes, entry.frame.frameRef));
     const observedAt = Date.now();
     const mapEpoch = nextMapEpoch(tabId, target.targetMode);
     const rawElements = frameObservations.flatMap((entry) => {
@@ -880,6 +899,7 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
           ...(frameBounds === undefined ? {} : { frameBounds }),
           focusable: record.focusable === true,
           disabled: record.disabled === true,
+          semantics: readControlSemantics(record.semantics) ?? {},
           editable: record.editable === true,
           ...(visibility === undefined ? {} : { visibility }),
           ...(typeof record.checked === "boolean" ? { checked: record.checked } : {}),
@@ -890,14 +910,23 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
           ...(typeof record.actionHint === "string" && record.actionHint.length > 0
             ? { actionHint: record.actionHint }
             : {}),
-          ...(typeof record.stateHint === "string" && record.stateHint.length > 0
-            ? { stateHint: record.stateHint }
-            : {}),
+          ...(record.hoverOnly === true
+            ? { stateHint: "hover" }
+            : typeof record.stateHint === "string" && record.stateHint.length > 0
+              ? { stateHint: record.stateHint }
+              : {}),
+          ...(() => { const cursor = readCursorObservation(record.cursor); return cursor ? { cursor } : {}; })(),
+          ...(record.cursorOnly === true ? { cursorOnly: true } : {}),
+          ...(Array.isArray(record.ancestorTargetRefs) ? { ancestorTargetRefs: record.ancestorTargetRefs.filter((ref): ref is string => typeof ref === "string" && ref.startsWith("lumen:")) } : {}),
+          ...(record.tooltipProbe === "found" || record.tooltipProbe === "empty" ? { tooltipProbe: record.tooltipProbe } : {}),
           ...(typeof record.tooltipText === "string" && record.tooltipText.length > 0
             ? { tooltipText: record.tooltipText }
             : {}),
           ...(typeof record.textSnippet === "string" && record.textSnippet.length > 0
             ? { textSnippet: record.textSnippet }
+            : {}),
+          ...(typeof record.formGroup === "string" && record.formGroup.length > 0
+            ? { formGroup: record.formGroup }
             : {}),
           ...(Number.isFinite(Number(record.tabIndex))
             ? { tabIndex: Math.round(Number(record.tabIndex)) }
@@ -905,6 +934,11 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
           ...(typeof record.href === "string" && record.href.length > 0
             ? { href: record.href }
             : {}),
+          ...(typeof record.formAction === "string" && record.formAction.length > 0 ? { formAction: record.formAction } : {}),
+          ...(typeof record.formMethod === "string" && record.formMethod.length > 0 ? { formMethod: record.formMethod } : {}),
+          ...(typeof record.destinationUrl === "string" && record.destinationUrl.length > 0 ? { destinationUrl: record.destinationUrl } : {}),
+          ...(Array.isArray(record.autocompleteTokens) ? { autocompleteTokens: record.autocompleteTokens.filter((token): token is string => typeof token === "string") } : {}),
+          ...(typeof record.secure === "boolean" ? { secure: record.secure } : {}),
           ...(typeof record.inputType === "string" && record.inputType.length > 0
             ? { inputType: record.inputType }
             : {}),
@@ -927,7 +961,13 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
           WorkbenchBrowserAgentElement,
           "stableId" | "targetRef" | "target" | "elementFingerprint" | "semanticNodeKey" | "actionCapabilities"
         >;
-        const targetRef = createBrowserAgentTargetRef(rawUrl, baseElement);
+        const minted = createBrowserAgentTargetRef(rawUrl, baseElement);
+        const keptRef = typeof record.existingRef === "string" && record.existingRef.startsWith("lumen:")
+          ? record.existingRef
+          : minted.targetRef;
+        const targetRef = keptRef === minted.targetRef
+          ? minted
+          : { ...minted, targetRef: keptRef, stableId: keptRef.slice("lumen:".length) };
         const actionCapabilities = actionCapabilitiesForElement(baseElement);
         const semanticNodeKey = semanticNodeKeyForTarget(targetRef.targetRef, "dom", frameRef);
         const targetMetadata: WorkbenchLumenTargetRef = {
@@ -1026,7 +1066,11 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
         }
       }
     }
-    refinedDomElements = filterElementsByParentContainment(refinedDomElements);
+    // The surface collector already resolves DOM ownership. A later rectangle
+    // overlap filter cannot distinguish a row from its independent cursor menu.
+    if (strategy !== "interactiveOnly") {
+      refinedDomElements = filterElementsByParentContainment(refinedDomElements);
+    }
     if (refinedDomElements.length < domElements.length) {
       graphWarnings.push(
         `${domElements.length - refinedDomElements.length} nested duplicate element(s) removed by parent containment filter.`
@@ -1137,33 +1181,76 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
     let scrollHints: readonly WorkbenchBrowserAgentScrollHint[] = [];
     let hiddenBelowCount = 0;
     let mapAppendix = "";
-    const mapScope = request?.mapScope ?? (strategy === "interactiveOnly" ? "viewport" : "document");
+    const mapScope = request?.mapScope ?? "document";
     if (strategy === "interactiveOnly") {
       const coveredCount = elements.filter((element) => element.visibility?.covered === true).length;
       if (coveredCount > 0) {
-        graphWarnings.push(`${coveredCount} covered interactive element(s) omitted from map output.`);
+        graphWarnings.push(`${coveredCount} covered interactive element(s) indexed but blocked; resolve the overlay before activation.`);
       }
-      elements = elements.filter(
-        (element) =>
-          element.discoveryScope === "visual"
-          || element.discoveryScope === "coordinate"
-          || element.visibility?.covered !== true
-      );
+
     }
-    elements = collapseNestedAffordances(elements);
+    elements = dropLabelContainers(elements);
+    if (strategy === "interactiveOnly") {
+      elements = [...await fillBlankSurfaceLabels(elements, {
+        openDebugger: () => openDebuggerSessionForTarget(target)
+      })];
+      if (request?.suppressActivity !== true && !activeFileChooserPending) {
+        const moved = await probeUnnamedSurfaceControls(elements, {
+          execute: (element, script) => {
+            const frame = findFrameInWebContents(target.webContents, element.frameTreeNodeId) ?? target.webContents.mainFrame;
+            return runFrameScriptWithTimeout(() => frame.executeJavaScript(script, true), Math.min(timeoutMs, 1500));
+          },
+          assertCanContinue: () => deps.assertSharedControlCanContinue(tabId),
+          movePointer: (x, y) => deps.sendAgentInputEvent(target, { type: "mouseMove", x, y })
+        });
+        // Hover can reveal/hide controls. Publish a fresh map after restoration,
+        // including cached descriptions, instead of returning pre-hover boxes.
+        if (moved) return observeAgentPage(tabId, { ...request, suppressActivity: true, settle: false });
+      }
+    }
     const mainFrameForLists = frameGraph.frames.find((frame) => frame.isMainFrame) ?? frameGraph.frames[0];
     const viewportWidth = mainFrameForLists?.bounds?.width ?? 1_280;
     const viewportHeight = mainFrameForLists?.bounds?.height ?? 720;
+    elements = disambiguateTargetRefs(elements, rawUrl);
     const columns = splitAffordanceColumns(elements, viewportWidth, viewportHeight);
-    const inViewport = columns.inViewport;
-    const needsScroll = columns.needsScroll;
-    hiddenBelowCount = needsScroll.length;
-    elements = mapScope === "viewport" ? [...inViewport] : [...inViewport, ...needsScroll];
-    if (hiddenBelowCount > 0) {
-      graphWarnings.push(`${hiddenBelowCount} below-viewport control(s) listed under needsScroll.`);
+    let inViewport = columns.inViewport;
+    let needsScroll = columns.needsScroll;
+    const surface = surfaceMapElements(inViewport, needsScroll);
+    hiddenBelowCount = surface.remaining;
+    // Presentation limits must never shrink the action/lookup index.
+    elements = [...inViewport, ...needsScroll];
+    if (surface.remaining > 0) {
+      graphWarnings.push(`${surface.remaining} operable control(s) outside this window.`);
     }
-    scrollHints = scrollHintsFromNeedsScroll(needsScroll, viewportHeight);
-    mapAppendix = formatAffordanceListsForMap(inViewport, needsScroll);
+    scrollHints = surface.remaining > 0
+      ? scrollHintsFromNeedsScroll(needsScroll, viewportHeight)
+      : [];
+    const listed = formatAffordanceListsForMap(
+      inViewport,
+      surface.remaining > 0 ? [] : needsScroll,
+      surface.remaining,
+      viewportHeight
+    );
+    mapAppendix = [formatPageNotes(pageNotes), listed].filter(Boolean).join("\n");
+    if (request?.suppressActivity !== true && target.browserMode.visibleFollow && strategy === "interactiveOnly") {
+      const points = inViewport.slice(0, 16).map((element) => ({
+        x: Math.round(element.bounds.x + element.bounds.width / 2),
+        y: Math.round(element.bounds.y + element.bounds.height / 2)
+      }));
+      const last = points[points.length - 1];
+      if (last !== undefined) {
+        publishBrowserAgentActivity({
+          tabId,
+          targetMode: target.targetMode,
+          action: "observe",
+          visibleFollow: true,
+          cursorPhase: "move",
+          durationMs: 60_000,
+          hold: true,
+          cursor: last
+        });
+      }
+    }
     const registryElements = [...inViewport, ...needsScroll];
     const targets = elements.map((element) => element.target);
 
@@ -1219,22 +1306,15 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
     const highConfidenceCaptcha = authChallengeSignals.find(
       (signal) => signal.kind === "captcha" && signal.confidence === "high"
     );
-    const activeFileChooser = authChallengeSignals.find(
-      (signal) => signal.kind === "active_file_chooser" && signal.confidence === "high"
-    );
     if (highConfidenceCaptcha !== undefined) {
-      await waitForDomNetworkQuiet(target.webContents, {
-        budgetMs: 1_200,
-        quietMs: 400
-      });
       onBrowserHealthCaptcha?.(
         tabId,
         highConfidenceCaptcha.label ?? "captcha challenge detected"
       );
-      graphWarnings.push("captcha_detected:agent_blocked_until_user_completes_challenge");
+      graphWarnings.push("captcha_detected");
     }
     for (const signal of authChallengeSignals) {
-      if (signal.kind === "active_file_chooser" || signal.kind === "payment_auth") {
+      if ((signal.kind === "active_file_chooser" && signal.actionability === "user_only") || signal.kind === "payment_auth") {
         onBrowserHealthPermission?.(tabId, signal.kind);
       }
     }
@@ -1273,57 +1353,15 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
       blockedRegions: semanticTree.blockedRegions,
       activeElementId,
       focusOrder,
+      pageNotes,
       ...(authChallengeSignals.length > 0 ? { authChallengeSignals } : {}),
       ...(scrollHints.length > 0 ? { scrollHints } : {}),
       ...(hiddenBelowCount > 0 ? { hiddenBelowCount } : {}),
-      ...(mapAppendix.length > 0 ? { mapAppendix } : {}),
+      mapAppendix: presentBrowserMap({ elements, inViewport, needsScroll, activeElementId, pageNotes, url: rawUrl, mapAppendix, warnings }),
       ...(browserHealth.length > 0 ? { browserHealth } : {}),
-      ...(highConfidenceCaptcha !== undefined
-        ? {
-            needsUserAction: {
-              kind: "auth_challenge",
-              reason: "captcha",
-              signal: highConfidenceCaptcha,
-              suggestedAction: "ask_user",
-              actionability: "user_only",
-              taskBlocking: true,
-              confidence: "high",
-              reasonCode: highConfidenceCaptcha.reasonCode ?? "captcha_interactive",
-              stableObservationCount: highConfidenceCaptcha.stableObservationCount ?? 1
-            }
-          }
-        : activeFileChooser !== undefined
-          ? {
-              needsUserAction: {
-                kind: "auth_challenge",
-                reason: "active_file_chooser",
-                signal: activeFileChooser,
-                suggestedAction: "ask_user",
-                actionability: "user_only",
-                taskBlocking: true,
-                confidence: "high",
-                reasonCode: activeFileChooser.reasonCode ?? "active_file_chooser",
-                stableObservationCount: activeFileChooser.stableObservationCount ?? 1
-              }
-            }
-          : {}),
       ...(warnings.length > 0 ? { warnings } : {}),
       nextRecommendedAction:
-        highConfidenceCaptcha !== undefined || activeFileChooser !== undefined
-          ? "ask_user"
-          : authChallengeSignals.some(
-              (signal) =>
-                signal.confidence === "high"
-                && signal.actionability === "user_only"
-                && signal.kind !== "oauth_popup"
-                && signal.kind !== "captcha"
-            )
-            || semanticTree.blockedRegions.some((region) => region.fallback === "elevate")
-            ? "lyra_lumen_elevate"
-            : authChallengeSignals.some((signal) => signal.confidence === "high" && signal.kind === "oauth_popup")
-              || semanticTree.blockedRegions.some((region) => region.fallback === "ax")
-              ? "browser_ax.map"
-              : elements.some((element) => element.discoveryScope === "coordinate")
+        elements.some((element) => element.discoveryScope === "coordinate")
                 || semanticTree.blockedRegions.some((region) => region.fallback === "coordinate")
                 ? "lyra_lumen.act"
                 : semanticTree.coverage.visualCoverage > 0

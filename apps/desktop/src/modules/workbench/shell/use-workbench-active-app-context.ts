@@ -1,4 +1,5 @@
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
+import type { AgentProviderRouteAdjustment } from "../../../shared/agent";
 import type { FileEditorModel } from "../file-editor";
 import type { FileManagerModel } from "../file-manager";
 import { useSettingsAiModel } from "../settings-ai";
@@ -11,6 +12,7 @@ type UseWorkbenchActiveAppContextParams = {
   readonly fileManagerModel: FileManagerModel;
   readonly fileEditorModel: FileEditorModel;
   readonly labels: WorkbenchLabels;
+  readonly onProviderRouteAdjusted?: (adjustment: AgentProviderRouteAdjustment) => void;
   readonly onOpenAgentConfigFile?: (filePath: string) => void | Promise<void>;
   readonly onOpenSite?: (url: string, title?: string) => void;
 };
@@ -21,6 +23,7 @@ export const useWorkbenchActiveAppContext = ({
   fileManagerModel,
   fileEditorModel,
   labels,
+  onProviderRouteAdjusted,
   onOpenAgentConfigFile,
   onOpenSite,
 }: UseWorkbenchActiveAppContextParams) => {
@@ -39,6 +42,7 @@ export const useWorkbenchActiveAppContext = ({
   const settingsAiModel = useSettingsAiModel({
     desktopApi,
     labels: labels.settingsAi,
+    ...(onProviderRouteAdjusted === undefined ? {} : { onProviderRouteAdjusted }),
     ...(onOpenAgentConfigFile === undefined ? {} : { onOpenAgentConfigFile }),
     ...(onOpenSite === undefined ? {} : { onOpenSite }),
   });

@@ -51,16 +51,16 @@ pub(super) fn description_for(
             "Use when the agent needs page text, an in-page text search (query), or a JSON schema hint for structured extraction. Do not use this to discover clickable controls; use /tools/browser/map."
         }
         ("browser", "map") => {
-            "Use to see what the user can operate: a Now clickable list (current window) and a Needs scroll list (same controls, below the fold). Nested chrome is collapsed to the button itself. Act, type, or press those targetRefs; do not scroll to discover them."
+            "Use to see the visible surface: one cleaned control per button, link, or input. A short page is one payload. A crowded page is this window plus a remaining count. Act, type, or press those targetRefs."
         }
         ("browser", "see") => {
-            "Use when the agent needs a visual screenshot or bitmap observation of the browser page. Returns a VisualFrame (captureId, dpr, device-pixel image size, scroll offset) whose coordinates feed /tools/browser/vact. Optionally draws targetRef highlights and downsamples for vision models."
+            "Use only when the surface map marks a canvas or cross-origin region with no cursor meaning. Returns a captureId for /tools/browser/vact. Do not use this as a second map of ordinary controls."
         }
         ("browser", "detect_qr") => {
             "Use when the agent needs to decode QR codes on the page (login QR, payment QR) into payload and device-pixel bounds for vact."
         }
         ("browser", "scroll") => {
-            "Use only to scroll the page when there is no targetRef (infinite feed, load-more). /tools/browser/map already lists below-fold controls under Needs scroll, and act/type scroll them into view."
+            "Use to move the window when the surface map says operable controls remain outside it, or when a feed has no targetRef. Act and type already scroll a mapped target into view."
         }
         ("browser", "act") => {
             "Use to click or hover a mapped targetRef. Off-screen targets are scrolled into view first."
@@ -77,13 +77,13 @@ pub(super) fn description_for(
             "Use to run a login or sensitive flow in an isolated browser session that does not pollute the live tab."
         }
         ("browser", "vact") => {
-            "Use only when DOM mapping is unavailable or unreliable (canvas/WebGL apps, custom-rendered widgets, blocked frames, OAuth/Google identity iframes, browser-native account choosers, or when map/act returned no usable targetRef): visually click, drag, or scroll using device-pixel coordinates read directly from the latest see screenshot."
+            "Use only for a canvas or cross-origin region the surface map could not name. Coordinates come from the latest see screenshot."
         }
         ("browser_ax", "map") => {
-            "Use when DOM map/targetRef cannot see or reliably address a control (cross-origin OAuth/identity iframes, FedCM choosers, complex ARIA menus/comboboxes/dialogs): read the page accessibility tree. Optional role/name/provider filters return matching nodes from the same snapshot."
+            "Not a second page map. The visible surface map already names ordinary controls. Leave this unused unless a host still requires an accessibility node the surface map cannot represent."
         }
         ("browser_ax", "act") => {
-            "Use when an AX node from browser_ax.map is the right target: click/hover/focus/toggle/select by axRef, or press a key. Account/authorization nodes return needsUserAction instead of acting silently."
+            "Not a daily click path. Ordinary controls use the surface map targetRef. Account and authorization nodes stay with the user."
         }
         ("computer", operation) => super::computer::purpose(operation)
             .unwrap_or("Use this native desktop computer capability when the task asks for it."),

@@ -780,3 +780,56 @@ describe("useSettingsAiModel", () => {
     expect(onOpenAgentConfigFile).toHaveBeenCalledWith("/Users/petehsu/.lyra/modules/agent/state.json");
   });
 });
+
+
+describe("MiMo route correction notifications", () => {
+  const adjustment = {
+    profileId: "mimo_token_plan_sgp",
+    fromRouteId: "mimo_token_plan_sgp",
+    fromLabel: "MiMo Token Plan (SGP, OpenAI)",
+    toRouteId: "mimo",
+    toLabel: "MiMo OpenAI",
+    baseUrl: "https://api.xiaomimimo.com/v1",
+  };
+
+  test("notifies once on a saved correction and not again on catalog refresh", async () => {
+    const onProviderRouteAdjusted = vi.fn();
+    const { api } = createDesktopApiOverrides({
+      saveAndDiscoverAgentProviderProfile: vi.fn(async () => ({
+        ...agentModelCatalog, routeAdjustment: adjustment,
+      })),
+    });
+    const { result } = renderHook(() => useSettingsAiModel({
+      desktopApi: api, labels, onProviderRouteAdjusted,
+    }));
+    await waitFor(() => expect(result.current.agentModelCatalog).not.toBeNull());
+    await act(async () => {
+      const resultCatalog = await result.current.saveAndDiscoverAgentProviderProfile?.({
+        profileName: adjustment.profileId,
+        routeId: adjustment.fromRouteId,
+        baseUrl: "https://token-plan-sgp.xiaomimimo.com/v1",
+      });
+      expect(resultCatalog?.routeAdjustment).toEqual(adjustment);
+    });
+    expect(onProviderRouteAdjusted).toHaveBeenCalledTimes(1);
+    expect(onProviderRouteAdjusted).toHaveBeenCalledWith(adjustment);
+    await act(async () => { await result.current.refreshAgent?.(); });
+    expect(onProviderRouteAdjusted).toHaveBeenCalledTimes(1);
+  });
+
+  test("existing-profile discovery publishes corrections; failures publish no success", async () => {
+    const onProviderRouteAdjusted = vi.fn();
+    const refreshAgentModels = vi.fn()
+      .mockResolvedValueOnce({ ...agentModelCatalog, routeAdjustment: adjustment })
+      .mockRejectedValueOnce(new Error("401 Invalid API Key"));
+    const { api } = createDesktopApiOverrides({ refreshAgentModels });
+    const { result } = renderHook(() => useSettingsAiModel({ desktopApi: api, labels, onProviderRouteAdjusted }));
+    await waitFor(() => expect(result.current.agentModelCatalog).not.toBeNull());
+    await act(async () => { await result.current.refreshAgentModels?.(adjustment.profileId); });
+    expect(onProviderRouteAdjusted).toHaveBeenCalledTimes(1);
+    expect(onProviderRouteAdjusted).toHaveBeenCalledWith(adjustment);
+    await act(async () => { await result.current.refreshAgentModels?.(adjustment.profileId); });
+    expect(result.current.errorMessage).toBe("401 Invalid API Key");
+    expect(onProviderRouteAdjusted).toHaveBeenCalledTimes(1);
+  });
+});

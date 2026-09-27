@@ -21,8 +21,7 @@ import {
   Copy,
   GitBranch,
   Link2,
-  Undo2,
-  X
+  Undo2
 } from "@lyra/icons";
 import { ContextMenuHost, useContextMenuModel } from "../../../../context-menu";
 import type { LyraDesktopApi } from "../../../../../../shared/desktop-bridge";
@@ -36,7 +35,7 @@ import {
 } from "./Message";
 import { Composer } from "./Composer";
 import { BackgroundTerminalButton } from "./BackgroundTerminalButton";
-import { useAgentBrowserPreview, openAgentBrowserPreviewTarget } from "../../hooks/useAgentBrowserPreview";
+import { AgentBrowserCapsule } from "./agent-browser-capsule";
 import { ContextRing } from "./context-ring";
 import { ChatEmptyState } from "./ChatEmptyState";
 import {
@@ -47,8 +46,6 @@ import {
 import { UserGateHost } from "../panels";
 import { TodoBar } from "../pills";
 import { AppButton } from "@renderer/ui/components";
-import { LyraLogo } from "@renderer/ui/app";
-import type { AgentBrowserPreviewSnapshot } from "../../../../../../shared/agent";
 import {
   buildFullMessageCitation,
   clipInlineMarkerText,
@@ -212,141 +209,6 @@ interface ChatViewProps {
   desktopApi?: LyraDesktopApi | null;
 }
 
-const ERROR_PAGE_TITLES = new Set([
-  "not found",
-  "404",
-  "404 not found",
-  "page not found",
-  "file not found",
-  "forbidden",
-  "403",
-  "403 forbidden",
-  "access denied",
-  "unauthorized",
-  "401",
-  "401 unauthorized",
-  "internal server error",
-  "500",
-  "500 internal server error",
-  "bad gateway",
-  "502",
-  "502 bad gateway",
-  "service unavailable",
-  "503",
-  "503 service unavailable",
-  "gateway timeout",
-  "504",
-  "504 gateway timeout",
-  "error",
-  "找不到",
-  "未找到",
-  "页面不存在",
-  "找不到页面",
-  "页面未找到",
-  "出错了",
-  "服务器错误"
-]);
-
-const isErrorPageTitle = (title: string): boolean => {
-  const normalized = title.trim().toLowerCase().replace(/\s+/g, " ");
-  if (ERROR_PAGE_TITLES.has(normalized)) {
-    return true;
-  }
-  return /^(?:(?:40[134]|50[0234])\s*[-–—:|]?\s*)(?:not found|page not found|file not found|forbidden|access denied|unauthorized|internal server error|bad gateway|service unavailable|gateway time-?out)$/i
-    .test(normalized);
-};
-
-// ponytail: name is the label before a one-part TLD, or before this short
-// two-part suffix list. An unknown suffix such as .com.xy uses the
-// second-to-last label.
-const MULTI_PART_SUFFIXES = new Set([
-  "co.uk",
-  "org.uk",
-  "ac.uk",
-  "gov.uk",
-  "com.au",
-  "com.cn",
-  "com.hk",
-  "com.tw",
-  "com.sg",
-  "com.br",
-  "com.mx",
-  "com.tr",
-  "co.jp",
-  "co.kr",
-  "co.nz",
-  "co.za"
-]);
-
-const siteLabelFromHttpUrl = (url: string): string | undefined => {
-  if (!url.startsWith("http://") && !url.startsWith("https://")) {
-    return undefined;
-  }
-  const hostport = url.slice(url.indexOf("://") + 3).split(/[/?#]/, 1)[0] ?? "";
-  const host = hostport.replace(/:\d+$/, "").replace(/^www\./i, "").toLowerCase();
-  const parts = host.split(".").filter((part) => part.length > 0);
-  if (parts.length === 0) {
-    return undefined;
-  }
-  if (parts.length === 1) {
-    return parts[0];
-  }
-  const lastTwo = `${parts[parts.length - 2]}.${parts[parts.length - 1]}`;
-  const label = MULTI_PART_SUFFIXES.has(lastTwo) && parts.length >= 3
-    ? parts[parts.length - 3]
-    : parts[parts.length - 2];
-  return label.length > 0 ? label : undefined;
-};
-
-const browserCapsuleSiteName = (
-  preview: Pick<AgentBrowserPreviewSnapshot, "title" | "url"> | undefined
-): string => {
-  const title = preview?.title.trim() ?? "";
-  if (
-    title.length > 0
-    && title !== "about:blank"
-    && title !== "Lyra Lumen"
-    && !isErrorPageTitle(title)
-  ) {
-    return title;
-  }
-  return siteLabelFromHttpUrl(preview?.url ?? "") ?? "Browser";
-};
-
-const BrowserCapsuleIdentity = ({
-  preview
-}: {
-  readonly preview: AgentBrowserPreviewSnapshot | undefined;
-}) => {
-  const faviconUrl = preview?.faviconUrl?.trim() ?? "";
-  const label = browserCapsuleSiteName(preview);
-  if (faviconUrl.length === 0) {
-    return (
-      <>
-        <LyraLogo className="lyra-agents-composer-browser-capsule-logo" alt="" />
-        <span>{label}</span>
-      </>
-    );
-  }
-  return (
-    <>
-      <img
-        className="lyra-agents-composer-browser-capsule-favicon"
-        alt=""
-        src={faviconUrl}
-        onError={(event) => {
-          event.currentTarget.dataset.failed = "true";
-        }}
-      />
-      <LyraLogo
-        className="lyra-agents-composer-browser-capsule-logo lyra-agents-composer-browser-capsule-logo-fallback"
-        alt=""
-      />
-      <span>{label}</span>
-    </>
-  );
-};
-
 export function ChatView({ showDecisions, showPermission, desktopApi = null }: ChatViewProps) {
   const {
     messages,
@@ -398,11 +260,6 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     rollbackMessage,
     todos,
   } = useData();
-  const {
-    items: browserPreviews,
-    promote: promoteBrowserPreview,
-    dismiss: dismissBrowserPreview
-  } = useAgentBrowserPreview({ desktopApi, isTurnRunning });
   useRegisterCoreComposerMetaChrome(session.id);
   const contextMenu = useContextMenuModel();
   const composerMetaBuiltins = {
@@ -831,79 +688,12 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
 
       <div className="lyra-agents-composer-wrap" ref={composerWrapRef}>
         <div className="lyra-agents-composer-rail">
-          {browserPreviews.length === 0 ? null : isTurnRunning ? (
-            <div
-              className="lyra-agents-composer-browser-stack"
-              style={{
-                width: `calc(var(--lyra-agents-composer-browser-preview-width) + ${browserPreviews.length - 1} * var(--lyra-agents-composer-browser-preview-peek))`
-              }}
-            >
-              {browserPreviews.map((preview, index) => (
-                <button
-                  key={preview.tabId}
-                  type="button"
-                  className="lyra-agents-composer-browser-preview"
-                  style={{
-                    left: `calc(${index} * var(--lyra-agents-composer-browser-preview-peek))`,
-                    zIndex: browserPreviews.length - index
-                  }}
-                  aria-label={t("lyra-agents-composer.openInWorkspace")}
-                  title={preview.title || preview.url || t("lyra-agents-composer.openInWorkspace")}
-                  onClick={() => {
-                    promoteBrowserPreview(preview.tabId);
-                    openAgentBrowserPreviewTarget(preview, {
-                      setActiveBrowserTab,
-                      openUrlInWorkbench
-                    });
-                  }}
-                >
-                  <img
-                    alt=""
-                    src={`data:${preview.mimeType};base64,${preview.imageBase64}`}
-                  />
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="lyra-agents-composer-browser-capsule-wrap">
-              <AppButton
-                variant="ghost"
-                size="sm"
-                type="button"
-                className="lyra-agents-composer-rail-chip lyra-agents-composer-browser-capsule"
-                aria-label={t("lyra-agents-composer.openInWorkspace")}
-                title={
-                  browserPreviews[0]?.title
-                  || browserPreviews[0]?.url
-                  || t("lyra-agents-composer.openInWorkspace")
-                }
-                onClick={() => {
-                  const preview = browserPreviews[0];
-                  if (preview === undefined) {
-                    return;
-                  }
-                  openAgentBrowserPreviewTarget(preview, {
-                    setActiveBrowserTab,
-                    openUrlInWorkbench
-                  });
-                }}
-              >
-                <BrowserCapsuleIdentity preview={browserPreviews[0]} />
-              </AppButton>
-              <button
-                type="button"
-                className="lyra-agents-composer-browser-capsule-dismiss"
-                aria-label={t("window.close")}
-                title={t("window.close")}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  dismissBrowserPreview();
-                }}
-              >
-                <X size={11} strokeWidth={2.2} aria-hidden="true" />
-              </button>
-            </div>
-          )}
+          <AgentBrowserCapsule
+            desktopApi={desktopApi}
+            isTurnRunning={isTurnRunning}
+            setActiveBrowserTab={setActiveBrowserTab}
+            openUrlInWorkbench={openUrlInWorkbench}
+          />
           <div className="lyra-agents-composer-toprow">
           {gitCounts !== null ? (
             <AppButton

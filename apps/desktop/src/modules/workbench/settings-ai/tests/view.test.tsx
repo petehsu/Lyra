@@ -1565,3 +1565,73 @@ describe("Settings AI views", () => {
   });
 
 });
+
+
+test("MiMo discovery updates the visible route and saves the same profile without restoring the wrong endpoint", async () => {
+  const base = createModel();
+  const adjustment = {
+    profileId: "mimo_token_plan_sgp", fromRouteId: "mimo_token_plan_sgp",
+    fromLabel: "MiMo Token Plan (SGP, OpenAI)", toRouteId: "mimo",
+    toLabel: "MiMo OpenAI", baseUrl: "https://api.xiaomimimo.com/v1",
+  };
+  const catalog = {
+    ...base.agentModelCatalog!, routeAdjustment: adjustment,
+    models: [...base.agentModelCatalog!.models, {
+      ...base.agentModelCatalog!.models[0]!, id: "mimo_token_plan_sgp:mimo-new",
+      model: "mimo-new", label: "mimo-new", provider: adjustment.profileId,
+      providerId: adjustment.profileId, providerKey: adjustment.profileId,
+      providerLabel: adjustment.toLabel, available: true,
+    }],
+  };
+  const saveAgentProviderProfile = vi.fn(async (_request: unknown) => undefined);
+  const saveAndDiscoverAgentProviderProfile = vi.fn(async () => catalog);
+  const model = createModel({
+    saveAgentProviderProfile, saveAndDiscoverAgentProviderProfile,
+    // A different account already uses the target route. Never overwrite it.
+    profiles: [...base.profiles, {
+      ...base.profiles[0]!, id: "other-mimo-account", routeId: "mimo", label: "Other account",
+    }],
+  });
+  const { rerender } = render(<SettingsAiModelsView labels={labels} model={model} openDialog={vi.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: /Add Model/ }));
+  fireEvent.change(screen.getByLabelText("Select provider"), { target: { value: "MiMo" } });
+  fireEvent.click(screen.getByRole("button", { name: /MiMo Token Plan \(SGP, OpenAI\)/ }));
+  fireEvent.change(screen.getByLabelText("API key"), { target: { value: "sk-test-only" } });
+  fireEvent.click(screen.getByRole("button", { name: /Discover Models/ }));
+  expect(await screen.findByRole("switch", { name: "mimo-new" })).toBeChecked();
+  expect(screen.getByLabelText("Select provider")).toHaveValue("MiMo OpenAI");
+  // A refreshed catalog must not clear the discovered selection or lose the profile ID.
+  rerender(<SettingsAiModelsView labels={labels} model={{ ...model, agentModelCatalog: catalog }} openDialog={vi.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: /Save profile/ }));
+  await waitFor(() => expect(saveAgentProviderProfile).toHaveBeenCalledWith(expect.objectContaining({
+    profileName: adjustment.profileId, routeId: "mimo", baseUrl: adjustment.baseUrl,
+    models: [{ id: "mimo-new", enabled: true }],
+  })));
+  expect(saveAgentProviderProfile.mock.calls[0]?.[0]).not.toHaveProperty("apiKey");
+});
+
+
+test.each([true, false])("saving a MiMo key directly verifies the selected profile (success=%s)", async (success) => {
+  const base = createModel();
+  const saveAgentProviderProfile = vi.fn(async () => undefined);
+  const refreshAgentModelCatalog = vi.fn(async () => undefined);
+  const saveAndDiscoverAgentProviderProfile = vi.fn(async () => success ? base.agentModelCatalog! : null);
+  render(<SettingsAiModelsView labels={labels} openDialog={vi.fn()} model={createModel({
+    saveAgentProviderProfile, refreshAgentModelCatalog, saveAndDiscoverAgentProviderProfile,
+  })} />);
+  fireEvent.click(screen.getByRole("button", { name: /Add Model/ }));
+  fireEvent.change(screen.getByLabelText("Select provider"), { target: { value: "MiMo" } });
+  fireEvent.click(screen.getByRole("button", { name: /MiMo Token Plan \(SGP, OpenAI\)/ }));
+  fireEvent.change(screen.getByLabelText("API key"), { target: { value: "sk-test-only" } });
+  fireEvent.click(screen.getByRole("button", { name: /Save profile/ }));
+  await waitFor(() => expect(saveAndDiscoverAgentProviderProfile).toHaveBeenCalledWith(expect.objectContaining({
+    profileName: "mimo_token_plan_sgp", routeId: "mimo_token_plan_sgp", apiKey: "sk-test-only",
+  })));
+  expect(saveAgentProviderProfile).not.toHaveBeenCalled();
+  expect(refreshAgentModelCatalog).not.toHaveBeenCalled();
+  if (success) {
+    await waitFor(() => expect(screen.queryByLabelText("API key")).not.toBeInTheDocument());
+  } else {
+    expect(screen.getByLabelText("API key")).toHaveValue("sk-test-only");
+  }
+});

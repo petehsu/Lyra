@@ -484,6 +484,7 @@ export type {
 } from "./login-manager";
 export type {
   LyraSensitiveValueApi,
+  LyraSensitiveStorageStatus,
   LyraSensitiveValueCapability,
   LyraSensitiveValueDeleteRequest,
   LyraSensitiveValueKind,
@@ -632,6 +633,8 @@ export const LYRA_CHANNELS = {
   sensitiveValuesRevealToUser: "lyra:sensitive-values/reveal-to-user",
   sensitiveValuesStore: "lyra:sensitive-values/store",
   sensitiveValuesDelete: "lyra:sensitive-values/delete",
+  sensitiveValuesReadStatus: "lyra:sensitive-values/read-status",
+  sensitiveValuesStatusChanged: "lyra:sensitive-values/status-changed",
   agentElevationValidate: "lyra:agent/elevation/validate",
   agentElevationSetSecret: "lyra:agent/elevation/set-secret",
   agentElevationClear: "lyra:agent/elevation/clear",

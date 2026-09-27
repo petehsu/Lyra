@@ -877,3 +877,79 @@ fn unix_pid_exists(pid: u32) -> bool {
         .map(|status| status.success())
         .unwrap_or(false)
 }
+
+#[cfg(unix)]
+#[test]
+fn ending_a_turn_stops_parked_foreground_commands() {
+    let backend = LyraAgentBackend;
+    let temp = tempfile::tempdir().unwrap();
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({"workingDir":temp.path().display().to_string()}),
+        )
+        .unwrap();
+    let session_id = created["id"].as_str().unwrap();
+    let turn_id = start_test_runtime_turn(session_id);
+    let result = tool_shell_run(
+        session_id,
+        &turn_id,
+        "foreground-cleanup",
+        &json!({"command":"sleep 30", "timeoutMs":50}),
+    )
+    .unwrap();
+    let pid = result.raw["pid"].as_u64().unwrap() as u32;
+    assert!(unix_pid_exists(pid));
+    crate::native_backend::session_runtime::clear_active_turn(session_id, &turn_id);
+    let started = Instant::now();
+    while unix_pid_exists(pid) {
+        assert!(
+            started.elapsed() < Duration::from_secs(3),
+            "foreground command survived turn end"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn shell_secure_reference_is_resolved_only_for_child_and_redacted_before_truncation() {
+    struct ResetHost;
+    impl Drop for ResetHost {
+        fn drop(&mut self) {
+            set_host_dispatcher(None);
+        }
+    }
+    let _reset = ResetHost;
+    const SECRET: &str = "regression-credential-not-a-real-secret";
+    set_host_dispatcher(Some(Arc::new(|method, payload| {
+        assert_eq!(method, "sensitiveValues.resolveForAgentUse");
+        let value: Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(value["ref"]["id"], "test-reference");
+        Ok(json!({"value":SECRET}).to_string())
+    })));
+    let backend = LyraAgentBackend;
+    let temp = tempfile::tempdir().unwrap();
+    let created = backend
+        .call_agent_method(
+            "agent.session.create",
+            json!({"workingDir":temp.path().display().to_string()}),
+        )
+        .unwrap();
+    let session_id = created["id"].as_str().unwrap();
+    let turn_id = start_test_runtime_turn(session_id);
+    for max in [4, 200] {
+        let result = tool_shell_run(session_id, &turn_id, "secure-reference", &json!({
+            "command":"printf '%s' \"$LYRA_SECRET_TEST\"", "timeoutMs":1000, "maxOutputBytes":max,
+            "sensitiveEnv":{"LYRA_SECRET_TEST":{"kind":"lyra-sensitive-value-ref","id":"test-reference"}}
+        })).unwrap();
+        assert_eq!(result.raw["exitCode"], 0);
+        assert!(!result.content.contains(SECRET));
+        assert!(!result.raw.to_string().contains(SECRET));
+        if max == 200 {
+            assert_eq!(result.raw["stdout"], "[sensitive value]");
+        } else {
+            assert!(!result.raw["stdout"].as_str().unwrap().contains("regr"));
+        }
+    }
+}

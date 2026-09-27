@@ -12,6 +12,7 @@ import type { BrowserAgentCursorOverlayAction, BrowserAgentCursorOverlayPhase } 
 import type { SharedControlSnapshot } from "../shared-control";
 import type {
   WorkbenchBrowserAgentElement,
+  WorkbenchBrowserAgentObservation,
   WorkbenchBrowserAgentInteraction,
   WorkbenchBrowserAgentModeInfo,
   WorkbenchBrowserAgentScrollEffect,
@@ -117,6 +118,7 @@ type BrowserAgentCacheEntry = {
   readonly elementsByTargetRef: ReadonlyMap<string, WorkbenchBrowserAgentElement>;
   readonly targets: readonly WorkbenchLumenTargetRef[];
   readonly targetsByRef: ReadonlyMap<string, WorkbenchLumenTargetRef>;
+  readonly pageNotes?: NonNullable<WorkbenchBrowserAgentObservation["pageNotes"]>;
   readonly url: string;
   readonly title: string;
 };

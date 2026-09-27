@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type {
   BrowserAxNode,
   BrowserAxSnapshot,
@@ -5,48 +6,73 @@ import type {
 } from "../types";
 import { browserAgentCacheKey } from "./agent-state-store";
 
-// Kept on the snapshot record. Refs are not expired from this clock: a newer
-// map for the same tab, or navigation / frame reload, is what makes an axRef stale.
+// Observation metadata only. Node refs live until navigation / frame reload,
+// independently of query snapshots, and are checked against the live DOM on act.
 export const BROWSER_AX_SNAPSHOT_TTL_MS = 60_000;
+const MAX_QUERY_SNAPSHOTS_PER_DOCUMENT = 16;
+
+export type BrowserAxReferenceScope = {
+  readonly hash: string;
+  readonly tabId: string;
+  readonly targetMode: WorkbenchBrowserAgentTargetMode;
+  readonly nodes: Map<string, BrowserAxNode>;
+  readonly nodeEpochs: Map<string, number>;
+};
 
 export type BrowserAxRefResolution =
   | { readonly kind: "ok"; readonly snapshot: BrowserAxSnapshot; readonly node: BrowserAxNode }
   | { readonly kind: "stale"; readonly reason: "missingSnapshot" }
   | { readonly kind: "unknownNode"; readonly snapshot: BrowserAxSnapshot };
 
-const snapshotHashFromAxRef = (axRef: string): string | null => {
-  // axRef format: ax:<snapshotHash>:<nodeHash>
+const documentHashFromAxRef = (axRef: string): string | null => {
+  // axRef format: ax:<documentHash>:<nodeHash>
   if (!axRef.startsWith("ax:")) {
     return null;
   }
   const parts = axRef.split(":");
-  const snapshotHash = parts[1];
+  const documentHash = parts[1];
   const nodeHash = parts[2];
-  if (parts.length !== 3 || snapshotHash === undefined || snapshotHash.length === 0 || nodeHash === undefined || nodeHash.length === 0) {
+  if (parts.length !== 3 || documentHash === undefined || documentHash.length === 0 || nodeHash === undefined || nodeHash.length === 0) {
     return null;
   }
-  return snapshotHash;
+  return documentHash;
 };
 
 export const createBrowserAxSnapshotStore = () => {
   const snapshots = new Map<string, BrowserAxSnapshot>();
   const latestByKey = new Map<string, string>();
-  const snapshotIdByHash = new Map<string, string>();
+  const scopesByKey = new Map<string, BrowserAxReferenceScope>();
+  const scopesByHash = new Map<string, BrowserAxReferenceScope>();
 
-  const rememberSnapshot = (snapshot: BrowserAxSnapshot): void => {
-    for (const [snapshotId, existing] of [...snapshots]) {
-      if (
-        existing.tabId === snapshot.tabId
-        && existing.targetMode === snapshot.targetMode
-        && snapshotId !== snapshot.snapshotId
-      ) {
-        snapshots.delete(snapshotId);
-        snapshotIdByHash.delete(existing.snapshotHash);
+  const referenceScopeFor = (tabId: string, targetMode: WorkbenchBrowserAgentTargetMode): BrowserAxReferenceScope => {
+    const key = browserAgentCacheKey(tabId, targetMode);
+    let scope = scopesByKey.get(key);
+    if (scope === undefined) {
+      scope = { hash: randomUUID().replaceAll("-", ""), tabId, targetMode, nodes: new Map(), nodeEpochs: new Map() };
+      scopesByKey.set(key, scope);
+      scopesByHash.set(scope.hash, scope);
+    }
+    return scope;
+  };
+
+  const rememberSnapshot = (snapshot: BrowserAxSnapshot, scope: BrowserAxReferenceScope): boolean => {
+    const key = browserAgentCacheKey(snapshot.tabId, snapshot.targetMode);
+    // A map that finishes after navigation cannot resurrect the prior document.
+    if (scopesByKey.get(key) !== scope) return false;
+    const previous = getLatest(snapshot.tabId, snapshot.targetMode);
+    for (const [axRef, node] of snapshot.nodesByAxRef) {
+      if (snapshot.mapEpoch >= (scope.nodeEpochs.get(axRef) ?? -1)) {
+        scope.nodes.set(axRef, node);
+        scope.nodeEpochs.set(axRef, snapshot.mapEpoch);
       }
     }
     snapshots.set(snapshot.snapshotId, snapshot);
-    snapshotIdByHash.set(snapshot.snapshotHash, snapshot.snapshotId);
-    latestByKey.set(browserAgentCacheKey(snapshot.tabId, snapshot.targetMode), snapshot.snapshotId);
+    if (previous === undefined || snapshot.mapEpoch >= previous.mapEpoch) latestByKey.set(key, snapshot.snapshotId);
+    const history = [...snapshots.values()]
+      .filter((entry) => entry.tabId === snapshot.tabId && entry.targetMode === snapshot.targetMode)
+      .sort((a, b) => b.mapEpoch - a.mapEpoch);
+    for (const expired of history.slice(MAX_QUERY_SNAPSHOTS_PER_DOCUMENT)) snapshots.delete(expired.snapshotId);
+    return true;
   };
 
   const getSnapshot = (snapshotId: string): BrowserAxSnapshot | undefined =>
@@ -64,16 +90,16 @@ export const createBrowserAxSnapshotStore = () => {
   };
 
   const resolveAxRef = (axRef: string): BrowserAxRefResolution => {
-    const snapshotHash = snapshotHashFromAxRef(axRef);
-    if (snapshotHash === null) {
+    const documentHash = documentHashFromAxRef(axRef);
+    if (documentHash === null) {
       return { kind: "stale", reason: "missingSnapshot" };
     }
-    const snapshotId = snapshotIdByHash.get(snapshotHash);
-    const snapshot = snapshotId === undefined ? undefined : snapshots.get(snapshotId);
+    const scope = scopesByHash.get(documentHash);
+    const snapshot = scope === undefined ? undefined : getLatest(scope.tabId, scope.targetMode);
     if (snapshot === undefined) {
       return { kind: "stale", reason: "missingSnapshot" };
     }
-    const node = snapshot.nodesByAxRef.get(axRef);
+    const node = scope?.nodes.get(axRef);
     if (node === undefined) {
       return { kind: "unknownNode", snapshot };
     }
@@ -87,10 +113,12 @@ export const createBrowserAxSnapshotStore = () => {
   ): void => {
     const cacheKey = browserAgentCacheKey(tabId, targetMode);
     latestByKey.delete(cacheKey);
+    const scope = scopesByKey.get(cacheKey);
+    if (scope !== undefined) scopesByHash.delete(scope.hash);
+    scopesByKey.delete(cacheKey);
     for (const [snapshotId, snapshot] of snapshots) {
       if (snapshot.tabId === tabId && snapshot.targetMode === targetMode) {
         snapshots.delete(snapshotId);
-        snapshotIdByHash.delete(snapshot.snapshotHash);
       }
     }
   };
@@ -98,10 +126,12 @@ export const createBrowserAxSnapshotStore = () => {
   const dispose = (): void => {
     snapshots.clear();
     latestByKey.clear();
-    snapshotIdByHash.clear();
+    scopesByKey.clear();
+    scopesByHash.clear();
   };
 
   return {
+    referenceScopeFor,
     rememberSnapshot,
     getSnapshot,
     getLatest,

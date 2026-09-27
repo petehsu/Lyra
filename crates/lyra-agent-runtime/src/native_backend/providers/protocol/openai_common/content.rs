@@ -27,30 +27,20 @@ pub(crate) fn message_reasoning_text(message: &Value) -> Option<String> {
         "reasoning_text",
     ]
     .iter()
-    .find_map(|field| message.get(*field).and_then(Value::as_str))
-    .filter(|value| !value.trim().is_empty())
+    .find_map(|field| {
+        message
+            .get(*field)
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+    })
     .map(str::to_string)
     .or_else(|| {
         message
             .get("reasoning_details")
-            .filter(|value| !value.is_null())
+            .filter(|value| value.as_array().is_some_and(|items| !items.is_empty()))
             .map(|value| serde_json::to_string(value).unwrap_or_default())
             .filter(|value| !value.trim().is_empty())
     })
-}
-
-/// Return the native OpenAI-compatible reasoning field without normalizing its
-/// value. Presence matters: several thinking-model gateways require an empty
-/// `reasoning_content` to be replayed on assistant tool-call messages.
-pub(crate) fn message_reasoning_field(message: &Value) -> Option<(&'static str, Value)> {
-    [
-        "reasoning",
-        "reasoning_content",
-        "reasoning_details",
-        "reasoning_text",
-    ]
-    .into_iter()
-    .find_map(|field| message.get(field).map(|value| (field, value.clone())))
 }
 
 pub(crate) fn content_to_plain_text(content: &Value) -> String {
@@ -88,10 +78,13 @@ mod tests {
     }
 
     #[test]
-    fn reasoning_field_preserves_present_empty_value() {
-        let message = serde_json::json!({ "reasoning_content": "" });
-        let (field, value) = message_reasoning_field(&message).expect("present field");
-        assert_eq!(field, "reasoning_content");
-        assert_eq!(value, "");
+    fn empty_alias_does_not_hide_reasoning_text() {
+        assert_eq!(
+            message_reasoning_text(&serde_json::json!({
+                "reasoning": "", "reasoning_content": "thought"
+            }))
+            .as_deref(),
+            Some("thought")
+        );
     }
 }

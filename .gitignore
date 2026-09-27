@@ -5,6 +5,9 @@ node_modules/
 .wrangler/
 web/site/public/legal/third-party-notices.txt
 web/site/public/workbench-preview/
+web/site/public/hero-landscape.svg
+web/site/public/hero-landscape-*.webp
+web/site/public/hero-landscape.sha256
 web/docs/out/
 **/.env
 !**/.env.example
@@ -50,6 +53,7 @@ Thumbs.db
 supabase/.temp/
 
 # Local caches and agent state
+/web/site/public/film-audio*.m4a
 .lyra/
 .pnpm-store/
 .tmp-test/

@@ -1,3 +1,4 @@
+import { createBrowserFrameTextReader, type BrowserTextFrameGraphBuilder } from "./agent-frame-text";
 import type { WorkbenchBrowserSearchInPageRequest, WorkbenchLumenStaleTarget } from "../../../shared/desktop-bridge";
 import type {
   WorkbenchBrowserAgentElement,
@@ -31,6 +32,7 @@ type BrowserAgentLocatorDeps = Pick<
     }
   ) => Promise<WorkbenchBrowserAgentObservation>;
   readonly stateStore: BrowserAgentStateStore;
+  readonly buildFrameGraph?: BrowserTextFrameGraphBuilder;
 };
 
 export const createBrowserAgentLocator = (deps: BrowserAgentLocatorDeps) => {
@@ -169,31 +171,8 @@ export const createBrowserAgentLocator = (deps: BrowserAgentLocatorDeps) => {
     readonly title: string;
     readonly text: string;
   }> => {
-    const raw = await runFrameScriptWithTimeout(
-      () => target.webContents.executeJavaScript(`
-        (() => {
-          const normalizeText = (value) => {
-            if (typeof value !== "string") return "";
-            return value
-              .replace(/\\u00a0/g, " ")
-              .replace(/\\r/g, "")
-              .replace(/[ \\t]+\\n/g, "\\n")
-              .replace(/\\n[ \\t]+/g, "\\n")
-              .replace(/\\n{3,}/g, "\\n\\n")
-              .trim();
-          };
-          return {
-            title: normalizeText(document.title ?? ""),
-            text: normalizeText(document.body?.innerText ?? document.body?.textContent ?? "")
-          };
-        })()
-      `, true),
-      normalizeExecuteScriptTimeoutMs(timeoutMs, 4_000)
-    ) as Record<string, unknown>;
-    return {
-      title: typeof raw.title === "string" ? raw.title : agentTargetTitle(target),
-      text: typeof raw.text === "string" ? raw.text : ""
-    };
+    const result = await createBrowserFrameTextReader(deps.buildFrameGraph)(target, "full", 24_000, normalizeExecuteScriptTimeoutMs(timeoutMs, 4_000));
+    return { title: agentTargetTitle(target), text: result.text };
   };
 
   const distanceFromRectToElement = (

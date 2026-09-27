@@ -292,14 +292,20 @@ pub(crate) fn merge_discovered_models(
 fn route_reasoning_replay_field(route_id: &str) -> Option<ReasoningReplayField> {
     super::routes::mimo::default_reasoning_replay_field(route_id)
         .or_else(|| super::routes::poolside::default_reasoning_replay_field(route_id))
+        .or_else(|| super::routes::deepseek::default_reasoning_replay_field(route_id))
 }
 
 fn apply_route_reasoning_defaults(route_id: &str, resolved: &mut OpenAiChatModelCapabilities) {
-    if let Some(field) = super::routes::poolside::default_reasoning_replay_field(route_id) {
+    if let Some(field) = route_reasoning_replay_field(route_id) {
         resolved.reasoning_replay_field = field;
     }
     if let Some(required) =
         super::routes::poolside::default_requires_reasoning_field_on_assistant_messages(route_id)
+            .or_else(|| {
+                super::routes::deepseek::default_requires_reasoning_field_on_assistant_messages(
+                    route_id,
+                )
+            })
     {
         resolved.requires_reasoning_field_on_assistant_messages = required;
     }
@@ -310,26 +316,22 @@ pub(crate) fn resolve_openai_chat_model_capabilities(
     model_id: &str,
 ) -> OpenAiChatModelCapabilities {
     let mut resolved = OpenAiChatModelCapabilities::default();
-    let Some(model) = provider.models.iter().find(|model| model.id == model_id) else {
-        apply_route_reasoning_defaults(&provider.route_id, &mut resolved);
-        return resolved;
-    };
-    if model.reasoning_replay_field != ReasoningReplayField::Auto {
-        resolved.reasoning_replay_field = model.reasoning_replay_field;
-    } else if let Some(field) = route_reasoning_replay_field(&provider.route_id) {
+    apply_route_reasoning_defaults(&provider.route_id, &mut resolved);
+    if let Some(field) =
+        super::models_dev::cached_reasoning_replay_field(&provider.route_id, model_id)
+    {
         resolved.reasoning_replay_field = field;
     }
-    if let Some(required) = model.requires_reasoning_field_on_assistant_messages {
-        resolved.requires_reasoning_field_on_assistant_messages = required;
-    } else if let Some(required) =
-        super::routes::poolside::default_requires_reasoning_field_on_assistant_messages(
-            &provider.route_id,
-        )
-    {
-        resolved.requires_reasoning_field_on_assistant_messages = required;
-    }
-    if let Some(supported) = model.supports_tool_choice {
-        resolved.supports_tool_choice = supported;
+    if let Some(model) = provider.models.iter().find(|model| model.id == model_id) {
+        if model.reasoning_replay_field != ReasoningReplayField::Auto {
+            resolved.reasoning_replay_field = model.reasoning_replay_field;
+        }
+        if let Some(required) = model.requires_reasoning_field_on_assistant_messages {
+            resolved.requires_reasoning_field_on_assistant_messages = required;
+        }
+        if let Some(supported) = model.supports_tool_choice {
+            resolved.supports_tool_choice = supported;
+        }
     }
     if let Ok(state) = state().try_lock()
         && let Some(record) = state

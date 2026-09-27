@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-import type { AgentProviderFault, AgentRuntimeEvent } from "../../../shared/agent";
+import type { AgentProviderFault, AgentProviderRouteAdjustment, AgentRuntimeEvent } from "../../../shared/agent";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import type { createTranslator, I18nKey } from "../i18n";
 import type {
@@ -14,6 +14,20 @@ type UseWorkbenchProviderFaultNotificationsParams = {
   readonly publishNotification: WorkbenchNotificationModel["publishNotification"];
   readonly t: ReturnType<typeof createTranslator>;
 };
+
+export const buildProviderRouteNotification = (
+  adjustment: AgentProviderRouteAdjustment,
+  t: ReturnType<typeof createTranslator>
+): WorkbenchNotificationPublishRequest => ({
+  title: t("notification.providerRouteAdjustedTitle"),
+  preview: t("notification.providerRouteAdjustedBody", {
+    from: adjustment.fromLabel,
+    to: adjustment.toLabel,
+  }),
+  level: "success",
+  source: { id: "provider-settings", title: "MiMo", iconKey: "system" },
+  target: { kind: "none" },
+});
 
 const isProviderFaultTranslationKey = (value: string): value is I18nKey =>
   value.startsWith("notification.mimoFault");

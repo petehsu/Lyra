@@ -7,10 +7,82 @@ expression: pretty(&snapshot)
     "domain": null,
     "fallbackListPath": "/tools/browser",
     "query": "browser brower 浏览器操作",
-    "recommendedNextAction": "No strong Tool-FS search result matched. Call tool_fs_list with /tools/browser, then inspect a concrete /tools path.",
+    "recommendedNextAction": "Use the highest ranked result when it matches the task; otherwise refine the search query or call tool_fs_list as a fallback.",
     "scene": "browser",
-    "topResults": [],
-    "total": 0
+    "topResults": [
+      {
+        "domain": "browser",
+        "handle": null,
+        "matchReason": "bm25",
+        "matchedFields": [
+          "bm25"
+        ],
+        "miniSchemaParameterNames": [
+          "effect",
+          "reason",
+          "tabId",
+          "targetMode",
+          "timeoutMs"
+        ],
+        "miniSchemaRequired": [
+          "effect"
+        ],
+        "operation": "elevate",
+        "path": "/tools/browser/elevate",
+        "runHint": "tool_fs_run with path: /tools/browser/elevate; operation: elevate; provide args matching miniSchema.",
+        "score": 1.0,
+        "summary": "Elevate an isolated browser task.",
+        "title": "Elevate browser task"
+      },
+      {
+        "domain": "browser",
+        "handle": "browser_reload",
+        "matchReason": "bm25",
+        "matchedFields": [
+          "bm25"
+        ],
+        "miniSchemaParameterNames": [
+          "effect",
+          "ignoreCache",
+          "tabId",
+          "targetMode",
+          "timeoutMs"
+        ],
+        "miniSchemaRequired": [
+          "effect"
+        ],
+        "operation": "reload",
+        "path": "/tools/browser/reload",
+        "runHint": "tool_fs_run with toolHandle: browser_reload; operation: reload; provide args matching miniSchema.",
+        "score": 1.0,
+        "summary": "Reload the current task tab, optionally bypassing cache. Preserve tab identity; do not reload an in-progress form merely to refresh its map.",
+        "title": "Reload browser page"
+      },
+      {
+        "domain": "browser",
+        "handle": null,
+        "matchReason": "bm25",
+        "matchedFields": [
+          "bm25"
+        ],
+        "miniSchemaParameterNames": [
+          "cropQr",
+          "maxCodes",
+          "region",
+          "tabId",
+          "targetMode",
+          "timeoutMs"
+        ],
+        "miniSchemaRequired": [],
+        "operation": "detect_qr",
+        "path": "/tools/browser/detect_qr",
+        "runHint": "tool_fs_run with path: /tools/browser/detect_qr; operation: detect_qr; provide args matching miniSchema.",
+        "score": 1.0,
+        "summary": "Capture the current browser viewport and detect QR codes with device-pixel bounds, optional QR-only crops, and vact-compatible captureId.",
+        "title": "Detect browser QR codes"
+      }
+    ],
+    "total": 27
   },
   "code": {
     "domain": null,
@@ -43,9 +115,57 @@ expression: pretty(&snapshot)
         "score": 1.0,
         "summary": "Install a Lyra skill from a Git repository URL with optional ref and subdir.",
         "title": "Install Git skill"
+      },
+      {
+        "domain": "computer",
+        "handle": "computer_diff",
+        "matchReason": "bm25",
+        "matchedFields": [
+          "bm25"
+        ],
+        "miniSchemaParameterNames": [
+          "baselineSnapshotId",
+          "maxNodes",
+          "osRef",
+          "strategy"
+        ],
+        "miniSchemaRequired": [],
+        "operation": "diff",
+        "path": "/tools/computer/diff",
+        "runHint": "tool_fs_run with toolHandle: computer_diff; operation: diff; provide args matching miniSchema.",
+        "score": 1.0,
+        "summary": "Re-read a native desktop node by osRef, or compute the observation diff (added/removed/changed) against an earlier computer.map snapshot.",
+        "title": "Diff computer accessibility state"
+      },
+      {
+        "domain": "computer",
+        "handle": null,
+        "matchReason": "bm25",
+        "matchedFields": [
+          "bm25"
+        ],
+        "miniSchemaParameterNames": [
+          "osRef",
+          "action",
+          "direction",
+          "effect",
+          "mode",
+          "pages",
+          "sensitiveValueRef",
+          "text"
+        ],
+        "miniSchemaRequired": [
+          "osRef"
+        ],
+        "operation": "act",
+        "path": "/tools/computer/act",
+        "runHint": "tool_fs_run with path: /tools/computer/act; operation: act; provide args matching miniSchema.",
+        "score": 1.0,
+        "summary": "Press, focus, set text, or otherwise act on a native desktop node by osRef (atspi:<path>); returns a before/after diff. Supported actions on this OS: press/focus/setText/toggle/select/scroll.",
+        "title": "Act on computer node"
       }
     ],
-    "total": 1
+    "total": 3
   },
   "terminal": {
     "domain": null,
@@ -56,24 +176,67 @@ expression: pretty(&snapshot)
     "topResults": [
       {
         "domain": "workbench",
-        "handle": "workbench_capture_visual_evidence",
+        "handle": null,
         "matchReason": "bm25",
         "matchedFields": [
           "bm25"
         ],
         "miniSchemaParameterNames": [
-          "scope",
-          "tabId"
+          "paneId",
+          "sessionId",
+          "terminalTabId"
         ],
         "miniSchemaRequired": [],
-        "operation": "capture_visual_evidence",
-        "path": "/tools/workbench/capture_visual_evidence",
-        "runHint": "tool_fs_run with toolHandle: workbench_capture_visual_evidence; operation: capture_visual_evidence; provide args matching miniSchema.",
+        "operation": "close_terminal",
+        "path": "/tools/workbench/close_terminal",
+        "runHint": "tool_fs_run with path: /tools/workbench/close_terminal; operation: close_terminal; provide args matching miniSchema.",
         "score": 1.0,
-        "summary": "Capture visible Lyra workspace visual evidence for model vision. Omit args to capture the active browser page when one is showing. Use scope=active_tab for that tab's pixels; use scope=workspace_window for the Lyra window (including the webpage BrowserView, not just the loading shell).",
-        "title": "Capture workspace visual evidence"
+        "summary": "Close a terminal pane by session, pane, or terminal tab id.",
+        "title": "Close terminal pane"
+      },
+      {
+        "domain": "workbench",
+        "handle": null,
+        "matchReason": "bm25",
+        "matchedFields": [
+          "bm25"
+        ],
+        "miniSchemaParameterNames": [
+          "paneId",
+          "sessionId",
+          "terminalTabId"
+        ],
+        "miniSchemaRequired": [],
+        "operation": "focus_terminal",
+        "path": "/tools/workbench/focus_terminal",
+        "runHint": "tool_fs_run with path: /tools/workbench/focus_terminal; operation: focus_terminal; provide args matching miniSchema.",
+        "score": 1.0,
+        "summary": "Focus a terminal pane by session, pane, or terminal tab id.",
+        "title": "Focus terminal pane"
+      },
+      {
+        "domain": "workbench",
+        "handle": null,
+        "matchReason": "bm25",
+        "matchedFields": [
+          "bm25"
+        ],
+        "miniSchemaParameterNames": [
+          "terminalTabId",
+          "placement",
+          "targetIndex"
+        ],
+        "miniSchemaRequired": [
+          "terminalTabId"
+        ],
+        "operation": "move_terminal",
+        "path": "/tools/workbench/move_terminal",
+        "runHint": "tool_fs_run with path: /tools/workbench/move_terminal; operation: move_terminal; provide args matching miniSchema.",
+        "score": 1.0,
+        "summary": "Move a terminal tab between the dock and workspace.",
+        "title": "Move terminal tab"
       }
     ],
-    "total": 1
+    "total": 10
   }
 }

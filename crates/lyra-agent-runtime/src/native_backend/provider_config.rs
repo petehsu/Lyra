@@ -221,6 +221,7 @@ pub(crate) fn save_and_discover_provider_profile(payload: Value) -> AgentRuntime
     let mut discover_payload = payload;
     if let Some(object) = discover_payload.as_object_mut() {
         object.insert("provider".to_string(), Value::String(profile_name));
+        object.insert("resolveRoute".to_string(), Value::Bool(true));
     }
     refresh_models(discover_payload)
 }
@@ -831,6 +832,7 @@ pub(crate) fn refresh_models(payload: Value) -> AgentRuntimeResult<Value> {
     let Some(provider) = provider else {
         return list_models(payload);
     };
+    let stored_provider = provider.clone();
     let provider = providers::transport::auth::provider_with_resolved_api_key(
         provider,
         host_dispatcher.as_ref(),
@@ -844,6 +846,23 @@ pub(crate) fn refresh_models(payload: Value) -> AgentRuntimeResult<Value> {
     if providers::capabilities::provider_requires_api_key(&provider, &route) {
         return list_models(payload);
     }
+    if providers::routes::mimo::is_mimo_route(&provider.route_id) {
+        let discovery = providers::routes::mimo::routing::discover(
+            &provider,
+            payload
+                .get("resolveRoute")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+        )?;
+        return save_refreshed_models(
+            payload,
+            &provider_id,
+            &discovery.profile.route_id,
+            discovery.models,
+            HashMap::new(),
+            Some((&stored_provider, &discovery.profile)),
+        );
+    }
     if let Some(hook) = providers::registry::route_model_discovery_hook(&provider.route_id) {
         let models = hook.discover_models(&provider)?;
         return save_refreshed_models(
@@ -852,6 +871,7 @@ pub(crate) fn refresh_models(payload: Value) -> AgentRuntimeResult<Value> {
             &provider.route_id,
             models,
             HashMap::new(),
+            None,
         );
     }
     let client = http_client_builder(Duration::from_secs(30))
@@ -903,6 +923,7 @@ pub(crate) fn refresh_models(payload: Value) -> AgentRuntimeResult<Value> {
         &provider.route_id,
         models,
         explicit_records,
+        None,
     )
 }
 
@@ -912,6 +933,7 @@ fn save_refreshed_models(
     capability_catalog_provider_id: &str,
     models: Vec<NativeProviderModel>,
     explicit_records: HashMap<String, NativeModelCapabilityRecord>,
+    verified_route: Option<(&NativeProviderProfile, &NativeProviderProfile)>,
 ) -> AgentRuntimeResult<Value> {
     if models.is_empty() {
         return list_models(payload);
@@ -925,7 +947,13 @@ fn save_refreshed_models(
     let mut state = state()
         .lock()
         .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+    let mut route_adjustment = None;
     let refreshed_models = if let Some(profile) = state.config.providers.get_mut(provider_id) {
+        if let Some((expected, verified)) = verified_route {
+            route_adjustment = providers::routes::mimo::routing::apply_verified_route(
+                profile, expected, verified,
+            )?;
+        }
         let existing = profile.models.clone();
         profile.models = providers::model_capabilities::merge_discovered_models(&existing, models);
         providers::models_dev::enrich_models_with_catalog(
@@ -968,7 +996,11 @@ fn save_refreshed_models(
     }
     state.save_state()?;
     drop(state);
-    list_models(payload)
+    let mut catalog = list_models(payload)?;
+    if let Some(adjustment) = route_adjustment {
+        catalog["routeAdjustment"] = adjustment;
+    }
+    Ok(catalog)
 }
 
 pub(crate) fn list_accounts() -> AgentRuntimeResult<Value> {

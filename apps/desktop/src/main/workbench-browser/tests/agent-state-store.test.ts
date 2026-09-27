@@ -5,7 +5,7 @@ import type {
   WorkbenchBrowserAgentElement,
   WorkbenchBrowserAgentObservation
 } from "../types";
-import { createBrowserAgentStateStore } from "../view-manager-runtime/agent-state-store";
+import { createBrowserAgentStateStore, typeTargetWhenSeveralFields } from "../view-manager-runtime/agent-state-store";
 
 const createElement = ({
   id,
@@ -160,5 +160,21 @@ describe("BrowserAgentStateStore", () => {
     vi.setSystemTime(1_000 + 5 * 60_000 + 1);
 
     expect(store.readCachedBrowserAgentInputTarget("browser-tab-1", "live", "https://example.test")).toBeNull();
+  });
+
+  test("types into the other field when the message box is focused and a second field is open", () => {
+    const composer = {
+      ...createElement({ id: 1, label: "Message DeepSeek", editable: true }),
+      tagName: "textarea",
+      targetRef: "lumen:box"
+    };
+    const rename = {
+      ...createElement({ id: 2, label: "(no label)", editable: true }),
+      tagName: "div",
+      targetRef: "lumen:rename"
+    };
+    expect(typeTargetWhenSeveralFields(composer, [composer, rename])?.targetRef).toBe("lumen:rename");
+    const extra = { ...rename, id: 3, targetRef: "lumen:other" };
+    expect(typeTargetWhenSeveralFields(composer, [composer, rename, extra])).toBeNull();
   });
 });
