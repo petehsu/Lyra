@@ -8,6 +8,7 @@
 // external data providers.
 
 import type {
+  AgentMessageWebLink,
   AgentPageCitation,
   AgentTranscriptCitation
 } from "../../../../../shared/agent";
@@ -224,11 +225,14 @@ export type MessageBlock =
     }
   | { type: "image"; id: string; image: AgentImageAttachment }
   | { type: "tools"; id: string; group: ToolGroup }
-  | { type: "thinking"; id: string; body: string; status: "running" | "done" };
+  | { type: "thinking"; id: string; body: string; status: "running" | "done"; sourceMessageId?: string };
 
 export interface ChatMessage {
+  webLinks?: readonly AgentMessageWebLink[];
   id: string;
   author: "user" | "agent";
+  /** Current model response within this turn; its stream survives bubble coalescing. */
+  streamingMessageId?: string;
   blocks: MessageBlock[];
   isApiError?: boolean;
   /** Resolved transcript citations attached to a sent user message. */

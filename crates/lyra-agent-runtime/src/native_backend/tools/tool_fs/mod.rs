@@ -18,6 +18,7 @@ mod provider_tools;
 mod registry;
 mod result;
 mod skills_dynamic;
+pub(crate) mod software_catalog;
 mod target;
 mod usage_cache;
 
@@ -40,6 +41,7 @@ pub(crate) use registry::{
     dynamic_capability_manifests, enabled_media_tool_paths, runtime_manifest_source_summary,
     runtime_registry, runtime_registry_with_dispatcher,
 };
+pub(crate) use software_catalog::refresh_software_catalog;
 pub(crate) use target::{RuntimeToolTarget, path_for_activity, runtime_target_for_manifest};
 #[allow(unused_imports)]
 pub(crate) use usage_cache::{

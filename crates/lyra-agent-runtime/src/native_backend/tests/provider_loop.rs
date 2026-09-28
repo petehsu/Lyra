@@ -4011,6 +4011,7 @@ fn media_video_tool_reports_xai_polling_progress() {
     server.join().expect("server join");
 }
 
+mod catalog_and_images;
 mod model_discovery;
 mod reasoning_replay;
 mod refresh_and_runtime;

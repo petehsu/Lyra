@@ -9,6 +9,7 @@ import type {
 import type { WorkbenchObservationBrowserDomSummary } from "../../workbench-observation/types";
 import { extractTextFromPage } from "../page-text-extractor";
 import { waitForPageReady } from "./lumen-runtime-guards";
+import { captureCleanPage } from "./clean-page-capture";
 import type { BrowserPageEntry } from "./types";
 
 type PageContentRuntimeHost = {
@@ -181,7 +182,7 @@ export const createPageContentRuntime = ({
     if (entry.runtime.isLoading || entry.webContents.isLoading?.() === true) {
       await waitForPageReady(entry.webContents, 8_000);
     }
-    const image = await entry.webContents.capturePage();
+    const image = await captureCleanPage(entry.webContents);
     const size = image.getSize();
     return {
       tabId,

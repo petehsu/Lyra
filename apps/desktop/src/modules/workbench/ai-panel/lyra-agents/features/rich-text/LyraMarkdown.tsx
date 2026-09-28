@@ -10,12 +10,14 @@ import {
 import { Streamdown, StreamdownContext, type StreamdownProps } from "streamdown";
 
 import { LyraImage, LyraLink } from "./streamdown-components";
+import { LyraMarkdownPre } from "./markdown-code-block";
 import { splitSettledMarkdown } from "./markdown-stream-split";
 import { normalizeAiLatex } from "./normalize-ai-latex";
 import { lyraRehypePlugins, lyraRemarkPlugins } from "./rich-markdown-plugins";
 import { useLyraStreamdownPlugins } from "./streamdown-plugins";
 import { ChatMediaLayout } from "../media";
 import { scanMarkdownMediaTokens } from "../media/layout";
+import { useWebLinkClipboard } from "../chat/web-link-clipboard";
 
 const emptyMediaTokens: ReturnType<typeof scanMarkdownMediaTokens> = [];
 const ArrangeMediaContext = createContext(false);
@@ -77,6 +79,7 @@ const components = {
   a: LyraLink,
   details: LyraDetails,
   img: LyraImage,
+  pre: LyraMarkdownPre,
   summary: LyraSummary
 } as NonNullable<StreamdownProps["components"]>;
 
@@ -131,6 +134,7 @@ export function LyraMarkdown({
   linkSafety = defaultLinkSafety,
   streaming = false
 }: LyraMarkdownProps) {
+  useWebLinkClipboard();
   const plugins = useLyraStreamdownPlugins();
   const classes = ["lyra-agents-rich-text", "lyra-agents-streamdown", className]
     .filter(Boolean)

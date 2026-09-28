@@ -11,6 +11,16 @@ pub(crate) struct StreamingToolCallAccumulator {
     pub(crate) arguments: String,
 }
 
+impl StreamingToolCallAccumulator {
+    pub(crate) fn push_name_delta(&mut self, fragment: &str) {
+        if fragment.is_empty() {
+            return;
+        }
+        let name = self.name.get_or_insert_with(String::new);
+        name.push_str(fragment);
+    }
+}
+
 pub(crate) fn tool_name_set(tools: &[Value]) -> HashSet<String> {
     tools
         .iter()
@@ -34,7 +44,10 @@ pub(crate) fn parse_tool_call(
     let name = function
         .get("name")
         .and_then(Value::as_str)
-        .and_then(|name| repair_tool_name(name, allowed_tool_names))?;
+        .filter(|name| !name.trim().is_empty())
+        .map(|name| {
+            repair_tool_name(name, allowed_tool_names).unwrap_or_else(|| name.trim().to_string())
+        })?;
     let id = value
         .get("id")
         .and_then(Value::as_str)
@@ -76,12 +89,10 @@ pub(crate) fn finalize_streaming_tool_calls(
                 detail: "provider returned incomplete tool call: missing function name".to_string(),
             });
         };
-        let Some(name) = repair_tool_name(raw_name, allowed_tool_names) else {
-            return Err(AgentRuntimeError::ProviderProtocol {
-                kind: crate::ProviderProtocolFailureKind::IncompleteToolCall,
-                detail: "provider returned a tool call whose function name is not present in the active tool schema".to_string(),
-            });
-        };
+        // A complete but unknown name is a tool error, not a broken wire
+        // protocol. Preserve it for schema-gated dispatch and model correction.
+        let name =
+            repair_tool_name(raw_name, allowed_tool_names).unwrap_or_else(|| raw_name.to_string());
         finalized.push((
             index,
             ModelToolCall {
@@ -110,6 +121,13 @@ pub(crate) fn repair_tool_name(name: &str, allowed_tool_names: &HashSet<String>)
         return Some(lowercase);
     }
     None
+}
+
+/// Parsing retains a syntactically complete call even when the model names
+/// an unavailable tool. Only the dispatch gate decides whether it can run.
+pub(crate) fn parsed_tool_name(name: &str, allowed: &HashSet<String>) -> Option<String> {
+    let name = name.trim();
+    (!name.is_empty()).then(|| repair_tool_name(name, allowed).unwrap_or_else(|| name.to_string()))
 }
 
 pub(crate) fn is_valid_tool_call_id(id: &str) -> bool {
@@ -155,6 +173,27 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn complete_unknown_calls_survive_parsing_for_schema_gated_error_results() {
+        let allowed = HashSet::from(["read_file".to_string()]);
+        let raw = json!({"id":"call-unknown","function":{"name":"removed_tool","arguments":"{}"}});
+        let parsed = parse_tool_call(&raw, &allowed, 0).unwrap();
+        assert_eq!(parsed.name, "removed_tool");
+        let mut accumulator = StreamingToolCallAccumulator {
+            id: Some("call-unknown".into()),
+            ..Default::default()
+        };
+        accumulator.push_name_delta("removed_");
+        accumulator.push_name_delta("tool");
+        accumulator.arguments = "{}".into();
+        let streamed =
+            finalize_streaming_tool_calls(HashMap::from([(0, accumulator)]), &allowed).unwrap();
+        assert_eq!(streamed[0].1.name, parsed.name);
+        assert_eq!(streamed[0].1.id, parsed.id);
+        assert!(parsed_tool_name("", &allowed).is_none());
+        assert!(parsed_tool_name("removed_tool", &HashSet::new()).is_some());
+    }
 
     #[test]
     fn missing_tool_call_id_is_short_and_provider_id_is_kept() {

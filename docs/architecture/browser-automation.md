@@ -10,6 +10,8 @@ Agent observation/action capabilities; it is not a general promise that every
 site or operating-system control can be automated.
 
 See [nonvisual control design, coverage and regression checklist](nonvisual-browser-control.md) for the complete-index/short-map contract and continuous editor input.
+See [hybrid visual control](visual-browser-control.md) for numbered real-object
+images, region gestures, action/image continuity and verification limits.
 
 ## Profiles
 

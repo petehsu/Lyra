@@ -34,3 +34,9 @@ test("a missing text search explains how to locate a field without claiming it i
   expect(read).not.toHaveBeenCalled();
   expect(find).toHaveBeenCalledOnce();
 });
+
+test("schema hints do not claim HTML inspection or dictate the user's final reply", async () => {
+  const result=await host(vi.fn().mockResolvedValue({content:"Visible outcome",truncated:false}))["lyraLumen.read"]!({instruction:"Describe the overlay HTML",schema:{type:"object"}});
+  expect(result).toMatchObject({ok:true,content:"Visible outcome",extractionMode:"renderedText",schemaApplied:false});
+  expect(result.message).toContain("were not executed");
+});

@@ -9,8 +9,8 @@
     "applicableAppVersion": "0.1.x beta",
     "verifiedDate": "2026-07-28"
   },
-  "x-lyra-source-keyset-hash": "84bf8d99650d184cbeb9fc809146c9216cf9f2da013606da2f6195db66d67160",
-  "x-lyra-source-content-hash": "44e77eab6b86277d69a498d88d0b58393715398b712b5b0eae3edcb2b3619d74",
+  "x-lyra-source-keyset-hash": "b809a4c5f0bed17a73dfda2e45b5d2dd5ce1af1fbfa62c263dbf9ec1971c16a5",
+  "x-lyra-source-content-hash": "212503a7f5d29999f5fb39a387666091546e5972fe4f020a222c89de97d5ea29",
   "type": "object",
   "required": [
     "agentGit.binaryDiff",
@@ -701,6 +701,14 @@
     "notification.centerTabTitle",
     "notification.centerTitle",
     "notification.centerUnread",
+    "notification.credentialStorageDecryptFailedBody",
+    "notification.credentialStorageDecryptFailedTitle",
+    "notification.credentialStorageRestoredBody",
+    "notification.credentialStorageRestoredTitle",
+    "notification.credentialStorageSource",
+    "notification.credentialStorageUnavailableBody",
+    "notification.credentialStorageUnavailableLinuxBody",
+    "notification.credentialStorageUnavailableTitle",
     "notification.mimoFault400Body",
     "notification.mimoFault400Title",
     "notification.mimoFault401Body",
@@ -718,6 +726,8 @@
     "notification.mimoFaultGenericBody",
     "notification.mimoFaultGenericTitle",
     "notification.officialSource",
+    "notification.providerRouteAdjustedBody",
+    "notification.providerRouteAdjustedTitle",
     "notification.topbarOpenCenter",
     "notification.topbarOpenPreview",
     "panel.findInFiles",
@@ -783,6 +793,10 @@
     "planReview.review",
     "planReview.revise",
     "planReview.setAside",
+    "richText.codeBlock.copy",
+    "richText.codeBlock.copyFailed",
+    "richText.codeBlock.text",
+    "richText.codeBlock.wrap",
     "runtime.desktopBridgeUnavailable",
     "scroll.jumpToPreviousMessage",
     "scroll.previousMessage",
@@ -3580,6 +3594,30 @@
     "notification.centerUnread": {
       "type": "string"
     },
+    "notification.credentialStorageDecryptFailedBody": {
+      "type": "string"
+    },
+    "notification.credentialStorageDecryptFailedTitle": {
+      "type": "string"
+    },
+    "notification.credentialStorageRestoredBody": {
+      "type": "string"
+    },
+    "notification.credentialStorageRestoredTitle": {
+      "type": "string"
+    },
+    "notification.credentialStorageSource": {
+      "type": "string"
+    },
+    "notification.credentialStorageUnavailableBody": {
+      "type": "string"
+    },
+    "notification.credentialStorageUnavailableLinuxBody": {
+      "type": "string"
+    },
+    "notification.credentialStorageUnavailableTitle": {
+      "type": "string"
+    },
     "notification.mimoFault400Body": {
       "type": "string"
     },
@@ -3629,6 +3667,12 @@
       "type": "string"
     },
     "notification.officialSource": {
+      "type": "string"
+    },
+    "notification.providerRouteAdjustedBody": {
+      "type": "string"
+    },
+    "notification.providerRouteAdjustedTitle": {
       "type": "string"
     },
     "notification.topbarOpenCenter": {
@@ -3824,6 +3868,18 @@
       "type": "string"
     },
     "planReview.setAside": {
+      "type": "string"
+    },
+    "richText.codeBlock.copy": {
+      "type": "string"
+    },
+    "richText.codeBlock.copyFailed": {
+      "type": "string"
+    },
+    "richText.codeBlock.text": {
+      "type": "string"
+    },
+    "richText.codeBlock.wrap": {
       "type": "string"
     },
     "runtime.desktopBridgeUnavailable": {

@@ -133,7 +133,7 @@ Before moving any instruction out of always-on prompt, confirm one of these is t
 
 If a prompt change depends on context trimming, memory projection, session snapshots, provider state, or tool catalog behavior — bump the relevant version or add a valid audit ack.
 
-Current: `PROMPT_POLICY_VERSION=11`, `PROMPT_TEMPLATE_VERSION=61`, `CONTEXT_PROJECTION_VERSION=6`, `RUNTIME_CONTEXT_SCHEMA_VERSION=6`.
+Current: `PROMPT_POLICY_VERSION=11`, `PROMPT_TEMPLATE_VERSION=63`, `TOOL_DISCOVERY_CONTRACT_VERSION=4`, `CONTEXT_PROJECTION_VERSION=6`, `RUNTIME_CONTEXT_SCHEMA_VERSION=6`.
 
 ## MiniJinja Rules
 
@@ -153,3 +153,5 @@ cargo test -p lyra-agent-runtime --test prompt_snapshots
 
 If snapshots change, review full and lean token estimates.
 Goal: lower recurring prompt tokens without lowering capability.
+
+Version 63 / discovery contract 4: local image reads attach bounded vision evidence without a viewer. ToolSearch selects from a shared host catalog snapshot; refresh failures retain definitions and diagnostics, discovery intent survives disconnection, and loaded schemas remain visible after compaction. Unknown tool names produce schema-gated tool errors rather than incomplete-call retries.

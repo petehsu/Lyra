@@ -1,3 +1,4 @@
+import { cancelBrowserOperations } from "../workbench-browser/agent-operation-context";
 import type { BrowserWindow } from "electron";
 
 import { LYRA_CHANNELS } from "../../shared/desktop-bridge";
@@ -223,6 +224,7 @@ export const createRuntimeEventForwarder = ({
       clearAgentCursorThought();
     }
     if (event.kind === "turnFinished" || event.kind === "turnFailed" || event.kind === "turnInterrupted") {
+      cancelBrowserOperations(event.turnId);
       clearAgentCursorThought();
     }
     const browser = getBrowserBridge();

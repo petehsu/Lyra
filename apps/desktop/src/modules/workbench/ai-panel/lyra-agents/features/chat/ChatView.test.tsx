@@ -197,9 +197,23 @@ describe("ChatView render-budget message window", () => {
       );
     });
 
+    // Activity and reasoning are two explicit disclosures, both collapsed by
+    // default. Exercise the same expansion that a user performs.
+    await waitFor(() => {
+      expect(container.querySelector(".lyra-agents-tool-group-head")).not.toBeNull();
+    });
+    fireEvent.click(container.querySelector(".lyra-agents-tool-group-head")!);
+    fireEvent.click(container.querySelector(".lyra-agents-tool-call-head")!);
     await waitFor(() => {
       expect(container.querySelector(".lyra-agents-thinking-body")?.textContent)
         .toContain("正在实时分析最新链路");
+    });
+    act(() => {
+      getStreamStore().appendReasoningDelta(pendingMessage.id, "，继续检查。");
+    });
+    await waitFor(() => {
+      expect(container.querySelector(".lyra-agents-thinking-body")?.textContent)
+        .toContain("正在实时分析最新链路，继续检查。");
     });
   });
 

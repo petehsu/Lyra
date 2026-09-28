@@ -1,4 +1,5 @@
 import { FIELD_DESCRIPTION_RUNTIME } from "./field-description-runtime";
+import { CHOICE_CONTROL_RUNTIME, readChoiceSemantics } from "./choice-control-runtime";
 import { browserEditorStateRuntime } from "./agent-editor-state";
 import { VISIBLE_TEXT_RUNTIME } from "./agent-visible-text";
 import type { WorkbenchBrowserControlSemantics, WorkbenchBrowserPageNote } from "../types";
@@ -7,6 +8,7 @@ import type { WorkbenchBrowserControlSemantics, WorkbenchBrowserPageNote } from 
 // validating via events, or activating anything. The bounded journal retains
 // transient announcements between maps, including maps made during an action.
 export const browserMapSemanticsScript = String.raw`(() => {
+  const choices = ${CHOICE_CONTROL_RUNTIME};
   const text = (value, limit = 240) => String(value ?? "").replace(/\s+/g, " ").trim().slice(0, limit);
   const attr = (node, name) => node?.getAttribute?.(name);
   const parent = node => node?.parentElement || node?.getRootNode?.().host || null;
@@ -30,7 +32,7 @@ export const browserMapSemanticsScript = String.raw`(() => {
   };
   const relatedText = (node, name) => text(related(node, name).map(item => item.textContent).join(" "));
   const name = node => text(relatedText(node, "aria-labelledby") || attr(node, "aria-label")
-    || Array.from(node?.labels || []).map(label => label.textContent).join(" ") || attr(node, "title") || "", 160);
+    || (choices.isChoice(node) ? choices.labelText(node) : Array.from(node?.labels || []).map(label => label.textContent).join(" ")) || attr(node, "title") || "", 160);
   const disabled = node => node.disabled === true || node.matches(":disabled")
     || closest(node, "[aria-disabled=true],[inert]") !== null;
   const shortName = node => name(node) || text(node?.innerText || node?.textContent, 120);
@@ -46,6 +48,7 @@ export const browserMapSemanticsScript = String.raw`(() => {
   };
   const control = node => {
     const result = {};
+    const choice = choices.describe(node);
     const nativeCheck = node.tagName === "INPUT" && (node.type === "checkbox" || node.type === "radio");
     let checked = nativeCheck ? (node.indeterminate ? "mixed" : node.checked) : tri(attr(node, "aria-checked"));
     const checkRole = /^(switch|checkbox|radio|menuitemcheckbox|menuitemradio)$/.test(role(node));
@@ -55,6 +58,10 @@ export const browserMapSemanticsScript = String.raw`(() => {
         : dataState === "indeterminate" ? "mixed" : "unknown";
     }
     if (checked !== undefined) result.checked = checked;
+    if (choice) {
+      result.choice = choice;
+      result.checked = choice.conflict ? "unknown" : choice.nativeChecked;
+    }
     const pressed = tri(attr(node, "aria-pressed"));
     if (pressed !== undefined) result.pressed = pressed;
     const selected = tri(attr(node, "aria-selected"));
@@ -105,7 +112,7 @@ export const browserMapSemanticsScript = String.raw`(() => {
     if (dialog) context.push("dialog: " + dialogName(dialog));
     const group = closest(node, "fieldset,[role=group],[role=radiogroup],form,[role=tabpanel]");
     if (group) {
-      const label = name(group) || text(group.querySelector(":scope > legend")?.textContent, 120);
+      const label = name(group) || choices.groupName(group);
       if (label) context.push(role(group) + ": " + label);
     }
     const landmark = closest(node, "main,nav,aside,header,footer,[role=main],[role=navigation],[role=complementary],[role=banner],[role=contentinfo],[role=region]");
@@ -243,13 +250,15 @@ export const browserMapSemanticsScript = String.raw`(() => {
   };
   const cursorNote = (node, hint, page) => ({ id: 'cursor:' + idFor(node), kind: 'cursor',
     text: (page ? 'Page' : name(node) || text(node.tagName.toLowerCase(), 60)) + ': ' + hint + ' (CSS hint only)' });
-  return { control, observeRoot, pageNotes, focusIn, name, disabled, cursorNote };
+  return { control, observeRoot, pageNotes, focusIn, name, disabled, cursorNote, choices };
 })()`;
 
 export const readControlSemantics = (value: unknown): WorkbenchBrowserControlSemantics | undefined => {
   if (value === null || typeof value !== "object") return undefined;
   const record = value as Record<string, unknown>;
   const result: Record<string, unknown> = {};
+  const choice = readChoiceSemantics(record.choice);
+  if (choice) result.choice = choice;
   for (const key of ["checked", "pressed", "selected", "focused", "busy", "readOnly", "required"]) {
     const field = record[key];
     if (typeof field === "boolean" || ((key === "checked" || key === "pressed") && field === "mixed")

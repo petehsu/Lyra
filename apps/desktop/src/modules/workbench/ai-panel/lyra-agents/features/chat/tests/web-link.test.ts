@@ -78,9 +78,9 @@ describe("web links", () => {
     );
   });
 
-  test("uses a concise hostname label", () => {
+  test("hides the scheme and www prefix without discarding the destination path", () => {
     expect(websiteLinkLabel("https://www.example.com:8443/path")).toBe(
-      "example.com:8443"
+      "example.com:8443/path"
     );
   });
 });

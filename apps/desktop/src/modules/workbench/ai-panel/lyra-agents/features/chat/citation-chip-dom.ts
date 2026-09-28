@@ -21,7 +21,7 @@ import {
   mountPageCitationTabIcon,
   mountWebsiteLinkIcon
 } from "./page-citation-tab-icon";
-import { websiteLinkLabel } from "./web-link";
+import { pageCitationWebUrl, websiteLinkLabel } from "./web-link-display";
 
 const composerChip = (modifierClassName: string): HTMLSpanElement => {
   const chip = document.createElement("span");
@@ -76,8 +76,10 @@ const applyPageCitationDataset = (chip: HTMLSpanElement, citation: AgentPageCita
 
 export const createPageCitationChipElement = (citation: AgentPageCitation): HTMLSpanElement => {
   const chip = composerChip("lyra-agents-citation-chip-page");
-  const label = inlineReferenceLabel(citation.preview);
-  chip.title = label;
+  const url = pageCitationWebUrl(citation);
+  const label = url === null ? inlineReferenceLabel(citation.preview) : websiteLinkLabel(url);
+  chip.title = url ?? label;
+  if (url !== null) chip.dataset.webLinkUrl = url;
   chip.setAttribute("role", "button");
   chip.setAttribute("tabindex", "-1");
   applyPageCitationDataset(chip, citation);
@@ -103,7 +105,7 @@ export const createLinkChipElement = (link: ComposerLinkSegment): HTMLSpanElemen
   chip.title = link.url;
   chip.setAttribute("role", "button");
   chip.setAttribute("tabindex", "-1");
-  chip.setAttribute("aria-label", `${label}: ${link.url}`);
+  chip.setAttribute("aria-label", link.url);
   chip.dataset.linkUrl = link.url;
   chip.dataset.linkLabel = label;
   if (link.faviconUrl !== undefined && link.faviconUrl !== null) {
@@ -125,7 +127,7 @@ export const createLinkChipElement = (link: ComposerLinkSegment): HTMLSpanElemen
   previewWrap.className = "lyra-agents-citation-chip-preview-wrap";
   const preview = document.createElement("span");
   preview.className = "lyra-agents-citation-chip-preview";
-  preview.textContent = label;
+  preview.textContent = websiteLinkLabel(link.url);
   previewWrap.appendChild(preview);
   chip.appendChild(previewWrap);
   return chip;

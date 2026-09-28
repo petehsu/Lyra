@@ -1,3 +1,4 @@
+import { SURFACE_DOM_ACCESS } from "./surface-dom-access";
 import { SURFACE_TARGET_LOOKUP } from "./surface-target";
 import { browserTargetVisibilityRuntime } from "./agent-target-visibility";
 import { browserEditableTextRuntime, browserEditingHostRuntime } from "./agent-editable-runtime";
@@ -29,20 +30,14 @@ export type BrowserTextInsertionResult = {
 // pathway is kept separate, as in Playwright's native form-control handling.
 const runtime = String.raw`
   ${SURFACE_TARGET_LOOKUP}
+  ${SURFACE_DOM_ACCESS}
   const fail = errorKind => ({ok:false, errorKind, message:({
     editable_changed: "The editor was replaced or focus moved outside the requested field. Map the page before retrying.",
     input_not_accepted: "The current field value differs from the requested edit. Inspect the returned value before deciding whether to replace it; do not repeat or submit the write automatically.",
     editable_covered: "Another element covers the editor; no text was inserted.",
     editable_not_ready: "The editor is disabled, readonly or inert; no text was inserted."
   })[errorKind]});
-  const focused = doc => {
-    let node = doc.activeElement;
-    for (;;) {
-      const inner = node?.shadowRoot?.activeElement || node?.contentDocument?.activeElement;
-      if (!inner || inner === node) return node;
-      node = inner;
-    }
-  };
+  const focused = surfaceActiveElement;
   const editable = node => {
     if (!node) return null;
     if (node.matches('input:not([type=hidden]),textarea')) return node;
@@ -62,12 +57,7 @@ const runtime = String.raw`
     }
     if (!(${browserTargetVisibilityRuntime})(node)) return fail('editable_not_visible');
     const rect = node.getBoundingClientRect(), doc = node.ownerDocument;
-    let hit = doc.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-    while (hit?.shadowRoot?.elementFromPoint) {
-      const inner = hit.shadowRoot.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-      if (!inner || inner === hit) break;
-      hit = inner;
-    }
+    const hit = surfaceHitForNode(node, rect.left + rect.width / 2, rect.top + rect.height / 2);
     if (hit !== node && !node.contains(hit)) return fail('editable_covered');
     let view = doc.defaultView;
     while (view.frameElement) {

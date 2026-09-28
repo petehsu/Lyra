@@ -8,7 +8,7 @@ use crate::{
     },
 };
 
-use super::super::openai_common::{repair_tool_name, tool_name_set};
+use super::super::openai_common::{parsed_tool_name, tool_name_set};
 
 pub(crate) fn parse_response_body(body: &Value, tools: &[Value]) -> AgentRuntimeResult<ModelReply> {
     if let Some(error) = body.get("error") {
@@ -159,7 +159,7 @@ pub(crate) fn tool_calls_from_parts(
             let name = function_call
                 .get("name")
                 .and_then(Value::as_str)
-                .and_then(|name| repair_tool_name(name, &allowed_tool_names))
+                .and_then(|name| parsed_tool_name(name, &allowed_tool_names))
                 .ok_or_else(|| incomplete_tool_call("missing or invalid function name"))?;
             let arguments = match function_call
                 .get("args")

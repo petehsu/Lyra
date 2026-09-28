@@ -48,7 +48,7 @@ pub(super) fn description_for(
             "Use when the agent must make structured multi-file code or text edits through a patch."
         }
         ("browser", "read") => {
-            "Use when the agent needs page text, an in-page text search (query), or a JSON schema hint for structured extraction. Do not use this to discover clickable controls; use /tools/browser/map."
+            "Read rendered page text or search it with query. instruction/schema are interpretation hints, not executed HTML/source extraction. For clickable controls and their metadata use /tools/browser/map."
         }
         ("browser", "map") => {
             "Use to see the visible surface: one cleaned control per button, link, or input. A short page is one payload. A crowded page is this window plus a remaining count. Act, type, or press those targetRefs."

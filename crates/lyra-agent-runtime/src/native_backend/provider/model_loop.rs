@@ -6,6 +6,7 @@ mod progress_guard_synthesis;
 mod recovery;
 mod tool_catalog_revision;
 mod tool_result_group;
+mod visual_history;
 pub(crate) use progress_guard::*;
 pub(crate) use progress_guard_synthesis::*;
 use recovery::*;
@@ -54,6 +55,7 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
     commit_assistant_text: bool,
 ) -> AgentRuntimeResult<ModelLoopResult> {
     let mut messages = request.messages.clone();
+    visual_history::compact(&mut messages);
     let original_tool_choice = request.tool_choice.clone();
     if request.context_trimmed
         || !request.evidence_refs.is_empty()
@@ -524,7 +526,7 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                 return Err(AgentRuntimeError::ProviderProtocol {
                     kind,
                     detail: format!(
-                        "provider `{}` model `{}` exhausted recovery for `{kind}` (stop reason: `unknown`): {detail}",
+                        "provider `{}` model `{}` exhausted recovery for `{kind}`: {detail}",
                         request.provider.id, request.model,
                     ),
                 });
@@ -1302,8 +1304,9 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                             == Some(PLAN_PHASE_REVIEWING)
                 });
             tool_protocol_step["toolResults"] = json!([]);
-            let mut pending_image_parts = Vec::new();
-            for (call, output) in tool_calls.iter().zip(outputs.into_iter()) {
+            let mut pending_image_messages = Vec::new();
+            for (call, mut output) in tool_calls.iter().zip(outputs.into_iter()) {
+                let image_content = prepare_tool_image_delivery(&mut output, &request.capabilities);
                 let failed = tool_output_failed(&output);
                 let (mut content, evidence_ref) =
                     provider_visible_tool_result_content(&output, &call.id, 24_000);
@@ -1389,21 +1392,19 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                     tool_step_message_id.as_deref(),
                     &tool_protocol_step,
                 )?;
-                if let Some(content) =
-                    provider_image_message_from_tool_output(&output, &request.capabilities)
-                    && let Some(parts) = content.as_array()
-                {
-                    pending_image_parts.extend(parts.clone());
+                if let Some(content) = image_content {
+                    pending_image_messages.push(visual_history::image_message(
+                        content,
+                        &call.arguments,
+                        &output,
+                    ));
                 }
             }
-            if !pending_image_parts.is_empty() {
-                let user_message = json!({
-                    "role": "user",
-                    "content": pending_image_parts,
-                });
-                messages.push(user_message.clone());
-                provider_transcript.push(user_message);
+            for image_message in pending_image_messages {
+                messages.push(image_message.clone());
+                provider_transcript.push(image_message);
             }
+            visual_history::compact(&mut messages);
             tool_protocol_step["status"] = json!("complete");
             tool_protocol_step["auxiliaryMessagesAfterToolResults"] =
                 Value::Array(take_provider_protocol_auxiliary_messages(
@@ -1424,10 +1425,6 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                 // replaying a tool choice alongside no tools would 400.
                 request.tool_choice = ModelToolChoice::None;
             } else {
-                let defer_loading = request
-                    .tools
-                    .iter()
-                    .any(|tool| tool.get("defer_loading") == Some(&Value::Bool(true)));
                 // Ordinary browser/file actions cannot change the installed
                 // software registry. Rebuild only on discovery changes or an
                 // explicit capability/configuration operation.
@@ -1451,7 +1448,6 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                             &snapshot,
                             request.host_dispatcher.as_ref(),
                             request.capabilities.context_window,
-                            defer_loading,
                         );
                         request.tools = filter_tools_for_session(&snapshot, request.tools);
                     }
@@ -1585,7 +1581,11 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                     &mut messages,
                     &mut attempt_local_overlay_start,
                     "progress-guard-warning",
-                    PROGRESS_GUARD_WARNING_PROMPT,
+                    if reason == "browser_outcome_review_due" {
+                        "Browser outcome review: several observation/diagnosis rounds followed the last delivered input. Compare the user's requested end state with the current page and evidence already gathered. If the goal is established, give the final answer now; dismissing a result overlay or explaining its CSS is not required unless the user asked. If a fact is still missing, name that specific discrepancy and take one focused observation or source check. A failed cleanup click does not undo a verified outcome. Do not declare success from quiet pixels, a stale status line or source alone. Further source inspection remains available when it answers a new, task-relevant question."
+                    } else {
+                        PROGRESS_GUARD_WARNING_PROMPT
+                    },
                 );
             }
             ModelLoopProgressAction::Synthesize {

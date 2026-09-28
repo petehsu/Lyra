@@ -333,6 +333,17 @@ export type WorkbenchBrowserControlSemantics = {
   readonly activeDescendant?: string;
   readonly popup?: string;
   readonly appearance?: string;
+  readonly choice?: {
+    readonly nativeChecked: boolean | "mixed";
+    readonly binding: "native" | "label" | "local-label";
+    readonly conflict: boolean;
+    readonly evidence: readonly {
+      readonly source: "aria-checked" | "data-state" | "class";
+      readonly value: boolean | "mixed";
+      readonly detail: string;
+    }[];
+    readonly issues: readonly string[];
+  };
 };
 
 /** Informational context only; these entries cannot be used as action targets. */
@@ -547,6 +558,7 @@ export type WorkbenchBrowserAgentRuntimePath =
   | "selfHeal";
 
 export type WorkbenchBrowserAgentElementState = {
+  readonly choice?: WorkbenchBrowserControlSemantics["choice"];
   readonly role: string;
   readonly label: string;
   readonly checked?: boolean;
@@ -1500,6 +1512,9 @@ export type WorkbenchBrowserViewManager = {
         readonly waitState?: WorkbenchBrowserWaitState;
       })
   >;
+  readonly describeAgentScene: ReturnType<typeof import("./view-manager-runtime/visual-scene-controller").createVisualSceneController>["describe"];
+  readonly captureVisualScene: ReturnType<typeof import("./view-manager-runtime/visual-scene-controller").createVisualSceneController>["capture"];
+  readonly actOnAgentVisualScene: (tabId: string, request: import("./view-manager-runtime/visual-scene-types").VisualActRequest) => Promise<Record<string, unknown>>;
   readonly captureAgentPage: (
     tabId: string,
     request?: WorkbenchBrowserAgentModeRequest & {

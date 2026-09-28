@@ -62,6 +62,9 @@ Last verified: 2026-09-26
 
 ## 连续动作规则
 
+- 单选框/复选框的原生值、标签关系和页面 class/data-state 是不同来源的证据。重复 ID 时只借用局部明确关联的名称，结构关联标为 `binding=local-label`，不能谎称浏览器 label-for 正确。原生值与页面表现冲突时发布 `checked=unknown`、`nativeChecked` 和 `state-conflict`，不要求模型反复切换去“修正”网站。
+- 只有原生输入框完全被自身已映射、可命中的标签覆盖时，才合并这个重复表示；真实外部遮挡仍保留 blocked。动作始终点击原引用，没有把结构关联转成隐式改写 checked 或改投另一个节点。点击正常标签后的浏览器原生转交受同一事件保护核验，改绑或禁用目标不获豁免。详见[单选控件证据修复记录](../operations/nonvisual-choice-controls-2026-09-27.md)。
+
 - 声明的 effect 从 Rust 到桌面保持一致；observe 缺省为 hover，矛盾的显式手势被拒绝。页面跟随、聚焦、鼠标移入后重新检查真实节点；DOM／AX 点击共用事件命中保护。inputDelivery 只证明事件接收，不证明任务完成。详见[09-27 修复清单](../operations/nonvisual-browser-session-root-fixes-2026-09-27.md)。
 - 聚焦按键目标调用实际节点的 focus，不先点击。按键不应顺带提交按钮；连续方向键不应每次重置光标。
 - Electron `sendInputEvent` 使用独立 `keyCode` 和 `modifiers`，不直接传 `Control+b`。DOM 与 AX 两条输入路径共用转换。参见 [KeyboardInputEvent](https://www.electronjs.org/docs/latest/api/structures/keyboard-input-event) 与 [InputEvent](https://www.electronjs.org/docs/latest/api/structures/input-event)。

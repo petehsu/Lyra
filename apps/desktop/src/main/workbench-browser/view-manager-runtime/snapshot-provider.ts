@@ -1,3 +1,5 @@
+import { VISUAL_DOCUMENT } from "./visual-scene-dom";
+import { captureCleanPage } from "./clean-page-capture";
 import type { WebContents } from "electron";
 
 import type {
@@ -243,9 +245,6 @@ export const createSnapshotProvider = ({
     input.dpr.toFixed(4),
     Math.round(input.cssViewportWidth),
     Math.round(input.cssViewportHeight),
-    Math.round(input.imageWidth),
-    Math.round(input.imageHeight),
-    input.imageScale.toFixed(4),
     Math.round(input.scrollX),
     Math.round(input.scrollY),
     input.viewBoundsEpoch,
@@ -289,9 +288,14 @@ export const createSnapshotProvider = ({
       viewBoundsEpoch,
       bounds
     };
-    const viewBoundsHash = buildVisualFrameHash(base);
+    const documentId = await runFrameScriptWithTimeout(
+      () => target.webContents.executeJavaScript(VISUAL_DOCUMENT, false),
+      normalizeExecuteScriptTimeoutMs(timeoutMs)
+    ).catch(() => undefined);
+    const viewBoundsHash = hashStableString(buildVisualFrameHash(base) + String(documentId ?? ""));
     visualFrameSequence += 1;
     return {
+      ...(typeof documentId === "string" ? { documentId } : {}),
       captureId: `lumen-visual-${Date.now().toString(36)}-${visualFrameSequence}-${viewBoundsHash}`,
       dpr,
       cssViewportWidth: viewport.width,
@@ -375,7 +379,7 @@ export const createSnapshotProvider = ({
     if (target.liveEntry !== undefined) {
       return await captureLivePage(tabId);
     }
-    const image = await target.webContents.capturePage();
+    const image = await captureCleanPage(target.webContents);
     const size = image.getSize();
     return {
       tabId,

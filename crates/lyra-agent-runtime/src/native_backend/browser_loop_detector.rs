@@ -1,6 +1,8 @@
 use serde_json::Value;
 use std::collections::HashMap;
 
+pub(crate) mod visual;
+
 const WINDOW_SIZE: usize = 20;
 const REPETITION_NUDGE_AT: [usize; 3] = [4, 7, 11];
 const STAGNANT_PAGE_THRESHOLD: usize = 4;
@@ -10,8 +12,8 @@ const ALTERNATING_PATTERN_MIN: usize = 4;
 pub(crate) struct BrowserLoopDetector {
     recent_action_hashes: Vec<String>,
     max_repetition_count: usize,
-    consecutive_stagnant_pages: usize,
-    last_page_fingerprint: Option<String>,
+    semantic_pages: HashMap<String, (String, usize)>,
+    visual_pages: HashMap<String, (String, usize)>,
 }
 
 fn normalize_search_query(value: &str) -> String {
@@ -38,13 +40,26 @@ pub(crate) fn parse_browser_tool_call(name: &str, args: &Value) -> Option<(Strin
     if let Some(path) = args.get("path").and_then(Value::as_str) {
         if let Some(action) = path.strip_prefix("/tools/browser/") {
             if !action.is_empty() {
-                return Some(("browser".to_string(), action.to_string(), args.clone()));
+                return Some((
+                    "browser".to_string(),
+                    action.to_string(),
+                    args.get("args").unwrap_or(args).clone(),
+                ));
             }
         }
         if let Some(action) = path.strip_prefix("/tools/computer/") {
             if !action.is_empty() {
-                return Some(("computer".to_string(), action.to_string(), args.clone()));
+                return Some((
+                    "computer".to_string(),
+                    action.to_string(),
+                    args.get("args").unwrap_or(args).clone(),
+                ));
             }
+        }
+    }
+    for (prefix, domain) in [("browser_", "browser"), ("computer_", "computer")] {
+        if let Some(action) = name.strip_prefix(prefix) {
+            return Some((domain.into(), action.into(), args.clone()));
         }
     }
     if name == "lyra_lumen" || name == "lyra_computer" {
@@ -88,44 +103,89 @@ fn browser_tool_action_hash(name: &str, action: &str, args: &Value) -> Option<St
     if let Some(url) = args.get("url").and_then(Value::as_str) {
         payload.push_str(&format!(":url={url}"));
     }
+    for key in [
+        "tabId",
+        "targetMode",
+        "mark",
+        "cell",
+        "toMark",
+        "toCell",
+        "position",
+        "toPosition",
+        "point",
+        "to",
+        "path",
+        "key",
+        "steps",
+        "scrollDx",
+        "scrollDy",
+    ] {
+        if let Some(value) = args.get(key) {
+            payload.push_str(&format!(":{key}={value}"));
+        }
+    }
     Some(payload)
 }
 
 fn page_fingerprint_from_output(output: &Value) -> Option<String> {
-    let url = output
-        .pointer("/url")
-        .or_else(|| output.pointer("/data/url"))
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    let element_count = output
-        .pointer("/elements")
-        .or_else(|| output.pointer("/data/elements"))
-        .and_then(Value::as_array)
-        .map(|items| items.len())
-        .or_else(|| {
-            output
-                .pointer("/nodes")
-                .or_else(|| output.pointer("/data/nodes"))
-                .and_then(Value::as_array)
-                .map(|items| items.len())
-        })
-        .or_else(|| {
-            output
-                .pointer("/elementCount")
-                .or_else(|| output.pointer("/data/elementCount"))
-                .and_then(Value::as_u64)
-                .map(|count| count as usize)
-        })
-        .unwrap_or(0);
-    let status = output
-        .pointer("/status/state")
-        .or_else(|| output.pointer("/data/status/state"))
-        .and_then(Value::as_str)
-        .unwrap_or("");
-    if url.is_empty() && element_count == 0 && status.is_empty() {
+    let output = output.get("data").unwrap_or(output);
+    // A URL or node count is identity/coverage, never evidence of task progress.
+    // Missing state is not evidence that a previous state stayed unchanged.
+    let elements = output.get("elements").or_else(|| output.get("nodes"));
+    let text = output.get("content").filter(|v| v.is_string());
+    let status = output.get("status");
+    let notes = output.get("pageNotes");
+    if elements.is_none() && text.is_none() && status.is_none() && notes.is_none() {
         return None;
     }
-    Some(format!("{url}|elements={element_count}|status={status}"))
+    let elements = elements.and_then(Value::as_array).map(|items| {
+        items
+            .iter()
+            .map(|item| {
+                let mut facts = serde_json::Map::new();
+                for key in [
+                    "targetRef",
+                    "label",
+                    "name",
+                    "role",
+                    "value",
+                    "checked",
+                    "pressed",
+                    "selected",
+                    "expanded",
+                    "disabled",
+                    "visibility",
+                    "state",
+                    "states",
+                    "semantics",
+                    "stateHint",
+                    "valuePreview",
+                    "textSnippet",
+                ] {
+                    if let Some(value) = item.get(key) {
+                        facts.insert(key.into(), value.clone());
+                    }
+                }
+                Value::Object(facts)
+            })
+            .collect::<Vec<_>>()
+    });
+    Some(serde_json::json!({"url":output["url"],"elements":elements,"text":text,"status":status,"notes":notes}).to_string())
+}
+
+fn page_scope(args: &Value, output: &Value) -> String {
+    let output = output.get("raw").unwrap_or(output);
+    let tab = args
+        .get("tabId")
+        .or_else(|| output.get("tabId"))
+        .and_then(Value::as_str)
+        .unwrap_or("active");
+    let mode = args
+        .get("targetMode")
+        .or_else(|| output.get("targetMode"))
+        .and_then(Value::as_str)
+        .unwrap_or("live");
+    format!("{tab}|{mode}")
 }
 
 fn detect_alternating_pattern(hashes: &[String]) -> Option<String> {
@@ -145,10 +205,42 @@ impl BrowserLoopDetector {
         calls: &[(String, String, Value)],
         outputs: &[Value],
     ) -> Option<String> {
+        if calls.is_empty() {
+            return None;
+        }
         let mut nudges = Vec::new();
+        let mut observed_action = false;
         for ((name, action, args), output) in calls.iter().zip(outputs.iter()) {
+            let page_scope = page_scope(args, output);
+            if let Some(scene) = visual::scene(output) {
+                // Rich scene evidence supersedes the old semantic sample for this page.
+                self.semantic_pages.remove(&page_scope);
+                let scope = visual::scope(args, output, &scene);
+                let fingerprint =
+                    format!("{}|{}", scene["evidence"]["fingerprint"], scene["pageText"]);
+                if !self.visual_pages.contains_key(&scope) && self.visual_pages.len() >= 32 {
+                    self.visual_pages.clear();
+                }
+                let entry = self
+                    .visual_pages
+                    .entry(scope)
+                    .or_insert((fingerprint.clone(), 0));
+                if entry.0 == fingerprint {
+                    entry.1 += 1;
+                } else {
+                    *entry = (fingerprint, 1);
+                }
+                if [3, 6, 10].contains(&entry.1) {
+                    nudges.push(format!("Visual progress hint: {} observations show the same region pixels and page text. Inspect lastAction and changedCells before repeating input: a delivered click or observation budget ending is not an input failure. If detail is ambiguous, use see with region and cell to enlarge that location. Source inspection remains available: use it to test a concrete hypothesis, then verify against the current page. Repeating an unchanged overview adds no evidence.", entry.1));
+                }
+                continue;
+            }
+            let decoded = output.get("raw").unwrap_or(output);
+
             if let Some(hash) = browser_tool_action_hash(name, action, args) {
-                self.recent_action_hashes.push(hash);
+                observed_action = true;
+                self.recent_action_hashes
+                    .push(format!("{page_scope}:{hash}"));
                 if self.recent_action_hashes.len() > WINDOW_SIZE {
                     let overflow = self.recent_action_hashes.len() - WINDOW_SIZE;
                     self.recent_action_hashes.drain(0..overflow);
@@ -159,32 +251,42 @@ impl BrowserLoopDetector {
                 }
                 self.max_repetition_count = counts.values().copied().max().unwrap_or(0);
             }
-            if let Some(fingerprint) = page_fingerprint_from_output(output) {
-                if self.last_page_fingerprint.as_deref() == Some(fingerprint.as_str()) {
-                    self.consecutive_stagnant_pages += 1;
+            if let Some(fingerprint) = page_fingerprint_from_output(decoded) {
+                if !self.semantic_pages.contains_key(&page_scope) && self.semantic_pages.len() >= 32
+                {
+                    self.semantic_pages.clear();
+                }
+                let entry = self
+                    .semantic_pages
+                    .entry(page_scope)
+                    .or_insert((fingerprint.clone(), 0));
+                if entry.0 == fingerprint {
+                    entry.1 += 1;
                 } else {
-                    self.consecutive_stagnant_pages = 0;
-                    self.last_page_fingerprint = Some(fingerprint);
+                    *entry = (fingerprint, 1);
+                    self.recent_action_hashes.clear();
+                    self.max_repetition_count = 0;
+                    observed_action = false;
+                }
+                if [STAGNANT_PAGE_THRESHOLD + 1, 8, 12].contains(&entry.1) {
+                    nudges.push(format!("Automation stagnation hint: {} observations repeat the same rendered controls/text. Compare the user's requested outcome with this evidence: if already satisfied, finish now. Otherwise identify the missing fact and use the existing target/region for one focused observation or diagnosis; do not rebuild an unchanged map. Source inspection remains available for a concrete discrepancy.", entry.1));
                 }
             }
         }
 
-        if REPETITION_NUDGE_AT.contains(&self.max_repetition_count) {
+        if observed_action && REPETITION_NUDGE_AT.contains(&self.max_repetition_count) {
             nudges.push(format!(
-                "Automation loop hint: a similar browser/computer action repeated {} times in the last {} automation steps. If each attempt is making progress, continue. Otherwise map the visible surface again and act or type a targetRef from that map.",
+                "Automation loop hint: a similar browser/computer action repeated {} times in the last {} automation steps. If each attempt is making progress, continue. Otherwise check whether the user's goal is already satisfied. Reuse the current target/region for a focused outcome check; map only when the needed target is missing.",
                 self.max_repetition_count,
                 self.recent_action_hashes.len()
             ));
         }
-        if let Some(alternating) = detect_alternating_pattern(&self.recent_action_hashes) {
+        if let Some(alternating) = observed_action
+            .then(|| detect_alternating_pattern(&self.recent_action_hashes))
+            .flatten()
+        {
             nudges.push(format!(
-                "Automation oscillation hint: actions are alternating between two strategies ({alternating}). Pick one path (navigate→wait→map→act) instead of switching back and forth."
-            ));
-        }
-        if self.consecutive_stagnant_pages >= STAGNANT_PAGE_THRESHOLD {
-            nudges.push(format!(
-                "Automation stagnation hint: the surface evidence (URL/node count/status) has not changed across {} consecutive browser/computer tool results. Map the visible surface again and act on a targetRef from that map.",
-                self.consecutive_stagnant_pages
+                "Automation oscillation hint: actions are alternating between two strategies ({alternating}). Use the current evidence to choose one recovery hypothesis. Finish if the requested outcome is already established; do not add navigation or map calls as a ritual."
             ));
         }
         if nudges.is_empty() {
@@ -274,5 +376,159 @@ mod tests {
             nudge = detector.observe_browser_tools(&[call.clone()], &[output.clone()]);
         }
         assert!(nudge.is_some());
+    }
+}
+
+#[cfg(test)]
+mod visual_tests {
+    use super::*;
+    use serde_json::json;
+    fn output(pixel: &str, capture: usize) -> Value {
+        json!({"raw":{"tabId":"tab","observation":{"scene":{"captureId":capture,"documentKey":"doc","pageText":"Your turn","evidence":{"fingerprint":pixel}}}}})
+    }
+    #[test]
+    fn parses_direct_tools_and_unwraps_tool_fs_arguments() {
+        assert_eq!(
+            parse_browser_tool_call("browser_vact", &json!({"cell":{"row":1,"column":2}}))
+                .unwrap()
+                .1,
+            "vact"
+        );
+        let parsed = parse_browser_tool_call(
+            "tool_fs_run",
+            &json!({"path":"/tools/browser/see","args":{"region":"1"}}),
+        )
+        .unwrap();
+        assert_eq!(parsed.2, json!({"region":"1"}));
+        assert_ne!(
+            browser_tool_action_hash(
+                "browser",
+                "vact",
+                &json!({"mark":"a","cell":{"row":1,"column":2}})
+            ),
+            browser_tool_action_hash(
+                "browser",
+                "vact",
+                &json!({"mark":"a","cell":{"row":2,"column":2}})
+            )
+        );
+    }
+    #[test]
+    fn repeated_visual_evidence_is_detected_despite_new_capture_ids_and_source_inspection() {
+        let mut detector = BrowserLoopDetector::default();
+        let call = ("browser".into(), "see".into(), json!({"tabId":"tab"}));
+        assert!(
+            detector
+                .observe_browser_tools(&[call.clone()], &[output("same", 1)])
+                .is_none()
+        );
+        assert!(detector.observe_browser_tools(&[], &[]).is_none()); // source analysis is neither blocked nor a reset
+        assert!(
+            detector
+                .observe_browser_tools(&[call.clone()], &[output("same", 2)])
+                .is_none()
+        );
+        let hint = detector
+            .observe_browser_tools(&[call], &[output("same", 3)])
+            .unwrap();
+        assert!(hint.contains("Source inspection remains available"));
+        assert!(hint.contains("region and cell"));
+    }
+    #[test]
+    fn changed_pixels_and_other_tabs_do_not_count_as_stagnation() {
+        let mut detector = BrowserLoopDetector::default();
+        for i in 0..12 {
+            let call = (
+                "browser".into(),
+                "vact".into(),
+                json!({"tabId":"tab","cell":{"row":i+1,"column":8}}),
+            );
+            assert!(
+                detector
+                    .observe_browser_tools(&[call], &[output(&i.to_string(), i)])
+                    .is_none()
+            );
+        }
+        let mut detector = BrowserLoopDetector::default();
+        for tab in ["a", "b", "c"] {
+            let call = ("browser".into(), "see".into(), json!({"tabId":tab}));
+            assert!(
+                detector
+                    .observe_browser_tools(&[call], &[output("same", 1)])
+                    .is_none()
+            );
+        }
+    }
+    #[test]
+    fn compacted_provider_content_still_carries_visual_fingerprint() {
+        let raw = output("p", 1);
+        let compact = json!({"scene":raw["raw"]["observation"]["scene"]});
+        let wrapped = json!({"content":format!("{compact}\n\nEvidence activity ID: call")});
+        assert_eq!(
+            visual::scene(&wrapped).unwrap()["evidence"]["fingerprint"],
+            "p"
+        );
+    }
+
+    #[test]
+    fn semantic_waits_cannot_leave_stale_warnings_across_real_scene_progress() {
+        let mut detector = BrowserLoopDetector::default();
+        let wait = ("browser".into(), "wait".into(), json!({"tabId":"tab"}));
+        let wait_result =
+            json!({"raw":{"tabId":"tab","url":"https://example.test","content":"Ready"}});
+        for _ in 0..5 {
+            detector.observe_browser_tools(&[wait.clone()], &[wait_result.clone()]);
+        }
+        let scene = ("browser".into(), "vact".into(), json!({"tabId":"tab"}));
+        assert!(
+            detector
+                .observe_browser_tools(&[scene], &[output("new board", 6)])
+                .is_none()
+        );
+        assert!(
+            detector
+                .observe_browser_tools(&[wait], &[wait_result])
+                .is_none()
+        );
+        assert!(detector.observe_browser_tools(&[], &[]).is_none());
+    }
+
+    #[test]
+    fn url_only_is_not_stagnation_and_same_size_changed_controls_are_progress() {
+        let mut detector = BrowserLoopDetector::default();
+        let wait = ("browser".into(), "wait".into(), json!({}));
+        for _ in 0..12 {
+            assert!(
+                detector
+                    .observe_browser_tools(
+                        &[wait.clone()],
+                        &[json!({"url":"https://example.test"})]
+                    )
+                    .is_none()
+            );
+        }
+        let action = (
+            "browser".into(),
+            "act".into(),
+            json!({"targetRef":"button"}),
+        );
+        for i in 0..12 {
+            assert!(detector.observe_browser_tools(&[action.clone()], &[json!({"url":"https://example.test","elements":[{"targetRef":"button","value":i}]})]).is_none());
+        }
+    }
+
+    #[test]
+    fn identical_semantic_pages_in_other_tabs_do_not_accumulate_stagnation() {
+        let mut detector = BrowserLoopDetector::default();
+        for tab in ["a", "b", "c", "d", "e", "f"] {
+            assert!(
+                detector
+                    .observe_browser_tools(
+                        &[("browser".into(), "map".into(), json!({"tabId":tab}))],
+                        &[json!({"url":"same","elements":[]})]
+                    )
+                    .is_none()
+            );
+        }
     }
 }

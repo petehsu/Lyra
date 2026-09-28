@@ -1,6 +1,7 @@
 import { presentBrowserMap, MAP_PRESENTATION_CHARS } from "../src/main/workbench-browser/view-manager-runtime/agent-map-presentation.ts";
 import { waitForLumenPage } from "../src/main/agent/lumen-page-wait.ts";
 import assert from "node:assert/strict";
+import { registerNonvisualChoiceCases } from "./nonvisual-choice-cases.ts";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import { createBrowserAgentObservationEngine } from "../src/main/workbench-browser/view-manager-runtime/agent-observation-engine.ts";
@@ -1589,6 +1590,12 @@ cases.push(['response continuity: user echo without response is not completion',
   await page.waitForTimeout(50);await page.evaluate(()=>document.querySelector('#send')!.textContent='Send');
   assert(!(await responseWait('echo',800)).matched);
 }]);
+
+registerNonvisualChoiceCases({ page, observe, cases, click: async targetRef => {
+  const result = await actions.actOnAgentElement("fixture", { targetRef, interaction: "click", verification: "fast" });
+  await inputQueue;
+  assert(result.ok, JSON.stringify(result));
+} });
 
 let failures = 0;
 try {

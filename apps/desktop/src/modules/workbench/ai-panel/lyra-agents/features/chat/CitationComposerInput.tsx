@@ -24,6 +24,8 @@ import type { ComposerInsertableCitation, ComposerSegment } from "./message-cita
 import { normalizePageCitation } from "./page-citation";
 import type { WorkspaceTab } from "../../../../workspace-tabs/types";
 import { createComposerLinkSegment, websiteLinkLabel } from "./web-link";
+import { selectedWebLinkText, useWebLinkClipboard } from "./web-link-clipboard";
+import { splitMessageWebLinks } from "./message-web-links";
 
 export type { ComposerInsertableCitation } from "./message-citation";
 
@@ -242,7 +244,7 @@ const renderSegments = (root: HTMLElement, segments: readonly ComposerSegment[])
   });
 };
 
-const placeCaretAfterChip = (chip: HTMLSpanElement): void => {
+const placeCaretAfterNode = (chip: Node): void => {
   const selection = window.getSelection();
   if (selection === null) return;
   const range = document.createRange();
@@ -252,22 +254,24 @@ const placeCaretAfterChip = (chip: HTMLSpanElement): void => {
   selection.addRange(range);
 };
 
-const insertChip = (
+const insertComposerContent = (
   editor: HTMLDivElement,
-  chip: HTMLSpanElement,
+  chip: Node,
   nextKnownSegments: readonly ComposerSegment[],
   onSegmentsChange: (segments: ComposerSegment[]) => void
 ): void => {
+  const lastInserted = chip instanceof DocumentFragment ? chip.lastChild : chip;
+  if (lastInserted === null) return;
   editor.focus();
   const selection = window.getSelection();
   if (selection !== null && selection.rangeCount > 0 && editor.contains(selection.anchorNode)) {
     const range = selection.getRangeAt(0);
     range.deleteContents();
     range.insertNode(chip);
-    placeCaretAfterChip(chip);
+    placeCaretAfterNode(lastInserted);
   } else {
     editor.appendChild(chip);
-    placeCaretAfterChip(chip);
+    placeCaretAfterNode(lastInserted);
   }
   onSegmentsChange(parseEditorSegments(editor, nextKnownSegments));
 };
@@ -287,6 +291,7 @@ export const CitationComposerInput = forwardRef<CitationComposerInputHandle, Cit
     onImageAttachmentsAccepted,
     onEditorKeyDown
   }, ref) {
+    useWebLinkClipboard();
     const editorRef = useRef<HTMLDivElement>(null);
     const [dropActive, setDropActive] = useState(false);
     const segmentsRef = useRef(segments);
@@ -306,21 +311,21 @@ export const CitationComposerInput = forwardRef<CitationComposerInputHandle, Cit
           ? { type: "pageCitation", citation: citation.citation } as const
           : { type: "citation", citation: citation.citation } as const;
         const nextKnownSegments = [...segmentsRef.current, segment];
-        insertChip(editor, createComposerChipElement(segment), nextKnownSegments, onSegmentsChange);
+        insertComposerContent(editor, createComposerChipElement(segment), nextKnownSegments, onSegmentsChange);
       },
       insertImage(image: AgentImageAttachment) {
         const editor = editorRef.current;
         if (editor === null) return;
         const segment = { type: "image", image } as const;
         const nextKnownSegments = [...segmentsRef.current, segment];
-        insertChip(editor, createComposerChipElement(segment), nextKnownSegments, onSegmentsChange);
+        insertComposerContent(editor, createComposerChipElement(segment), nextKnownSegments, onSegmentsChange);
       },
       insertFile(file: AgentFileAttachment) {
         const editor = editorRef.current;
         if (editor === null) return;
         const segment = { type: "file", file } as const;
         const nextKnownSegments = [...segmentsRef.current, segment];
-        insertChip(editor, createComposerChipElement(segment), nextKnownSegments, onSegmentsChange);
+        insertComposerContent(editor, createComposerChipElement(segment), nextKnownSegments, onSegmentsChange);
       },
       readSegments() {
         const editor = editorRef.current;
@@ -392,14 +397,44 @@ export const CitationComposerInput = forwardRef<CitationComposerInputHandle, Cit
       }
 
       const editor = editorRef.current;
-      const link = createComposerLinkSegment(clipboardData.getData("text/plain"), workspaceTabs);
-      if (editor === null || link === null) {
+      const text = clipboardData.getData("text/plain");
+      const link = createComposerLinkSegment(text, workspaceTabs);
+      const parts: ComposerSegment[] = link === null
+        ? splitMessageWebLinks(text).map((part) => part.type === "text" ? part
+          : createComposerLinkSegment(part.url, workspaceTabs)!)
+        : [link];
+      if (disabled || editor === null || !parts.some((part) => part.type === "link")) {
         return;
       }
       event.preventDefault();
-      const nextKnownSegments = [...segmentsRef.current, link];
-      insertChip(editor, createComposerChipElement(link), nextKnownSegments, onSegmentsChange);
-    }, [acceptImageAttachments, onSegmentsChange, workspaceTabs]);
+      const content = document.createDocumentFragment();
+      for (const part of parts) {
+        if (part.type === "text") {
+          part.value.split("\n").forEach((line, index) => {
+            if (index > 0) content.appendChild(document.createElement("br"));
+            content.appendChild(document.createTextNode(line));
+          });
+        } else {
+          content.appendChild(createComposerChipElement(part));
+        }
+      }
+      insertComposerContent(editor, content, [...segmentsRef.current, ...parts], onSegmentsChange);
+    }, [acceptImageAttachments, disabled, onSegmentsChange, workspaceTabs]);
+
+    const handleCut = (event: ClipboardEvent<HTMLDivElement>) => {
+      if (disabled) return;
+      const selection = window.getSelection();
+      if (!editorRef.current?.contains(selection?.anchorNode ?? null)
+        || !editorRef.current.contains(selection?.focusNode ?? null)) return;
+      const text = selectedWebLinkText(selection);
+      if (text === null) return;
+      event.preventDefault();
+      event.clipboardData.setData("text/plain", text);
+      if (typeof document.execCommand !== "function" || !document.execCommand("delete")) {
+        selection?.getRangeAt(0).deleteContents();
+      }
+      syncFromEditor();
+    };
 
     const handleDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
       if (disabled === true) {
@@ -535,6 +570,7 @@ export const CitationComposerInput = forwardRef<CitationComposerInputHandle, Cit
         suppressContentEditableWarning
         onInput={syncFromEditor}
         onPaste={handlePaste}
+        onCut={handleCut}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}

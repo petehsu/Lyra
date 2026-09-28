@@ -28,7 +28,7 @@ pub(crate) fn build_request_body_with_options(
     stream: bool,
     options: RequestOptions,
 ) -> AgentRuntimeResult<Value> {
-    let (system, mut messages) = anthropic_messages_from_provider_messages(messages);
+    let (system, mut messages) = anthropic_messages_from_provider_messages(messages, tools);
     if options.cache_latest_user_text {
         add_cache_control_to_latest_user_block(&mut messages);
     }
@@ -85,7 +85,15 @@ fn add_cache_control_to_latest_user_block(messages: &mut [Value]) {
     }
 }
 
-fn anthropic_messages_from_provider_messages(messages: &[Value]) -> (Option<String>, Vec<Value>) {
+fn anthropic_messages_from_provider_messages(
+    messages: &[Value],
+    tools: &[Value],
+) -> (Option<String>, Vec<Value>) {
+    let deferred_names: std::collections::HashSet<_> = tools
+        .iter()
+        .filter(|tool| tool.get("defer_loading").and_then(Value::as_bool) == Some(true))
+        .filter_map(|tool| tool.pointer("/function/name").and_then(Value::as_str))
+        .collect();
     let mut system = None;
     let mut output = Vec::new();
     for message in messages {
@@ -125,7 +133,11 @@ fn anthropic_messages_from_provider_messages(messages: &[Value]) -> (Option<Stri
                     blocks.push(json!({ "type": "text", "text": text }));
                 }
                 if let Some(names) = message.get("lyraDiscoveredTools").and_then(Value::as_array) {
-                    for name in names.iter().filter_map(Value::as_str) {
+                    for name in names
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .filter(|name| deferred_names.contains(name))
+                    {
                         blocks.push(json!({
                             "type": "tool_reference",
                             "tool_name": name,
@@ -734,7 +746,7 @@ mod tests {
                     "role": "tool",
                     "tool_call_id": "call-search",
                     "content": "Loaded deferred tools: web_search.",
-                    "lyraDiscoveredTools": ["web_search"]
+                    "lyraDiscoveredTools": ["web_search", "removed_tool"]
                 }),
             ],
             &[json!({
@@ -744,7 +756,7 @@ mod tests {
                     "description": "Fetch deferred tools",
                     "parameters": { "type": "object", "properties": {} }
                 }
-            })],
+            }), json!({"type":"function", "defer_loading":true, "function":{"name":"web_search","parameters":{"type":"object","properties":{}}}})],
             false,
         )
         .expect("body");
@@ -756,6 +768,11 @@ mod tests {
             blocks
                 .iter()
                 .any(|block| { block.get("type").and_then(Value::as_str) == Some("text") })
+        );
+        assert!(
+            !blocks
+                .iter()
+                .any(|block| block["tool_name"] == "removed_tool")
         );
         assert!(blocks.iter().any(|block| {
             block.get("type").and_then(Value::as_str) == Some("tool_reference")

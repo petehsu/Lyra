@@ -896,7 +896,20 @@ pub(crate) fn parse_streaming_response_with_commit<R: BufRead>(
     *committed_any = state.committed_any;
 
     let mut tool_calls =
-        openai_chat::finalize_streaming_tool_calls(state.tool_calls, &allowed_tool_names)?;
+        openai_chat::finalize_streaming_tool_calls(state.tool_calls, &allowed_tool_names).map_err(
+            |error| match error {
+                AgentRuntimeError::ProviderProtocol { kind, detail } => {
+                    AgentRuntimeError::ProviderProtocol {
+                        kind,
+                        detail: format!(
+                            "{detail} (stop reason: {})",
+                            state.finish_reason.as_deref().unwrap_or("not supplied")
+                        ),
+                    }
+                }
+                other => other,
+            },
+        )?;
     tool_calls.sort_by_key(|(index, _)| *index);
     let tool_calls = tool_calls
         .into_iter()
@@ -1055,7 +1068,20 @@ pub(crate) async fn parse_streaming_response_with_commit_async(
     *committed_any = state.committed_any;
 
     let mut tool_calls =
-        openai_chat::finalize_streaming_tool_calls(state.tool_calls, &allowed_tool_names)?;
+        openai_chat::finalize_streaming_tool_calls(state.tool_calls, &allowed_tool_names).map_err(
+            |error| match error {
+                AgentRuntimeError::ProviderProtocol { kind, detail } => {
+                    AgentRuntimeError::ProviderProtocol {
+                        kind,
+                        detail: format!(
+                            "{detail} (stop reason: {})",
+                            state.finish_reason.as_deref().unwrap_or("not supplied")
+                        ),
+                    }
+                }
+                other => other,
+            },
+        )?;
     tool_calls.sort_by_key(|(index, _)| *index);
     let tool_calls = tool_calls
         .into_iter()
@@ -1228,7 +1254,7 @@ pub(crate) fn map_provider_stream_chunk(
                 if let Some(name) = chunk.pointer("/function/name").and_then(Value::as_str)
                     && !name.trim().is_empty()
                 {
-                    accumulator.name = Some(name.trim().to_string());
+                    accumulator.push_name_delta(name);
                 }
                 if let Some(arguments) =
                     chunk.pointer("/function/arguments").and_then(Value::as_str)

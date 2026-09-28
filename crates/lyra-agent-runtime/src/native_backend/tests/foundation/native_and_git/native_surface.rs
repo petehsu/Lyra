@@ -162,7 +162,9 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
     let lumen_dir = agent_root.join("lumen-evidence");
     fs::create_dir_all(&lumen_dir).expect("create lumen evidence dir");
     let lumen_path = lumen_dir.join("lumen-see-test-browser-tab-1.png");
-    fs::write(&lumen_path, b"\x89PNG\r\n\x1a\nlyra-test-image").expect("write lumen image");
+    image::RgbImage::new(8, 8)
+        .save(&lumen_path)
+        .expect("write lumen image");
     let artifact_turn_id = start_test_runtime_turn(&session_id);
     let artifact = execute_model_tool_sync(
         &session_id,
@@ -176,24 +178,22 @@ fn native_tool_surface_dispatches_file_search_shell_render_and_todo() {
         ),
     );
     assert_eq!(artifact["status"].as_str(), Some("completed"));
-    assert_eq!(artifact["raw"]["kind"], "lyra_artifact_read");
-    assert_eq!(artifact["raw"]["mediaType"], "image/png");
+    assert_eq!(artifact["raw"]["kind"], "image_read");
+    assert_eq!(artifact["raw"]["providerImage"]["mediaType"], "image/png");
     let lumen_path_text = lumen_path
         .canonicalize()
         .expect("canonical lumen path")
         .display()
         .to_string();
     assert_eq!(
-        artifact
-            .pointer("/raw/providerImage/path")
-            .and_then(Value::as_str),
+        artifact.pointer("/raw/sourcePath").and_then(Value::as_str),
         Some(lumen_path_text.as_str())
     );
     assert!(
         artifact["content"]
             .as_str()
             .unwrap()
-            .contains("will be attached to the next provider request")
+            .contains("attached directly")
     );
     let modules_root = agent_root.parent().expect("modules root");
     let terminal_memory_dir = modules_root

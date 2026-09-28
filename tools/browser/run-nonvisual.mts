@@ -53,7 +53,7 @@ try {
     await build({entryPoints:[join(desktop,"e2e",`${name}.mts`)],bundle:true,platform:"node",format:"cjs",external:["electron"],outfile:bundle});
     await run(name, electron, ["--no-sandbox",bundle], minimum);
   }
-  await run("nonvisual-browser", process.execPath, ["--import","tsx",join(desktop,"e2e/nonvisual-browser.mts")], 87);
+  await run("nonvisual-browser", process.execPath, ["--import","tsx",join(desktop,"e2e/nonvisual-browser.mts")], 97);
 } catch (error) {
   failed=true;
   results.push({name:"runner",passed:false,error:String(error)});

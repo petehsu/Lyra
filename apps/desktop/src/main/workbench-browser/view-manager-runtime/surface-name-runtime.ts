@@ -1,12 +1,14 @@
 import { FIELD_DESCRIPTION_RUNTIME } from "./field-description-runtime";
+import { CHOICE_CONTROL_RUNTIME } from "./choice-control-runtime";
 import { SURFACE_TARGET_LOOKUP } from "./surface-target";
 
 // Page-owned evidence only. A tooltip is a description, not an invented
 // accessible name. Cache by physical node and naming/state signature, never ref
 // ordinal, screen coordinates, CSS class, or a previous page's label.
 export const surfaceNameRuntime = String.raw`(() => {
-  const key = "__lyraSurfaceNamesV4";
+  const key = "__lyraSurfaceNamesV5";
   if (window[key]) return window[key];
+  const choices = ${CHOICE_CONTROL_RUNTIME};
   const cache = new WeakMap(), pending = new WeakMap(), pointers = new WeakMap(), tracked = new WeakSet();
   const clean = value => String(value || "").replace(/\s+/g, " ").trim().slice(0, 160);
   const parent = node => node.parentElement || node.getRootNode()?.host;
@@ -68,7 +70,7 @@ export const surfaceNameRuntime = String.raw`(() => {
     const referenced = String(node.getAttribute("aria-labelledby") || "").split(/\s+/)
       .map(id => root.getElementById?.(id)?.textContent || "").join(" ");
     const values = [referenced, node.getAttribute("aria-label"),
-      Array.from(node.labels || []).map(item => item.textContent).join(" "),
+      choices.isChoice(node) ? choices.labelText(node) : Array.from(node.labels || []).map(item => item.textContent).join(" "),
       node.getAttribute("title"),
       /^[Xx•●_\-\s]+$/.test(node.getAttribute("placeholder") || "") ? (${FIELD_DESCRIPTION_RUNTIME})(node) : "",
       node.getAttribute("placeholder"), node.getAttribute("alt"),

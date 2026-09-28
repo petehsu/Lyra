@@ -576,7 +576,8 @@ fn provider_context_v2_preserves_auxiliary_messages_in_protocol_order() {
                     }],
                     "auxiliaryMessagesAfterToolResults": [{
                         "role": "user",
-                        "content": [{"type": "image_url", "image_url": {"url": "data:image/png;base64,AA=="}}]
+                        "content": [{"type": "image_url", "image_url": {"url": "data:image/png;base64,AA=="}}],
+                        "lyraVisualEvidence": {"scope":"tab|doc","digest":"pixels","captureId":"capture"}
                     }],
                     "replay": null
                 }
@@ -595,6 +596,10 @@ fn provider_context_v2_preserves_auxiliary_messages_in_protocol_order() {
     assert_eq!(context.messages[2]["role"], "assistant");
     assert_eq!(context.messages[3]["tool_call_id"], "call-1");
     assert!(context.messages[4]["content"].is_array());
+    assert_eq!(
+        context.messages[4]["lyraVisualEvidence"]["scope"],
+        "tab|doc"
+    );
 }
 
 #[test]

@@ -5,6 +5,7 @@ use super::*;
 mod messages;
 mod provider_metadata;
 mod provider_request;
+mod web_links;
 
 #[cfg(test)]
 #[path = "turns/goal_continuation_tests.test.rs"]
@@ -60,6 +61,7 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
     let now = now();
     let turn_id = format!("turn-{}", Uuid::new_v4());
     let mut user_message = user_message(text.clone(), legacy_images.clone(), now.clone());
+    web_links::apply_web_links(&mut user_message, &text, &payload);
     let user_message_id = user_message
         .get("id")
         .and_then(Value::as_str)

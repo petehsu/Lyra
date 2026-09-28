@@ -17,6 +17,18 @@ test("a ready navigation destination ends a guessed intermediate-text wait witho
 });
 
 afterEach(() => vi.useRealTimers());
+test("wait reuses a current rendered scene and retains condition evidence without rediscovering the map", async () => {
+  vi.useFakeTimers();
+  const scene={captureId:"new",documentKey:"doc",rendered:{structures:[{mark:"a",rows:5,columns:5}]}};
+  const observeAgentPage=vi.fn();
+  const describeAgentScene=vi.fn(async()=>({scene,groupedTargetRefs:[]}));
+  const handlers=createLumenToolHost({getBrowserBridge:()=>({readAgentPage:async()=>sample("Completed"),showAgentActivity:async()=>{},observeAgentPage,describeAgentScene}),tabResolver:{resolveBrowserAgentTabId:async()=>"fixture"},storageRoot:"/tmp"} as never).handlers;
+  const pending=handlers["lyraLumen.wait"]!({until:"textContains",text:"Completed",timeoutMs:1500});
+  await vi.runAllTimersAsync();
+  expect(await pending).toMatchObject({matched:true,completion:"conditionMet",scene,nextRecommendedAction:"use_returned_state"});
+  expect(observeAgentPage).not.toHaveBeenCalled();
+  expect(describeAgentScene).toHaveBeenCalledOnce();
+});
 const wait = async (samples: Record<string, unknown>[], args: Record<string, unknown> = {}, baseline?: {content: string; truncated?: boolean; tabId?: string; maxChars?: number; scope?: "full" | "viewport"}) => {
   vi.useFakeTimers();
   let index = 0;

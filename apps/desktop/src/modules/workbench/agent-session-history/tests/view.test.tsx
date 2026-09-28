@@ -1,6 +1,7 @@
 import type { ComponentProps } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
 
 import type {
   AgentRuntimeEvent,
@@ -283,6 +284,20 @@ const renderAgentHistory = (props: AgentHistoryTestProps) => {
 };
 
 describe("AgentSessionHistorySurface", () => {
+  test("opens delete confirmation on the first mouse click while preview is loading", async () => {
+    const { api, readSession, deleteSession } = createDesktopApi();
+    readSession.mockImplementation(() => new Promise(() => {}));
+    renderAgentHistory({ desktopApi: api, labels, activeSessionId: null, onOpenSession: vi.fn() });
+    const user = userEvent.setup();
+    const button = await screen.findByRole("button", { name: "Delete: Fix agent storage" });
+    await user.click(button);
+    expect(readSession).toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Delete session permanently?" })).toBeInTheDocument();
+    expect(deleteSession).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Delete permanently" }));
+    await waitFor(() => expect(deleteSession).toHaveBeenCalledWith({ sessionId: "session-1" }));
+  });
+
   test("loads unified history categories without the old in-page chrome", async () => {
     const { api, listSessions } = createDesktopApi();
 

@@ -4,7 +4,8 @@ import {
   LYRA_CHANNELS,
   type LyraDesktopApi,
   type ScreenshotPreviewEvent,
-  type WindowStatePayload
+  type WindowStatePayload,
+  type WindowThemePayload
 } from "../shared/desktop-bridge";
 
 const screenshotPreviewEventListeners = new Set<(event: ScreenshotPreviewEvent) => void>();
@@ -38,7 +39,13 @@ export const createShellBridgeApi = (): Pick<
     toggleMaximize: () => ipcRenderer.invoke(LYRA_CHANNELS.toggleWindowMaximize),
     close: () => ipcRenderer.invoke(LYRA_CHANNELS.closeWindow),
     setThemeSource: (source) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.setWindowThemeSource, source)
+      ipcRenderer.invoke(LYRA_CHANNELS.setWindowThemeSource, source),
+    readTheme: () => ipcRenderer.invoke(LYRA_CHANNELS.readWindowTheme),
+    onThemeChange: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, theme: WindowThemePayload) => listener(theme);
+      ipcRenderer.on(LYRA_CHANNELS.windowThemeChanged, wrapped);
+      return () => ipcRenderer.removeListener(LYRA_CHANNELS.windowThemeChanged, wrapped);
+    }
   },
   shellEvents: {
     onWindowStateChange: (listener: (payload: WindowStatePayload) => void) => {

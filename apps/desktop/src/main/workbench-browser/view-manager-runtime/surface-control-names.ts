@@ -1,3 +1,5 @@
+import { SURFACE_DOM_ACCESS } from "./surface-dom-access";
+import { CHOICE_CONTROL_RUNTIME } from "./choice-control-runtime";
 import { INSTALL_POINTER_GUARD, FINISH_POINTER_GUARD } from "./bound-pointer";
 import { SURFACE_TARGET_LOOKUP } from "./surface-target";
 import type { WorkbenchBrowserAgentElement, WorkbenchBrowserDebuggerSession } from "../types";
@@ -50,8 +52,10 @@ export const readStampedSurfaceScript = (targetRef: string): string => `(() => {
 })()`;
 
 /** Prepare exactly one trusted input dispatch. Never click from the probe. */
-export const activateStampedSurfaceScript = (targetRef: string, timeoutMs = 1_000, allowDisabled = false, position?: { x: number; y: number }): string => `(async () => {
+export const activateStampedSurfaceScript = (targetRef: string, timeoutMs = 1_000, allowDisabled = false, position?: { x: number; y: number }, exactPosition = false): string => `(async () => {
   ${SURFACE_TARGET_LOOKUP}
+  ${SURFACE_DOM_ACCESS}
+  const choices = ${CHOICE_CONTROL_RUNTIME};
   const deadline = Date.now() + ${Math.max(0, Math.min(timeoutMs, 2_000))};
   let previous = "";
   let last = null;
@@ -62,17 +66,14 @@ export const activateStampedSurfaceScript = (targetRef: string, timeoutMs = 1_00
     const local = node.getBoundingClientRect();
     const box = surfaceGlobalRect(node);
     const style = view.getComputedStyle(node);
-    const disabled = node.matches(":disabled") || node.closest('[aria-disabled="true"], [inert]') !== null;
+    const choice = choices.inputOf(node);
+    const disabled = node.matches(":disabled") || node.closest('[aria-disabled="true"], [inert]') !== null
+      || !!choice && (choice.matches(":disabled") || choice.closest('[aria-disabled="true"], [inert]') !== null);
     let point = null;
     if ((!disabled || ${allowDisabled}) && local.width > 0 && local.height > 0 && style.visibility !== "hidden" && style.display !== "none") {
-      for (const ratio of ${JSON.stringify(position ? [[Math.min(.99, Math.max(.01, position.x)), Math.min(.99, Math.max(.01, position.y))]] : [[.5,.5],[.2,.2],[.8,.2],[.2,.8],[.8,.8]])}) {
-        const x = local.left + local.width * ratio[0], y = local.top + local.height * ratio[1];
-        let hit = node.ownerDocument.elementFromPoint(x, y);
-        while (hit?.shadowRoot?.elementFromPoint) {
-          const inner = hit.shadowRoot.elementFromPoint(x, y);
-          if (!inner || inner === hit) break;
-          hit = inner;
-        }
+      for (const ratio of ${JSON.stringify(position ? [exactPosition ? [position.x, position.y] : [Math.min(.99, Math.max(.01, position.x)), Math.min(.99, Math.max(.01, position.y))]] : [[.5,.5],[.2,.2],[.8,.2],[.2,.8],[.8,.8]])}) {
+        const x = local.left + Math.min(local.width - 1, local.width * ratio[0]), y = local.top + Math.min(local.height - 1, local.height * ratio[1]);
+        const hit = surfaceHitForNode(node,x,y);
         if (hit === node || (hit && node.contains(hit))) {
           let owner = view, px = x, py = y, coveredFrame = false;
           while (owner.frameElement) {

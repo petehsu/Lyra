@@ -485,7 +485,7 @@ fn tool_search_selects_and_promotes_deferred_names() {
         ModelToolCall {
             id: "tool-search-select".to_string(),
             name: TOOL_SEARCH_TOOL_NAME.to_string(),
-            arguments: json!({ "query": "select:browser_navigate" }),
+            arguments: json!({ "query": "select:browser_scroll" }),
         },
     );
 
@@ -495,12 +495,12 @@ fn tool_search_selects_and_promotes_deferred_names() {
             .as_array()
             .expect("search matches")
             .iter()
-            .any(|name| name.as_str() == Some("browser_navigate"))
+            .any(|name| name.as_str() == Some("browser_scroll"))
     );
     assert!(
         output["content"]
             .as_str()
-            .is_some_and(|content| content.contains("browser_navigate"))
+            .is_some_and(|content| content.contains("browser_scroll"))
     );
     let snapshot = {
         let state = state().lock().expect("state lock");
@@ -511,8 +511,8 @@ fn tool_search_selects_and_promotes_deferred_names() {
             .snapshot
             .clone()
     };
-    let tools = assemble_provider_tools(&snapshot, None, Some(128_000), false);
-    assert!(request_contains_tool(&tools, "browser_navigate"));
+    let tools = assemble_provider_tools(&snapshot, None, Some(128_000));
+    assert!(request_contains_tool(&tools, "browser_scroll"));
 
     let empty = execute_model_tool_sync(
         &session_id,
@@ -581,7 +581,7 @@ fn tool_search_bm25_hits_exact_deferred_name() {
         ModelToolCall {
             id: "tool-search-bm25".to_string(),
             name: TOOL_SEARCH_TOOL_NAME.to_string(),
-            arguments: json!({ "query": "browser_map" }),
+            arguments: json!({ "query": "browser_scroll" }),
         },
     );
     assert_eq!(output["status"].as_str(), Some("completed"));
@@ -590,13 +590,13 @@ fn tool_search_bm25_hits_exact_deferred_name() {
             .as_array()
             .expect("search matches")
             .iter()
-            .any(|name| name.as_str() == Some("browser_map"))
+            .any(|name| name.as_str() == Some("browser_scroll"))
     );
 }
 
 #[test]
 fn tool_search_description_lists_deferred_names_instead_of_presearch() {
-    let tools = assemble_provider_tools(&json!({}), None, Some(128_000), false);
+    let tools = assemble_provider_tools(&json!({}), None, Some(128_000));
     let search = tools
         .iter()
         .find(|tool| {
@@ -1651,7 +1651,6 @@ fn provider_visible_tool_schema_snapshot_is_curated_runtime_surface() {
             &json!({ "discoveredToolNames": ["todo_update"] }),
             None,
             Some(128_000),
-            false,
         );
         let todo_update = promoted
             .iter()
@@ -1709,7 +1708,7 @@ fn tool_filesystem_runtime_context_uses_dynamic_registry_without_expanding_provi
     assert_eq!(context["scene"].as_str(), Some("automation"));
     assert_eq!(context["internalRegistry"].as_bool(), Some(true));
     assert!(context.get("policy").is_none());
-    let names = assemble_provider_tools(&json!({}), Some(&dispatcher), Some(128_000), false)
+    let names = assemble_provider_tools(&json!({}), Some(&dispatcher), Some(128_000))
         .iter()
         .filter_map(|tool| tool.pointer("/function/name").and_then(Value::as_str))
         .map(str::to_string)

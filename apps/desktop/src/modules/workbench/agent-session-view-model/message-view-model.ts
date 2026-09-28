@@ -10,6 +10,7 @@ import { parseTranscriptCitationsFromMetadata } from "../ai-panel/lyra-agents/fe
 import { parseFileAttachmentsFromMetadata } from "../ai-panel/lyra-agents/features/chat/composer-file";
 import { parseInlineImagesFromMetadata } from "../ai-panel/lyra-agents/features/chat/composer-image";
 import { parsePageCitationsFromMetadata } from "../ai-panel/lyra-agents/features/chat/page-citation";
+import { messageWebLinksFromMetadata } from "../ai-panel/lyra-agents/features/chat/message-web-links";
 
 import { projectedToolActivityStatus, toToolGroup, toolGroupLabel, type ToolProjectionContext } from "./tool-view-model";
 
@@ -190,11 +191,6 @@ const latestToolActivities = (
   return latest.reverse();
 };
 
-const isPendingAgentMessage = (message: ChatMessage): boolean =>
-  message.author === "agent" &&
-  message.blocks.length > 0 &&
-  message.blocks.every((block) => block.type === "text" && block.body.trim().length === 0);
-
 const isUiHiddenAgentMessage = (metadata: unknown): boolean => {
   if (metadata === null || typeof metadata !== "object") return false;
   return (metadata as { readonly uiHidden?: boolean }).uiHidden === true;
@@ -283,6 +279,7 @@ const chatBlocksForAgentMessage = (
         ? [{
             type: "thinking" as const,
             id: `${message.id}-thinking`,
+            sourceMessageId: message.id,
             body: message.reasoningContent,
             status: thinkingBlockStatus(message.reasoningStatus)
           }]
@@ -327,6 +324,7 @@ const chatBlocksForAgentMessage = (
           type: "thinking",
           id: `${message.id}-${block.id}`,
           body: block.text,
+          sourceMessageId: message.id,
           status: thinkingBlockStatus(block.status)
         });
       }
@@ -385,6 +383,7 @@ const chatBlocksForAgentMessage = (
     chatBlocks.unshift({
       type: "thinking",
       id: `${message.id}-thinking`,
+      sourceMessageId: message.id,
       body: message.reasoningContent,
       status: thinkingBlockStatus(message.reasoningStatus)
     });
@@ -408,6 +407,7 @@ const chatBlocksForAgentMessage = (
       ? [{
           type: "thinking" as const,
           id: `${message.id}-thinking`,
+          sourceMessageId: message.id,
           body: message.reasoningContent,
           status: thinkingBlockStatus(message.reasoningStatus)
         }]
@@ -463,6 +463,10 @@ export const agentSessionToChatMessages = (
       const chatMessage: ChatMessage = {
         id: message.id,
         author,
+        ...(isLastAssistantMessage(session, message, originalIndex) && session.turnStatus === "running"
+          ? { streamingMessageId: message.id }
+          : {}),
+        webLinks: messageWebLinksFromMetadata(message.metadata),
         ...(isApiError ? { isApiError: true } : {}),
         ...(formattedTime === undefined ? {} : { time: formattedTime }),
         ...(transcriptCitations.length === 0 ? {} : { transcriptCitations }),
@@ -550,25 +554,6 @@ export const agentSessionToChatMessages = (
     return left.sequence - right.sequence;
   });
 
-  const messages = timedMessages.map((item) => item.message);
-
-  if (
-    session.follow.running &&
-    !messages.some((message) => isPendingAgentMessage(message))
-  ) {
-    messages.push({
-      id: "lyra-agent-loading",
-      author: "agent",
-      blocks: [
-        {
-          type: "text",
-          id: "lyra-agent-loading-text",
-          body: ""
-        }
-      ]
-    });
-  }
-
   const finalItems: typeof timedMessages = [];
   for (const item of timedMessages) {
     const msg = item.message;
@@ -582,8 +567,8 @@ export const agentSessionToChatMessages = (
       if (
         prev.author === msg.author &&
         prev.author === "agent" &&
-        !isPendingAgentMessage(prev) &&
-        !isPendingAgentMessage(msg)
+        !prev.isApiError &&
+        !msg.isApiError
       ) {
         let nextBlocks = [...prev.blocks];
         for (const block of msg.blocks) {
@@ -614,6 +599,7 @@ export const agentSessionToChatMessages = (
           ...prevItem,
           message: {
             ...prev,
+            ...(msg.streamingMessageId === undefined ? {} : { streamingMessageId: msg.streamingMessageId }),
             blocks: nextBlocks,
             ...(workDurationMs === undefined ? {} : { workDurationMs }),
             ...(nextRollback === undefined ? {} : { rollback: nextRollback })
@@ -628,6 +614,15 @@ export const agentSessionToChatMessages = (
   }
 
   const finalMessages = finalItems.map((item) => item.message);
+  // A model request can start before its first assistant shell arrives. Keep
+  // that activity after the current user, never on a previous turn's answer.
+  if (session.turnStatus === "running" && finalMessages.at(-1)?.author !== "agent") {
+    finalMessages.push({
+      id: "lyra-agent-loading",
+      author: "agent",
+      blocks: [{ type: "text", id: "lyra-agent-loading-text", body: "" }]
+    });
+  }
   return attachEphemeralRunningTools(session, finalMessages);
 };
 

@@ -20,6 +20,8 @@ const BROWSER_FOLLOW_TOOLS: &[&str] = &[
     "browser_wait",
     "browser_drag",
     "browser_dialog",
+    "browser_see",
+    "browser_vact",
 ];
 const DEFAULT_SEARCH_LIMIT: usize = 5;
 const MAX_SEARCH_LIMIT: usize = 25;
@@ -40,7 +42,7 @@ const EAGER_DEFERRED_EXCLUSIONS: &[&str] = &[
 
 const TOOL_SEARCH_PROMPT_HEAD: &str =
     "Fetches full schema definitions for deferred tools so they can be called.";
-const TOOL_SEARCH_PROMPT_TAIL: &str = " Tools whose schemas are already in this request can be called directly; do not search for them again. browser_map, browser_read and browser_navigate are always available. An attached browser map also makes browser_act, browser_type, browser_press, browser_wait, browser_upload, browser_drag and browser_dialog available. Query forms for other tools:\n- \"select:browser_scroll,computer_map\" — fetch these exact tools by name\n- \"notebook jupyter\" — keyword search, up to max_results best matches";
+const TOOL_SEARCH_PROMPT_TAIL: &str = " Tools whose schemas are already in this request can be called directly; do not search for them again. browser_map, browser_read and browser_navigate are always available. An attached browser map also makes browser_act, browser_type, browser_press, browser_wait, browser_upload, browser_drag, browser_dialog, browser_see and browser_vact available. Query forms for other tools:\n- \"select:browser_scroll,computer_map\" — fetch these exact tools by name\n- \"notebook jupyter\" — keyword search, up to max_results best matches";
 
 #[derive(Clone, Debug)]
 pub(crate) struct DeferredTool {
@@ -106,7 +108,7 @@ pub(crate) fn discovered_tool_names(snapshot: &Value) -> Vec<String> {
 pub(crate) fn record_browser_follow_tools(session_id: &str, tool_name: &str) {
     if !matches!(
         tool_name,
-        "browser_map" | "browser_read" | "browser_navigate"
+        "browser_map" | "browser_read" | "browser_navigate" | "browser_see" | "browser_vact"
     ) {
         return;
     }
@@ -444,6 +446,10 @@ pub(crate) fn tool_search_provider_tool(tools: &[DeferredTool], max_tokens: usiz
                     "type": "string",
                     "description": "Query to find deferred tools. Use \"select:<tool_name>\" for direct selection, or keywords to search."
                 },
+                "refresh": {
+                    "type": "boolean",
+                    "description": "Refresh the host catalog only after a reported catalog failure or newly installed software; ordinary searches use the existing catalog."
+                },
                 "max_results": {
                     "type": "integer",
                     "minimum": 1,
@@ -455,13 +461,6 @@ pub(crate) fn tool_search_provider_tool(tools: &[DeferredTool], max_tokens: usiz
             "required": ["query"]
         }),
     )
-}
-
-fn mark_defer_loading(mut tool: Value) -> Value {
-    if let Some(object) = tool.as_object_mut() {
-        object.insert("defer_loading".to_string(), json!(true));
-    }
-    tool
 }
 
 fn mcp_capability_connected(manifest: &ToolManifest) -> bool {
@@ -519,16 +518,17 @@ fn has_attached_browser_map(snapshot: &Value) -> bool {
 
 pub(crate) fn persist_discovered_snapshot(
     session_id: &str,
-    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
+    _dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
 ) {
-    let deferred = deferred_tools(dispatcher);
     let Ok(mut state) = state().lock() else {
         return;
     };
     let Some(session) = state.sessions.get_mut(session_id) else {
         return;
     };
-    let names = promotable_discovered_names(&session.snapshot, &deferred);
+    // Discovery records intent. Availability filters the current request; a
+    // temporary disconnection must never erase what the model has loaded.
+    let names = discovered_tool_names(&session.snapshot);
     let encoded = json!(names);
     if session.snapshot.get(DISCOVERED_TOOL_NAMES_KEY) != Some(&encoded) {
         session.snapshot[DISCOVERED_TOOL_NAMES_KEY] = encoded;
@@ -540,7 +540,6 @@ pub(crate) fn assemble_provider_tools(
     snapshot: &Value,
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
     context_window: Option<usize>,
-    defer_loading: bool,
 ) -> Vec<Value> {
     let deferred = deferred_tools(dispatcher);
     let budget = listing_token_budget(context_window.unwrap_or(128_000) as u64);
@@ -553,12 +552,9 @@ pub(crate) fn assemble_provider_tools(
             continue;
         }
         if let Some(entry) = deferred.iter().find(|tool| tool.name == *name) {
-            let schema = if defer_loading {
-                mark_defer_loading(entry.schema.clone())
-            } else {
-                entry.schema.clone()
-            };
-            tools.push(schema);
+            // Discovery has already selected this schema. Sending it deferred
+            // again hides it when old search result references are compacted.
+            tools.push(entry.schema.clone());
         }
     }
     if has_attached_browser_map(snapshot)
@@ -640,6 +636,17 @@ fn parse_select_names(query: &str) -> Option<Vec<String>> {
     (!names.is_empty()).then_some(names)
 }
 
+fn partition_available_candidates(
+    names: Vec<String>,
+    deferred: &[DeferredTool],
+) -> (Vec<String>, Vec<String>) {
+    names.into_iter().partition(|name| {
+        deferred.iter().any(|tool| {
+            tool.name == *name && tool.manifest.as_ref().is_none_or(mcp_capability_connected)
+        })
+    })
+}
+
 pub(crate) fn execute_tool_search(
     session_id: &str,
     turn_id: &str,
@@ -660,6 +667,9 @@ pub(crate) fn execute_tool_search(
         .and_then(Value::as_u64)
         .unwrap_or(DEFAULT_SEARCH_LIMIT as u64)
         .clamp(1, MAX_SEARCH_LIMIT as u64) as usize;
+    if call.arguments.get("refresh").and_then(Value::as_bool) == Some(true) {
+        tool_fs::refresh_software_catalog(dispatcher);
+    }
     let deferred = deferred_tools(dispatcher);
     let eager_names = eager_model_tools_without_search()
         .iter()
@@ -692,6 +702,7 @@ pub(crate) fn execute_tool_search(
     // requested candidate, but do not carry a broad keyword search's weak
     // matches in every subsequent model request. Exact selections are explicit.
     let candidates = matches.clone();
+    let (matches, unavailable) = partition_available_candidates(matches, &deferred);
     let matches = if parse_select_names(&query).is_some() {
         matches
     } else {
@@ -701,11 +712,14 @@ pub(crate) fn execute_tool_search(
     let mut raw = json!({
         "matches": matches,
         "candidates": candidates,
+        "unavailable": unavailable,
         "alreadyAvailable": already_available,
         "query": query,
         "total_deferred_tools": deferred.len(),
     });
-    let content = if matches.is_empty() && already_available.is_empty() {
+    let (_, diagnostics) = tool_fs::software_catalog::software_catalog(dispatcher, false);
+    raw["catalogDiagnostics"] = json!(diagnostics);
+    let content = if candidates.is_empty() && already_available.is_empty() {
         let mut sources = std::collections::BTreeMap::<&str, usize>::new();
         for tool in &deferred {
             *sources.entry(&tool.source_name).or_default() += 1;
@@ -734,10 +748,28 @@ pub(crate) fn execute_tool_search(
                 matches.join(", ")
             ));
         }
-        if candidates.len() > matches.len() {
-            parts.push(format!("Additional ranked candidates (not loaded): {}. Load only a needed candidate with select:<name>.", candidates[matches.len()..].join(", ")));
+        if !unavailable.is_empty() {
+            parts.push(format!("Found but not loaded: {}. Their MCP server is disconnected or disabled. Load mcp_server_connect with ToolSearch and connect the configured server before using these tools.", unavailable.join(", ")));
+        }
+        let additional = candidates
+            .iter()
+            .filter(|name| !matches.contains(name) && !unavailable.contains(name))
+            .cloned()
+            .collect::<Vec<_>>();
+        if !additional.is_empty() {
+            parts.push(format!("Additional ranked candidates (not loaded): {}. Load only a needed candidate with select:<name>.", additional.join(", ")));
         }
         parts.join("\n")
+    };
+    let content = if diagnostics
+        .iter()
+        .any(|diagnostic| diagnostic["code"] == "dynamic_provider_failed")
+    {
+        format!(
+            "{content}\nSoftware catalog refresh failed; last successful definitions are retained. This is not proof a tool is absent. Retry ToolSearch with refresh=true if you need an updated catalog."
+        )
+    } else {
+        content
     };
     let output = json!({
         "content": content,
@@ -772,12 +804,15 @@ pub(crate) fn request_contains_tool(tools: &[Value], name: &str) -> bool {
 pub(crate) fn schema_not_sent_if_needed(
     name: &str,
     request_tools: &[Value],
-    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
+    _dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
 ) -> Option<Value> {
-    if request_contains_tool(request_tools, name) || is_tool_search_name(name) {
+    if request_contains_tool(request_tools, name) {
         return None;
     }
-    lookup_deferred_tool(name, dispatcher).map(|_| schema_not_sent_hint(name))
+    // Reject every unadvertised name before dispatch, including invented or
+    // removed tools. Parsing must preserve these calls so the model receives
+    // a normal tool result and can correct itself. No host query is needed.
+    Some(schema_not_sent_hint(name))
 }
 
 #[cfg(test)]
@@ -785,11 +820,55 @@ mod tests {
     use super::*;
 
     #[test]
+    fn disconnected_mcp_candidates_are_found_but_never_reported_as_loaded() {
+        let available = cached_builtin_deferred_tools()
+            .iter()
+            .find(|tool| tool.name == "browser_scroll")
+            .unwrap()
+            .clone();
+        let mut disconnected = available.clone();
+        disconnected.name = "mcp__offline_fixture__inspect".into();
+        let manifest = disconnected.manifest.as_mut().unwrap();
+        manifest.domain = "mcp".into();
+        manifest.path = "/tools/mcp/capability/offline-fixture/inspect".into();
+        let names = vec![disconnected.name.clone(), available.name.clone()];
+        let (loaded, unavailable) =
+            partition_available_candidates(names, &[available, disconnected]);
+        assert_eq!(loaded, vec!["browser_scroll"]);
+        assert_eq!(unavailable, vec!["mcp__offline_fixture__inspect"]);
+    }
+
+    #[test]
+    fn loaded_schema_stays_visible_without_search_history_and_rejects_unadvertised_calls() {
+        let tools = assemble_provider_tools(
+            &json!({"discoveredToolNames":["browser_scroll"],"messages":[]}),
+            None,
+            Some(128_000),
+        );
+        let schema = tools
+            .iter()
+            .find(|tool| tool["function"]["name"] == "browser_scroll")
+            .unwrap();
+        assert!(schema.get("defer_loading").is_none());
+        for name in [
+            "invented_tool",
+            "software__removed__action",
+            TOOL_SEARCH_TOOL_NAME,
+        ] {
+            assert_eq!(
+                schema_not_sent_if_needed(name, &[], None).unwrap()["error"]["code"],
+                "tool_schema_not_sent"
+            );
+        }
+        assert!(schema_not_sent_if_needed("browser_scroll", &tools, None).is_none());
+    }
+
+    #[test]
     fn attached_map_exposes_action_schemas_in_the_first_request() {
         let snapshot = json!({"messages":[{"role":"user", "metadata":{"pageCitations":[{
             "pageUrl":"https://example.test/", "surfaceMap":"[1 targetRef=lumen:send] button: Send"
         }]}}]});
-        let tools = assemble_provider_tools(&snapshot, None, Some(128_000), true);
+        let tools = assemble_provider_tools(&snapshot, None, Some(128_000));
         for name in BROWSER_FOLLOW_TOOLS {
             let schema = tools
                 .iter()
@@ -862,7 +941,7 @@ mod tests {
                 "{query}: {output}"
             );
             assert!(discovered_tool_names(&snapshot).contains(&"browser_upload".to_string()));
-            let tools = assemble_provider_tools(&snapshot, None, Some(128_000), false);
+            let tools = assemble_provider_tools(&snapshot, None, Some(128_000));
             assert!(request_contains_tool(&tools, "browser_upload"));
             assert!(schema_not_sent_if_needed("browser_upload", &tools, None).is_none());
             let wire = providers::protocol::openai_chat_completions::build_request_body(
@@ -972,7 +1051,7 @@ mod tests {
 
     #[test]
     fn assemble_starts_with_eager_and_tool_search() {
-        let tools = assemble_provider_tools(&json!({}), None, Some(128_000), false);
+        let tools = assemble_provider_tools(&json!({}), None, Some(128_000));
         let names: Vec<_> = tools
             .iter()
             .filter_map(|tool| tool.pointer("/function/name").and_then(Value::as_str))
@@ -996,7 +1075,6 @@ mod tests {
             }),
             None,
             Some(128_000),
-            true,
         );
         let typed = tools
             .iter()
@@ -1031,7 +1109,16 @@ mod tests {
                 .pointer("/function/parameters/properties/files")
                 .is_some()
         );
-        assert!(!names.contains(&"browser_see"));
+        assert!(names.contains(&"browser_see"));
+        assert!(names.contains(&"browser_vact"));
+        for name in ["browser_see", "browser_vact"] {
+            let tool = tools
+                .iter()
+                .find(|tool| tool.pointer("/function/name").and_then(Value::as_str) == Some(name))
+                .unwrap();
+            assert!(tool.get("defer_loading").is_none());
+            assert!(tool.pointer("/function/parameters/properties").is_some());
+        }
     }
 
     fn assemble_promotes_discovered_tools() {
@@ -1039,7 +1126,6 @@ mod tests {
             &json!({ "discoveredToolNames": ["web_search"] }),
             None,
             Some(128_000),
-            false,
         );
         let names: Vec<_> = tools
             .iter()
@@ -1060,7 +1146,6 @@ mod tests {
             }),
             None,
             Some(128_000),
-            false,
         );
         let names: Vec<_> = tools
             .iter()
@@ -1102,7 +1187,6 @@ mod tests {
             }),
             None,
             Some(128_000),
-            false,
         );
         let names: Vec<_> = tools
             .iter()
@@ -1153,7 +1237,7 @@ mod tests {
         snapshot: &Value,
         dispatcher: &Arc<HostCapabilityDispatcher>,
     ) -> Vec<String> {
-        assemble_provider_tools(snapshot, Some(dispatcher), Some(128_000), false)
+        assemble_provider_tools(snapshot, Some(dispatcher), Some(128_000))
             .iter()
             .filter_map(|tool| {
                 tool.pointer("/function/name")
@@ -1231,7 +1315,7 @@ mod tests {
             "messages": [{ "role": "user", "text": "把背景改成黑色" }],
             "ephemeralOfficeTools": true
         });
-        let tools = assemble_provider_tools(&open, Some(&dispatcher), Some(128_000), true);
+        let tools = assemble_provider_tools(&open, Some(&dispatcher), Some(128_000));
         let apply = tools
             .iter()
             .find(|tool| {

@@ -8,6 +8,7 @@ export type ResourceChipProps = {
   readonly label: ReactNode;
   readonly onActivate?: (() => void) | undefined;
   readonly title?: string | undefined;
+  readonly webLinkUrl?: string | undefined;
 };
 
 const chipClassName = (className?: string): string => [
@@ -39,11 +40,12 @@ export const ResourceChip = ({
   icon,
   label,
   onActivate,
-  title
+  title,
+  webLinkUrl
 }: ResourceChipProps) => {
   if (onActivate === undefined) {
     return (
-      <span className={chipClassName(className)} title={title} aria-label={ariaLabel}>
+      <span className={chipClassName(className)} title={title} aria-label={ariaLabel} data-web-link-url={webLinkUrl}>
         <ChipContents icon={icon} label={label} />
       </span>
     );
@@ -62,6 +64,7 @@ export const ResourceChip = ({
       className={chipClassName(className)}
       title={title}
       aria-label={ariaLabel}
+      data-web-link-url={webLinkUrl}
       onClick={activate}
     >
       <ChipContents icon={icon} label={label} />

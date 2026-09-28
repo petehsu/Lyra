@@ -505,7 +505,7 @@ pub(crate) fn model_tools() -> Vec<Value> {
     static TOOLS: OnceLock<Vec<Value>> = OnceLock::new();
     TOOLS
         .get_or_init(|| {
-            tools::tool_search::assemble_provider_tools(&json!({}), None, Some(128_000), false)
+            tools::tool_search::assemble_provider_tools(&json!({}), None, Some(128_000))
         })
         .clone()
 }
@@ -672,13 +672,13 @@ pub(crate) fn codex_code_model_tools() -> Vec<Value> {
     vec![
         function_tool(
             tools::READ_FILE_MODEL_TOOL,
-            "Read one regular text file. Invalid or truncated UTF-8 bytes are replaced. This tool rejects directories and binary files; use glob to enumerate a directory and grep to search text.",
+            "Read a local text file or image directly. PNG/JPEG/WebP/GIF images become model vision input without opening a browser or Image Viewer; images are bounded to 2048 pixels and animations show their first frame. For text, invalid or truncated UTF-8 bytes are replaced. This tool rejects directories and other binary formats; use glob for directories and grep for text search.",
             json!({
                 "type": "object",
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Workspace-relative or absolute path to a regular text file. Do not pass a directory such as ."
+                        "description": "Workspace-relative or absolute path to a text file or image, including downloaded/generated images. Do not pass a directory such as ."
                     },
                     "startLine": {
                         "type": "integer",

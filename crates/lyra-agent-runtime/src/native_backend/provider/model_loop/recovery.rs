@@ -380,10 +380,14 @@ pub(super) fn take_provider_protocol_auxiliary_messages(
                 && message.get("lyraAttemptLocal").and_then(Value::as_bool) != Some(true)
         })
         .map(|message| {
-            json!({
+            let mut persisted = json!({
                 "role": message.get("role").cloned().unwrap_or_else(|| json!("user")),
                 "content": message.get("content").cloned().unwrap_or(Value::Null),
-            })
+            });
+            if let Some(meta) = message.get("lyraVisualEvidence") {
+                persisted["lyraVisualEvidence"] = meta.clone();
+            }
+            persisted
         })
         .collect()
 }

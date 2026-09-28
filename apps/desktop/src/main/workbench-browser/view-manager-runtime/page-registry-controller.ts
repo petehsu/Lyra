@@ -190,10 +190,13 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
   const pendingLoadAddressByTabId = new Map<string, string>();
 
   const knownPages = new Map<string, WorkbenchBrowserPageSpec>();
-  const getEntry = (tabId: string): BrowserPageEntry | undefined => entries.get(tabId);
+  const getEntry = (tabId: string): BrowserPageEntry | undefined => {
+    const entry = entries.get(tabId);
+    return entry && !entry.isDestroyed && !entry.webContents.isDestroyed() ? entry : undefined;
+  };
   const ensureAgentEntry = (tabId: string): BrowserPageEntry | undefined => {
     const existing = entries.get(tabId);
-    if (existing && !existing.isDestroyed) return existing;
+    if (existing && !existing.isDestroyed && !existing.webContents.isDestroyed()) return existing;
     const spec = knownPages.get(tabId);
     if (!spec) return undefined; // A closed/unknown tab is never resurrected.
     const runtime = host.readTombstoneRuntime(tabId);
@@ -417,6 +420,7 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
         webContents.removeAllListeners("enter-html-full-screen");
         webContents.removeAllListeners("leave-html-full-screen");
         webContents.removeAllListeners("render-process-gone");
+        webContents.removeAllListeners("destroyed");
       }
     };
     host.markPendingRestoreValidation(spec.tabId, restoredRuntime?.restoreState);
@@ -703,6 +707,12 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
       host.applyLayout();
     });
 
+    webContents.once("destroyed", () => {
+      if (entry.isDestroyed) return;
+      destroyEntry(entry, false);
+      if (entries.get(entry.tabId) === entry) entries.delete(entry.tabId);
+    });
+
     webContents.on("render-process-gone", () => {
       host.onBrowserHealthCrash?.(entry.tabId);
       destroyEntry(entry, true);
@@ -721,7 +731,10 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
 
   const ensureEntry = (spec: WorkbenchBrowserPageSpec, forAgent = false): BrowserPageEntry | null => {
     const existing = entries.get(spec.tabId);
-    if (existing !== undefined) {
+    if (existing && (existing.isDestroyed || existing.webContents.isDestroyed())) {
+      destroyEntry(existing, false);
+      if (entries.get(spec.tabId) === existing) entries.delete(spec.tabId);
+    } else if (existing !== undefined) {
       existing.titleHint = spec.titleHint ?? existing.titleHint;
       host.updateRuntimeState(existing, {
         isActive: spec.isActive,
@@ -911,7 +924,7 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
 
   const requireEntry = (tabId: string): BrowserPageEntry => {
     const entry = entries.get(tabId);
-    if (entry === undefined || entry.isDestroyed) {
+    if (entry === undefined || entry.isDestroyed || entry.webContents.isDestroyed()) {
       throw new Error(`Unknown browser tab: ${tabId}`);
     }
     return entry;
@@ -963,7 +976,7 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
     request: import("../../../shared/workbench-browser").WorkbenchBrowserExecutePageContextActionRequest
   ): void => {
     const entry = entries.get(request.tabId);
-    if (entry === undefined || entry.isDestroyed) {
+    if (entry === undefined || entry.isDestroyed || entry.webContents.isDestroyed()) {
       return;
     }
     executePageContextAction(
@@ -980,7 +993,7 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
 
   const reload = (tabId: string, ignoreCache = false): void => {
     const entry = entries.get(tabId);
-    if (entry === undefined || entry.isDestroyed) {
+    if (entry === undefined || entry.isDestroyed || entry.webContents.isDestroyed()) {
       return;
     }
     if (ignoreCache) {
@@ -992,7 +1005,7 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
 
   const stop = (tabId: string): void => {
     const entry = entries.get(tabId);
-    if (entry === undefined || entry.isDestroyed) {
+    if (entry === undefined || entry.isDestroyed || entry.webContents.isDestroyed()) {
       return;
     }
     entry.webContents.stop();
@@ -1074,7 +1087,7 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
       return false;
     }
     const entry = entries.get(targetTabId);
-    if (entry === undefined || entry.isDestroyed) {
+    if (entry === undefined || entry.isDestroyed || entry.webContents.isDestroyed()) {
       return false;
     }
     if (entry.webContents.isDevToolsOpened()) {

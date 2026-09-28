@@ -2,30 +2,12 @@ import type { WorkspaceTab } from "../../../../workspace-tabs/types";
 import { readBrowserHistoryEntries } from "../../../../browser-history/service";
 import { getDesktopApi } from "../../../../shell/service";
 import type { ComposerLinkSegment } from "./message-citation";
+import { parseComposerHttpUrl, websiteLinkLabel } from "./web-link-display";
+
+export { parseComposerHttpUrl, websiteLinkLabel } from "./web-link-display";
 
 const websiteFaviconRequests = new Map<string, Promise<string | null>>();
 const resolvedWebsiteFavicons = new Map<string, string | null>();
-
-export const parseComposerHttpUrl = (raw: string): string | null => {
-  const value = raw.trim();
-  if (!/^https?:\/\//iu.test(value) || /\s/u.test(value)) {
-    return null;
-  }
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:" ? value : null;
-  } catch {
-    return null;
-  }
-};
-
-export const websiteLinkLabel = (url: string): string => {
-  try {
-    return new URL(url).host.replace(/^www\./iu, "") || url;
-  } catch {
-    return url;
-  }
-};
 
 const existingFaviconUrl = (tab: WorkspaceTab): string | null => {
   const faviconUrl = tab.faviconUrl?.trim();

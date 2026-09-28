@@ -8,6 +8,7 @@ Last verified: 2026-09-20
 - [Desktop main and renderer processes](desktop-processes.md)
 - [Agent runtime](agent-runtime.md)
 - [Browser and automation](browser-automation.md)
+- [Hybrid visual browser control](visual-browser-control.md)
 - [Storage](storage.md)
 - [Authentication](authentication.md)
 - [Extensions](extensions.md)

@@ -486,7 +486,7 @@ mod tests {
     }
 
     #[test]
-    fn fallback_drafts_still_reject_unknown_tools() {
+    fn fallback_drafts_preserve_unknown_tools_for_dispatch_rejection() {
         let stream = [
             r#"data: {"type":"response.output_text.delta","delta":"I cannot use that tool."}"#,
             r#"data: {"type":"response.output_item.added","output_index":1,"item":{"type":"function_call","id":"fc-1","call_id":"call-1","name":"unknown_tool","arguments":"{}"}}"#,
@@ -495,7 +495,7 @@ mod tests {
         ]
         .join("\n\n");
 
-        let error = parse_streaming_response(
+        let reply = parse_streaming_response(
             std::io::Cursor::new(stream),
             "",
             "",
@@ -503,9 +503,9 @@ mod tests {
             &[json!({ "type": "function", "function": { "name": "tool_fs_run" } })],
             false,
         )
-        .expect_err("unknown tool");
+        .expect("complete but unavailable call");
 
-        assert!(error.to_string().contains("function call"));
+        assert_eq!(reply.tool_calls[0].name, "unknown_tool");
     }
 
     #[test]

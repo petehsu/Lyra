@@ -308,7 +308,8 @@ const SessionRow = ({
   readonly onToggleSaved: (session: AgentSessionSummary) => void;
   readonly onDelete: (session: AgentSessionSummary) => void;
 }) => {
-  const disabled = opening || busy;
+  // Preview reads must not disable the button between pointer-down and click.
+  const disabled = busy;
   const rawTitle = sessionRawTitle(session);
   const title = sessionDisplayTitle(session);
   const workingDir = session.workingDir?.trim() ?? "";
@@ -372,7 +373,7 @@ const SessionRow = ({
         role="button"
         tabIndex={disabled ? -1 : 0}
         aria-disabled={disabled ? "true" : undefined}
-        aria-busy={running ? "true" : undefined}
+        aria-busy={running || opening ? "true" : undefined}
         aria-label={`${labels.openInAiPanel}: ${title}`}
         className={
           [
@@ -392,7 +393,9 @@ const SessionRow = ({
         )}
         onClick={handleActivate}
         onMouseEnter={handlePreview}
-        onFocus={handlePreview}
+        onFocus={(event) => {
+          if (event.target === event.currentTarget) handlePreview();
+        }}
         onContextMenu={handleContextMenu}
         onKeyDown={(event) => {
           if (isRowActivationKey(event)) {

@@ -8,10 +8,10 @@ expression: pretty(&prompt_projection(&report))
     "memoryProjectionVersion": 1,
     "promptDeliveryModeVersion": 1,
     "promptPolicyVersion": 11,
-    "promptTemplateVersion": 61,
+    "promptTemplateVersion": 63,
     "retentionPolicyVersion": 1,
     "runtimeContextSchemaVersion": 6,
-    "toolDiscoveryContractVersion": 2
+    "toolDiscoveryContractVersion": 4
   },
   "estimatedPromptTokens": 2093,
   "estimatedSavedTokens": 238,

@@ -416,14 +416,14 @@ export const createAgentShadowController = ({
         : modeRequest.visibleFollow !== false;
     if (requestedTargetMode === "live") {
       const liveEntry = getEntry(tabId) ?? ensureLiveEntry?.(tabId);
-      if (liveEntry !== undefined && liveEntry.isDestroyed === false) {
+      if (liveEntry !== undefined && liveEntry.isDestroyed === false && !liveEntry.webContents.isDestroyed()) {
         return liveAgentTarget(
           liveEntry,
           defaultBrowserMode("live", "explicit_live", visibleFollow)
         );
       }
       const existingShadow = browserAgentShadows.get(tabId);
-      if (existingShadow !== undefined && existingShadow.targetMode === "live") {
+      if (existingShadow !== undefined && existingShadow.targetMode === "live" && !existingShadow.webContents.isDestroyed()) {
         existingShadow.browserMode = defaultBrowserMode("live", "explicit_live", visibleFollow);
         return existingShadow;
       }
@@ -433,7 +433,7 @@ export const createAgentShadowController = ({
       throw new Error(`Live browser page is not materialized: ${tabId || "(missing-tab-id)"}`);
     }
     const entry = getEntry(tabId);
-    if (requestedTargetMode === undefined && entry !== undefined && entry.isDestroyed === false) {
+    if (requestedTargetMode === undefined && entry !== undefined && entry.isDestroyed === false && !entry.webContents.isDestroyed()) {
       return liveAgentTarget(
         entry,
         defaultBrowserMode("live", "default_current_visible_browser", visibleFollow)
@@ -444,7 +444,7 @@ export const createAgentShadowController = ({
       ? "explicit_isolated"
       : "explicit_isolated";
     let target: BrowserAgentShadowEntry;
-    if (entry !== undefined && entry.isDestroyed === false) {
+    if (entry !== undefined && entry.isDestroyed === false && !entry.webContents.isDestroyed()) {
       target = await ensureBrowserAgentShadow(entry, timeoutMs);
       if (wantsLiveLoginState(modeRequest)) {
         loginBorrow = await copyLiveLoginStateToIsolated(entry, target, timeoutMs);

@@ -47,7 +47,7 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "browser",
             "read",
             "Read browser page",
-            "Read page text, search displayed text with query (Ctrl+F), or return a JSON schema hint. query does not retrieve a field by its name; use browser_map(query) for named controls.",
+            "Read rendered page text or search it with query (Ctrl+F). instruction/schema are interpretation hints only: this tool does not execute them, extract arbitrary HTML attributes, or apply a JSON schema. query does not retrieve a field by its name; use browser_map(query) for named controls.",
             Some("browser_read"),
         ),
         super::s(
@@ -55,7 +55,7 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "browser",
             "see",
             "See browser page",
-            "Capture a visual snapshot of any web page — inspect real product UIs, design references, live demos.",
+            "See the current page with thin real-object boxes and stable short marks. Use a region mark for a close view; crowded pages return nextOffset. Marks share the nonvisual control registry; canvas regions still require visual interpretation.",
             None,
         ),
         super::s(
@@ -79,7 +79,7 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "browser",
             "vact",
             "Visually act in browser",
-            "Click, drag, or scroll a browser page using device-pixel coordinates read from the latest see screenshot.",
+            "Act by screenshot mark using real object references. Supports typing, keys/holds, continuous drag paths, scrolling and explicit sequences. position is relative within a mark; raw point is image pixels. Returns the resulting marked image when needed, without another see call. Never replay completed steps.",
             None,
         ),
         super::s(

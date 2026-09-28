@@ -1,3 +1,4 @@
+import { SURFACE_DOM_ACCESS } from "./surface-dom-access";
 import { SURFACE_TARGET_LOOKUP } from "./surface-target";
 import { browserTargetVisibilityRuntime } from "./agent-target-visibility";
 
@@ -7,6 +8,7 @@ export type BrowserEditorPreparation = { readonly ok: boolean; readonly errorKin
 // focus it is an extra action; clicking an editor destroys its caret/selection.
 export const prepareBrowserKeyTargetScript = (targetRef: string, selectText?: string, occurrence?: number): string => `(() => {
   ${SURFACE_TARGET_LOOKUP}
+  ${SURFACE_DOM_ACCESS}
   const node = findSurfaceTarget(${JSON.stringify(targetRef)});
   const fail = errorKind => ({ ok: false, errorKind, message: ({
     target_not_visible: "The target has no visible rendered box. Reveal it before retrying; no key was sent.",
@@ -24,12 +26,7 @@ export const prepareBrowserKeyTargetScript = (targetRef: string, selectText?: st
   node.scrollIntoView({block:"nearest",inline:"nearest",behavior:"instant"});
   const rect = node.getBoundingClientRect();
   if (!rect.width || !rect.height) return fail("target_not_visible");
-  let hit = doc.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-  while (hit?.shadowRoot?.elementFromPoint) {
-    const inner = hit.shadowRoot.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-    if (!inner || inner === hit) break;
-    hit = inner;
-  }
+  const hit = surfaceHitForNode(node, rect.left + rect.width / 2, rect.top + rect.height / 2);
   if (hit !== node && !node.contains(hit)) return fail("target_covered");
   const text = ${JSON.stringify(selectText ?? null)}, occurrence = ${JSON.stringify(occurrence ?? null)};
   const input = node instanceof win.HTMLInputElement || node instanceof win.HTMLTextAreaElement;
@@ -46,8 +43,7 @@ export const prepareBrowserKeyTargetScript = (targetRef: string, selectText?: st
     start = matches[(occurrence ?? 1) - 1];
   }
   node.focus({preventScroll:true});
-  let active = doc.activeElement;
-  while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
+  const active = surfaceActiveElement(doc);
   if (active !== node && !node.contains(active)) return fail("target_not_focusable");
   if (text !== null) {
     if (input) {
@@ -75,8 +71,8 @@ export const prepareBrowserKeyTargetScript = (targetRef: string, selectText?: st
 
 /** Read focus and selection without changing either. Never expose password text. */
 export const browserEditorStateRuntime = String.raw`(doc => {
-  let node = doc.activeElement;
-  while (node?.shadowRoot?.activeElement) node = node.shadowRoot.activeElement;
+  ${SURFACE_DOM_ACCESS}
+  const node = surfaceActiveElement(doc);
   if (!node || node.type === "password") return null;
   const input = node.tagName === "INPUT" || node.tagName === "TEXTAREA";
   if (!input && !node.isContentEditable) return null;

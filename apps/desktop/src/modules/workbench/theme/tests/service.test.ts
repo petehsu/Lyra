@@ -80,6 +80,7 @@ describe("workbench theme service", () => {
     const unsubscribe = observeSystemPrefersDark(onChange);
 
     expect(listeners).toHaveLength(1);
+    media.matches = true;
     listeners[0]?.({ matches: true });
     expect(onChange).toHaveBeenCalledWith(true);
 
@@ -108,6 +109,7 @@ describe("workbench theme service", () => {
     const unsubscribe = observeSystemPrefersDark(onChange);
 
     expect(listeners).toHaveLength(1);
+    media.matches = true;
     listeners[0]?.({ matches: true });
     expect(onChange).toHaveBeenCalledWith(true);
 

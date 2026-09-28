@@ -9,6 +9,7 @@ use crate::schema::{attach_schema_id, object_schema, schema_id_for_path};
 mod agent;
 mod browser;
 mod browser_ax;
+mod browser_visual;
 mod computer;
 mod design;
 mod discovery;
@@ -851,49 +852,7 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             ],
             &[],
         ),
-        ("browser", "see") => object_schema(
-            [
-                (
-                    "tabId",
-                    string(
-                        "Use a tab id returned by browser navigate/open or Workbench list tabs; never guess.",
-                    ),
-                ),
-                (
-                    "targetMode",
-                    json!({ "type": "string", "enum": ["live", "isolated"], "default": "live" }),
-                ),
-                (
-                    "highlightTargets",
-                    json!({ "type": "boolean", "default": true, "description": "Draw targetRef bounding boxes on the screenshot for vision models." }),
-                ),
-                (
-                    "highlightTargetRefs",
-                    string_array(
-                        "Optional targetRefs to highlight; defaults to mapped targets when highlightTargets is true.",
-                    ),
-                ),
-                (
-                    "annotate",
-                    json!({ "type": "boolean", "default": false, "description": "When true, annotate actionable AX nodes from the latest snapshot with colored bounding boxes and return an annotations table mapping index→axRef→role→name→color. Visual and semantic workflows then share the same refs; call /tools/browser/vact with axRef to act on a numbered box." }),
-                ),
-                (
-                    "annotateAxRefs",
-                    string_array(
-                        "Optional axRefs to annotate on the screenshot; defaults to all actionable AX nodes with bounds when annotate is true.",
-                    ),
-                ),
-                (
-                    "downsampleForVision",
-                    json!({ "type": "boolean", "default": true, "description": "Downsample screenshots to <=2000px longest edge before returning vision artifacts." }),
-                ),
-                (
-                    "timeoutMs",
-                    json!({ "type": "integer", "minimum": 250, "maximum": 120000 }),
-                ),
-            ],
-            &[],
-        ),
+        ("browser", "see") => browser_visual::see_schema(),
         ("browser", "map") => object_schema(
             [
                 ("tabId", browser_tab_id_schema()),
@@ -1294,57 +1253,7 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             ],
             &[],
         ),
-        ("browser", "vact") => object_schema(
-            [
-                ("tabId", browser_tab_id_schema()),
-                ("targetMode", browser_target_mode_schema()),
-                (
-                    "captureId",
-                    string(
-                        "captureId from the latest /tools/browser/see VisualFrame these coordinates were read from. Stale ids (after scroll, navigation, or any panel/window resize) are rejected.",
-                    ),
-                ),
-                (
-                    "axRef",
-                    string(
-                        "Optional axRef; when provided, derive the click point from the AX node's bbox center instead of reading device-pixel coordinates from the screenshot. Still requires captureId for viewport-staleness verification. Either axRef or point must be supplied.",
-                    ),
-                ),
-                (
-                    "point",
-                    json!({
-                        "type": "object",
-                        "description": "Device-pixel coordinate read directly off the latest see screenshot (origin = top-left of the screenshot). Optional when axRef is supplied.",
-                        "properties": {
-                            "x": { "type": "number", "description": "Device-pixel X on the see image." },
-                            "y": { "type": "number", "description": "Device-pixel Y on the see image." },
-                            "reason": { "type": "string", "description": "Why this point is the intended target." }
-                        },
-                        "required": ["x", "y"]
-                    }),
-                ),
-                (
-                    "interaction",
-                    json!({ "type": "string", "enum": ["click", "doubleClick", "rightClick", "hover", "drag", "scroll"], "default": "click" }),
-                ),
-                ("effect", browser_action_effect_schema()),
-                (
-                    "to",
-                    json!({
-                        "type": "object",
-                        "description": "Drag target device-pixel coordinate (for interaction=drag).",
-                        "properties": { "x": { "type": "number" }, "y": { "type": "number" } },
-                        "required": ["x", "y"]
-                    }),
-                ),
-                (
-                    "scrollDy",
-                    json!({ "type": "number", "description": "Vertical scroll delta in CSS pixels (for interaction=scroll). Positive scrolls down." }),
-                ),
-                ("timeoutMs", browser_timeout_ms_schema()),
-            ],
-            &["captureId", "effect"],
-        ),
+        ("browser", "vact") => browser_visual::action_schema(),
         ("browser_ax", "map") => object_schema(
             [
                 ("tabId", browser_tab_id_schema()),

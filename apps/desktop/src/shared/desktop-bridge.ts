@@ -522,6 +522,8 @@ export const LYRA_CHANNELS = {
   toggleWindowMaximize: "lyra:shell/window/toggle-maximize",
   closeWindow: "lyra:shell/window/close",
   setWindowThemeSource: "lyra:shell/window/set-theme-source",
+  readWindowTheme: "lyra:shell/window/read-theme",
+  windowThemeChanged: "lyra:shell/window/theme-changed",
   readAppMeta: "lyra:shell/app/meta",
   readAppMetaSync: "lyra:shell/app/meta-sync",
   openExternal: "lyra:shell/open-external",
@@ -828,6 +830,11 @@ export type WindowStatePayload = {
   readonly isMaximized: boolean;
   readonly isFullScreen?: boolean;
   readonly isFocused: boolean;
+};
+
+export type WindowThemePayload = {
+  readonly source: "system" | "light" | "dark";
+  readonly shouldUseDarkColors: boolean;
 };
 
 export type AppMetaPayload = {
@@ -1685,6 +1692,8 @@ export type WindowControlsApi = {
   readonly toggleMaximize: () => Promise<void>;
   readonly close: () => Promise<void>;
   readonly setThemeSource?: (source: "system" | "light" | "dark") => Promise<void>;
+  readonly readTheme?: () => Promise<WindowThemePayload>;
+  readonly onThemeChange?: (listener: (theme: WindowThemePayload) => void) => () => void;
 };
 
 export type ShellEventsApi = {

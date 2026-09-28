@@ -1,6 +1,7 @@
 use super::*;
 
 mod metadata;
+mod visual_scene;
 
 pub(crate) fn resolved_tool_activity_input(mut input: Value, output: &Value) -> Value {
     let Some(input_object) = input.as_object_mut() else {
@@ -37,7 +38,7 @@ pub(crate) fn resolved_tool_activity_input(mut input: Value, output: &Value) -> 
 }
 
 pub(crate) fn redacted_tool_raw_output(name: &str, action: &str, mut value: Value) -> Value {
-    if name == "lyra_lumen" && action == "see" {
+    if name == "lyra_lumen" && matches!(action, "see" | "vact") {
         if let Some(object) = value.as_object_mut() {
             object.remove("imageBase64");
             if let Some(screenshot) = object.get_mut("screenshot").and_then(Value::as_object_mut) {
@@ -1407,6 +1408,13 @@ pub(crate) fn format_lumen_output(action: &str, value: &Value) -> String {
         return serde_json::to_string(value).unwrap_or_default();
     }
 
+    if value.get("scene").is_some()
+        || value.pointer("/observation/scene").is_some()
+        || value.get("kind").and_then(Value::as_str) == Some("lyraLumenVisualActionResult")
+    {
+        return visual_scene::format_visual_scene(value);
+    }
+
     // A readable content field must never hide an execution failure from the
     // model. The activity UI retains raw JSON, but the provider only sees this.
     if value.get("ok").and_then(Value::as_bool) == Some(false)
@@ -1429,6 +1437,8 @@ pub(crate) fn format_lumen_output(action: &str, value: &Value) -> String {
                     "truncated",
                     "schemaHint",
                     "instruction",
+                    "extractionMode",
+                    "schemaApplied",
                 ]
                 .into_iter()
                 .filter_map(|key| {

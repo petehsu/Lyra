@@ -1,4 +1,5 @@
 import { surfaceNameRuntime } from "./surface-name-runtime";
+import { CHOICE_CONTROL_RUNTIME, readChoiceSemantics } from "./choice-control-runtime";
 import { SURFACE_TARGET_LOOKUP } from "./surface-target";
 import type { WebFrameMain } from "electron";
 import type {
@@ -19,10 +20,13 @@ const pressedHint = (hint: string | undefined): boolean | undefined => {
 export const elementStateFromCached = (
   element: WorkbenchBrowserAgentElement
 ): WorkbenchBrowserAgentElementState => {
-  const checked = element.checked ?? pressedHint(element.stateHint);
+  const choice = element.semantics?.choice;
+  const checked = choice ? (!choice.conflict && typeof choice.nativeChecked === "boolean" ? choice.nativeChecked : undefined)
+    : element.checked ?? pressedHint(element.stateHint);
   return ({
   role: element.role,
   label: element.label,
+  ...(element.semantics?.choice ? { choice: element.semantics.choice } : {}),
   ...(checked === undefined ? {} : { checked }),
   ...(element.expanded === undefined ? {} : { expanded: element.expanded }),
   disabled: element.disabled,
@@ -35,6 +39,7 @@ const buildElementProbeScript = (targetRef: string): string => `
   (() => {
     ${SURFACE_TARGET_LOOKUP}
     const surfaceNames = ${surfaceNameRuntime};
+    const choices = ${CHOICE_CONTROL_RUNTIME};
     const normalizeText = (value, maxLength = 120) => {
       if (typeof value !== "string") return "";
       const normalized = value.replace(/\\s+/g, " ").trim();
@@ -47,6 +52,8 @@ const buildElementProbeScript = (targetRef: string): string => `
       || element.getAttribute?.("aria-disabled") === "true";
 
     const checkedState = (element) => {
+      const choice = choices.describe(element);
+      if (choice) return choice.conflict || choice.nativeChecked === 'mixed' ? undefined : choice.nativeChecked;
       if (element.checked === true) return true;
       const checked = element.getAttribute?.("aria-checked");
       const pressed = element.getAttribute?.("aria-pressed");
@@ -77,13 +84,15 @@ const buildElementProbeScript = (targetRef: string): string => `
     const element = findSurfaceTarget(${JSON.stringify(targetRef)});
     if (!element || !element.isConnected) return { ok: false, errorKind: "element_not_found" };
     const win = element.ownerDocument?.defaultView || window;
+    const choiceInput = choices.inputOf(element);
     return {
       ok: true,
-      role: normalizeText(element.getAttribute?.("role") || String(element.tagName || "element").toLowerCase(), 40),
+      role: normalizeText(element.getAttribute?.("role") || (element.tagName === 'LABEL' ? choiceInput?.type : '') || String(element.tagName || "element").toLowerCase(), 40),
       label: surfaceNames.label(element) || "(no label)",
       checked: checkedState(element),
+      choice: choices.describe(element),
       expanded: expandedState(element),
-      disabled: isDisabled(element),
+      disabled: isDisabled(element) || !!choiceInput && (choiceInput.matches(':disabled') || !!choiceInput.closest('[aria-disabled=true],[inert]')),
       value: valueFor(element),
       inputType: element instanceof win.HTMLInputElement
         ? normalizeText(element.type || "", 32)
@@ -103,6 +112,7 @@ const coerceProbedState = (raw: unknown): WorkbenchBrowserAgentElementState | nu
   return {
     role: typeof record.role === "string" ? record.role : "",
     label: typeof record.label === "string" ? record.label : "",
+    ...(readChoiceSemantics(record.choice) ? { choice: readChoiceSemantics(record.choice) } : {}),
     ...(typeof record.checked === "boolean" ? { checked: record.checked } : {}),
     ...(typeof record.expanded === "boolean" ? { expanded: record.expanded } : {}),
     disabled: record.disabled === true,
@@ -146,6 +156,9 @@ export const diffElementStates = (
   }
   if (before.checked !== after.checked) {
     changes.push(`checked: ${String(before.checked)} -> ${String(after.checked)}`);
+  }
+  if (JSON.stringify(before.choice) !== JSON.stringify(after.choice)) {
+    changes.push(`choice evidence: ${JSON.stringify(after.choice)}`);
   }
   if (before.expanded !== after.expanded) {
     changes.push(`expanded: ${String(before.expanded)} -> ${String(after.expanded)}`);

@@ -34,6 +34,7 @@ mod design_reference;
 mod dispatcher;
 mod file;
 mod host_executor;
+mod image_read;
 mod lsp;
 mod mcp_adapter;
 mod media;

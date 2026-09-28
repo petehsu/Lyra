@@ -1,3 +1,4 @@
+import { SURFACE_DOM_ACCESS } from "./surface-dom-access";
 import { sensitiveFieldRuntime } from "../../sensitive-values/browser-boundary";
 import type { WorkbenchBrowserAgentObserveStrategy, WorkbenchBrowserFrameGlobalBounds } from "../types";
 import { coerceFrameBounds } from "./normalizers";
@@ -83,6 +84,7 @@ const buildBrowserAgentObservationScript = ({
     const MAX_LIGHTWEIGHT_CANDIDATES = 220;
     const MAX_LIGHTWEIGHT_SHADOW_HOSTS = 180;
     const semantics = ${browserMapSemanticsScript};
+    ${SURFACE_DOM_ACCESS}
     const surfaceNames = ${surfaceNameRuntime};
     const cursorSemantics = ${CURSOR_RUNTIME};
     const editingHost = ${browserEditingHostRuntime};
@@ -120,7 +122,21 @@ const buildBrowserAgentObservationScript = ({
       if (!(element instanceof ElementCtor) || !(${browserTargetVisibilityRuntime})(element)) return false;
       const style = win.getComputedStyle(element);
       if (Number.parseFloat(style.opacity || "1") <= 0) {
-        return isFileInputElement(element, win) || isTypedField(element);
+        if (isFileInputElement(element, win) || isTypedField(element)) return true;
+        // A styled widget may paint its label on a tight parent and put a
+        // transparent native button over it. Require visible owner content and
+        // a real hit; an arbitrary invisible button is not a visual target.
+        if (!element.matches('button,[role=button]')) return false;
+        const owner = element.parentElement;
+        if (!owner || !(${browserTargetVisibilityRuntime})(owner) || Number(win.getComputedStyle(owner).opacity) === 0) return false;
+        const box = element.getBoundingClientRect(), outer = owner.getBoundingClientRect();
+        if (outer.width > box.width + 24 || outer.height > box.height + 24) return false;
+        const paintedText = Array.from(owner.childNodes).some(node => node.nodeType === 3 && String(node.textContent || '').trim())
+          || Array.from(owner.children).some(node => node !== element && String(node.textContent || '').trim()
+            && (${browserTargetVisibilityRuntime})(node) && Number(win.getComputedStyle(node).opacity) > 0);
+        if (!paintedText) return false;
+        const hit = surfaceHitForNode(element, box.left + box.width / 2, box.top + box.height / 2);
+        return hit === element || !!hit && element.contains(hit);
       }
       if ((style.pointerEvents || "").toLowerCase() === "none" && !isTypedField(element)) {
         return false;
@@ -174,12 +190,7 @@ const buildBrowserAgentObservationScript = ({
             const x = rect.left + rect.width * xRatio;
             const y = rect.top + rect.height * yRatio;
             if (x < 0 || y < 0 || x > viewportWidth || y > viewportHeight) continue;
-            let hit = element.ownerDocument?.elementFromPoint?.(x, y) ?? null;
-            while (hit?.shadowRoot?.elementFromPoint) {
-              const inner = hit.shadowRoot.elementFromPoint(x, y);
-              if (!inner || inner === hit) break;
-              hit = inner;
-            }
+            const hit = typeof element.ownerDocument?.elementFromPoint === "function" ? surfaceHitForNode(element,x,y) : null;
             if (hit === element || (hit !== null && element.contains(hit))
               || (hit !== null && hit.contains(element) && isTypedField(element))) {
               hitOwn = true;
@@ -825,6 +836,9 @@ const buildBrowserAgentObservationScript = ({
         const seenRoots = new Set();
         const surfaceRoots = new Map();
         const tightToggle = (element) => {
+          // A choice's label is an independent hit target, not an enclosing
+          // toggle to infer from a parent's theme or active class.
+          if (semantics.choices.inputOf(element)) return element;
           let node = element;
           const box = element.getBoundingClientRect();
           let parent = element.parentElement;
@@ -874,6 +888,10 @@ const buildBrowserAgentObservationScript = ({
             }
           };
           await visitSelector(doc);
+          for (const weak of win.__lyraKnownShadowRoots ?? []) {
+            const root = weak.deref();
+            if (root?.host?.isConnected) await visitSelector(root, "shadow", [selectorPreview(root.host)]);
+          }
           const focusSelector = "a[href], button, input:not([type='hidden']), select, textarea, summary, [contenteditable='true'], [contenteditable=''], [contenteditable='plaintext-only'], [tabindex]:not([tabindex='-1'])";
           const positive = [];
           const rest = [];
@@ -961,11 +979,27 @@ const buildBrowserAgentObservationScript = ({
         }
       }
 
-      for (const candidate of [...candidates, ...pointerStyledCandidates]) {
+      const allCandidates = [...candidates, ...pointerStyledCandidates];
+      const candidateNodes = new Set(allCandidates.map(candidate => candidate.element));
+      const representedByLabel = (element, visibility) => {
+        if (!semantics.choices.isChoice(element) || !visibility.covered || visibility.offscreen) return false;
+        const labels = semantics.choices.labelsFor(element).filter(label => candidateNodes.has(label)
+          && (() => { const state = visibilityState(label, win); return state.visible && !state.covered && !state.offscreen; })());
+        if (!labels.length) return false;
+        const box = element.getBoundingClientRect();
+        // Remove only a duplicate, covered native representation. Every sampled
+        // obstruction must be its own mapped label; external overlays stay blocked.
+        return [0.2, 0.5, 0.8].every(x => [0.2, 0.5, 0.8].every(y => {
+          const hit = surfaceHitForNode(element, box.left + box.width * x, box.top + box.height * y);
+          return hit && labels.some(label => label === hit || label.contains(hit));
+        }));
+      };
+      for (const candidate of allCandidates) {
         const { element, scope, hostChain } = candidate;
         if (!(element instanceof win.Element) || seen.has(element)) continue;
         seen.add(element);
         const visibility = visibilityState(element, win);
+        if (representedByLabel(element, visibility)) continue;
         const hoverOnly = !visibility.visible && hoverPlacedControl(element, win);
         if (!visibility.visible && !hoverOnly && !isFileInputElement(element, win)) continue;
         if (element instanceof win.HTMLInputElement && element.type === "hidden") continue;
@@ -1019,7 +1053,7 @@ const buildBrowserAgentObservationScript = ({
           frameTreeNodeId: FRAME_TREE_NODE_ID,
           frameRef: FRAME_REF,
           tagName,
-          role: normalizeText(element.getAttribute?.("role") || tagName, 40),
+          role: normalizeText(element.getAttribute?.("role") || (tagName === "label" ? semantics.choices.inputOf(element)?.type : "") || tagName, 40),
           label: labelFor(element, doc),
           cursor,
           cursorOnly: !isDeclaredControl(element),
@@ -1075,7 +1109,7 @@ const buildBrowserAgentObservationScript = ({
           expanded: expandedState(element),
           focusable,
           tabIndex,
-          disabled: isDisabled(element),
+          disabled: isDisabled(element) || (semantics.choices.inputOf(element) ? isDisabled(semantics.choices.inputOf(element)) : false),
           editable,
           href,
           inputType: element instanceof win.HTMLInputElement ? normalizeText(element.type || "", 32) : "",

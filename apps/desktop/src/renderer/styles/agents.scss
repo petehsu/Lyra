@@ -4861,6 +4861,113 @@
   font-family: var(--lyra-font-mono);
 }
 
+.lyra-markdown-code-block {
+  min-width: 0;
+  max-width: 100%;
+  margin-block: var(--lyra-unit-12);
+  overflow: hidden;
+  border: var(--lyra-stroke-thin) solid var(--lyra-app-border);
+  border-radius: var(--lyra-radius-12);
+  background: var(--lyra-effect-code-block-bg);
+}
+
+.lyra-markdown-code-header,
+.lyra-markdown-code-language,
+.lyra-markdown-code-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--lyra-unit-8);
+}
+
+.lyra-markdown-code-header {
+  justify-content: space-between;
+  padding: var(--lyra-unit-6) var(--lyra-unit-12);
+  font-family: var(--lyra-font-ui);
+  font-size: var(--lyra-unit-12);
+  color: var(--lyra-text-secondary);
+  user-select: none;
+}
+
+.lyra-markdown-code-language {
+  min-width: 0;
+}
+
+.lyra-markdown-code-language > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyra-markdown-code-actions {
+  flex-shrink: 0;
+  gap: var(--lyra-unit-2);
+}
+
+.lyra-markdown-code-actions .lyra-ui-button {
+  width: var(--lyra-unit-28);
+  height: var(--lyra-unit-28);
+  color: inherit;
+}
+
+.lyra-markdown-code-actions .lyra-ui-button[aria-pressed="true"] {
+  background: var(--lyra-app-row-active-bg);
+  color: var(--lyra-text-primary);
+}
+
+.lyra-markdown-code-feedback {
+  position: absolute;
+  width: var(--lyra-unit-1);
+  height: var(--lyra-unit-1);
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Keep Streamdown's token renderer, but present a single frame and toolbar. */
+.lyra-agents-streamdown .lyra-markdown-code-block [data-streamdown="code-block"],
+.lyra-agents-streamdown .lyra-markdown-code-block [data-streamdown="code-block-body"],
+.lyra-agents-streamdown .lyra-markdown-code-block pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.lyra-agents-streamdown .lyra-markdown-code-block [data-streamdown="code-block"] {
+  padding: 0;
+  gap: 0;
+}
+
+.lyra-markdown-code-block [data-streamdown="code-block-header"] {
+  display: none;
+}
+
+.lyra-agents-streamdown .lyra-markdown-code-block [data-streamdown="code-block-body"] {
+  padding: var(--lyra-unit-4) var(--lyra-unit-16) var(--lyra-unit-14);
+  overflow-x: auto;
+}
+
+.lyra-agents-streamdown .lyra-markdown-code-block pre {
+  padding: 0;
+  font-size: var(--lyra-unit-13);
+  line-height: 1.6;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.lyra-agents-streamdown .lyra-markdown-code-block[data-wrap="true"] pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Streamdown omits its line wrapper class when lineNumbers=false. Each
+   token row still represents a source line and must remain a block. */
+.lyra-markdown-code-block [data-streamdown="code-block-body"] code > span {
+  display: block;
+}
+
 .lyra-agents-streamdown [data-streamdown="code-block-body"] span,
 .lyra-syntax-source span {
   color: var(--sdm-c, inherit);

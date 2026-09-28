@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "appVersion": "0.1.0-preview.15",
-  "keysetHash": "84bf8d99650d184cbeb9fc809146c9216cf9f2da013606da2f6195db66d67160",
-  "contentHash": "44e77eab6b86277d69a498d88d0b58393715398b712b5b0eae3edcb2b3619d74",
+  "keysetHash": "b809a4c5f0bed17a73dfda2e45b5d2dd5ce1af1fbfa62c263dbf9ec1971c16a5",
+  "contentHash": "212503a7f5d29999f5fb39a387666091546e5972fe4f020a222c89de97d5ea29",
   "entries": [
     {
       "key": "agentGit.binaryDiff",
@@ -2757,6 +2757,38 @@
       "source": "Unread"
     },
     {
+      "key": "notification.credentialStorageDecryptFailedBody",
+      "source": "Restore the original system keyring or re-enter the affected credential in settings. Lyra has kept the saved value."
+    },
+    {
+      "key": "notification.credentialStorageDecryptFailedTitle",
+      "source": "A saved credential could not be opened"
+    },
+    {
+      "key": "notification.credentialStorageRestoredBody",
+      "source": "The system credential store is working. You can retry the interrupted action."
+    },
+    {
+      "key": "notification.credentialStorageRestoredTitle",
+      "source": "Credential storage is available again"
+    },
+    {
+      "key": "notification.credentialStorageSource",
+      "source": "Credential storage"
+    },
+    {
+      "key": "notification.credentialStorageUnavailableBody",
+      "source": "Unlock your system credential store and restart Lyra. Your saved credentials have been kept."
+    },
+    {
+      "key": "notification.credentialStorageUnavailableLinuxBody",
+      "source": "Unlock your system keyring and restart Lyra. Ensure GNOME Keyring, KWallet, or another Secret Service is available. Your saved credentials have been kept."
+    },
+    {
+      "key": "notification.credentialStorageUnavailableTitle",
+      "source": "Saved credentials are unavailable"
+    },
+    {
       "key": "notification.mimoFault400Body",
       "source": "Check JSON format, required fields, multimodal file limits, and full reasoning_content replay in thinking mode."
     },
@@ -2823,6 +2855,14 @@
     {
       "key": "notification.officialSource",
       "source": "Lyra"
+    },
+    {
+      "key": "notification.providerRouteAdjustedBody",
+      "source": "Verified and saved a working connection: {from} → {to}."
+    },
+    {
+      "key": "notification.providerRouteAdjustedTitle",
+      "source": "MiMo connection updated"
     },
     {
       "key": "notification.topbarOpenCenter",
@@ -3083,6 +3123,22 @@
     {
       "key": "planReview.setAside",
       "source": "Set aside"
+    },
+    {
+      "key": "richText.codeBlock.copy",
+      "source": "Copy code"
+    },
+    {
+      "key": "richText.codeBlock.copyFailed",
+      "source": "Copy failed. Try again."
+    },
+    {
+      "key": "richText.codeBlock.text",
+      "source": "Text"
+    },
+    {
+      "key": "richText.codeBlock.wrap",
+      "source": "Wrap lines"
     },
     {
       "key": "runtime.desktopBridgeUnavailable",

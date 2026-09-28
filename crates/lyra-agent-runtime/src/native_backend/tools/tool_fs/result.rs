@@ -492,7 +492,7 @@ pub(super) fn compact_raw_payload(
         ToolArtifactKind::RawData,
         &raw_text,
     );
-    let compact = json!({
+    let mut compact = json!({
         "kind": "tool_fs_raw_ref",
         "toolPath": tool_path,
         "truncated": true,
@@ -500,6 +500,7 @@ pub(super) fn compact_raw_payload(
         "artifactRef": artifact_ref.clone(),
         "message": "Raw Tool-FS output exceeded the model budget and was stored as an artifact.",
     });
+    preserve_raw_timeline_facts(&raw, &mut compact);
     (compact, artifact_ref)
 }
 

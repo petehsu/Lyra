@@ -429,6 +429,9 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
     .unwrap_or(route.protocol_id.as_str());
     let openai_responses_replay =
         effective_protocol_id == providers::protocol::openai_responses::PROTOCOL_ID;
+    if capabilities.supports_tool_calling {
+        tools::tool_fs::refresh_software_catalog(host_dispatcher.as_ref());
+    }
     tools::tool_search::persist_discovered_snapshot(session_id, host_dispatcher.as_ref());
     let workbench = crate::native_backend::context::fetch_workbench(host_dispatcher.as_ref());
     let mut session_snapshot = session_snapshot;
@@ -440,7 +443,6 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             &session_snapshot,
             host_dispatcher.as_ref(),
             capabilities.context_window,
-            effective_protocol_id == providers::protocol::anthropic_messages::PROTOCOL_ID,
         );
         if let Some(pos) = tools.iter().position(|tool| {
             tool.pointer("/function/name").and_then(Value::as_str) == Some(AGENT_SPAWN_MODEL_TOOL)

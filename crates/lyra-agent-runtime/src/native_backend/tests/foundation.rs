@@ -3604,5 +3604,6 @@ mod native_and_git;
 mod permissions_and_flows;
 mod runtime_and_tools;
 mod tool_output_compaction;
+mod visual_images;
 
 mod browser_input_contract;

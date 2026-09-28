@@ -610,6 +610,32 @@ pub(crate) fn progress_guard_clarification_tools(request: &ModelRequest) -> Vec<
         .collect()
 }
 
+pub(crate) fn prepare_tool_image_delivery(
+    output: &mut Value,
+    capabilities: &ModelCapabilityProfile,
+) -> Option<Value> {
+    output.pointer("/raw/providerImage")?;
+    if let Some(content) = provider_image_message_from_tool_output(output, capabilities) {
+        return Some(content);
+    }
+    let (code, message) = if capabilities.supports_image_input {
+        (
+            "image_attachment_failed",
+            "The image could not be attached to model context. No image was delivered; do not claim to have viewed it. Read the source image again.",
+        )
+    } else {
+        (
+            "image_input_unsupported",
+            "The active model does not support image input. No image was delivered. Ask for a vision-capable model to inspect this image; opening a desktop viewer does not add vision support.",
+        )
+    };
+    output["error"] = json!({"code":code,"message":message});
+    output["content"] = json!(message);
+    output["status"] = json!("failed");
+    output["ok"] = json!(false);
+    None
+}
+
 pub(crate) fn provider_image_message_from_tool_output(
     output: &Value,
     capabilities: &ModelCapabilityProfile,
@@ -809,4 +835,37 @@ pub(crate) fn is_provider_configuration_error(error: &AgentRuntimeError) -> bool
             }
         }
     )
+}
+
+#[cfg(test)]
+mod image_delivery_tests {
+    use super::*;
+
+    #[test]
+    fn unsupported_or_missing_image_is_an_explicit_tool_failure() {
+        let mut capabilities = ModelCapabilityProfile {
+            supports_image_input: false,
+            supports_tool_calling: true,
+            supports_streaming: false,
+            supports_tool_choice: false,
+            context_window: Some(128_000),
+        };
+        let original = json!({"content":"Read image successfully", "raw":{"providerImage":{
+            "path":"/tmp/not-a-lyra-artifact.png", "mediaType":"image/png"
+        }}});
+        let mut output = original.clone();
+        assert!(prepare_tool_image_delivery(&mut output, &capabilities).is_none());
+        assert_eq!(output["error"]["code"], "image_input_unsupported");
+        assert_eq!(output["status"], "failed");
+        assert!(
+            output["content"]
+                .as_str()
+                .unwrap()
+                .contains("No image was delivered")
+        );
+        capabilities.supports_image_input = true;
+        let mut output = original;
+        assert!(prepare_tool_image_delivery(&mut output, &capabilities).is_none());
+        assert_eq!(output["error"]["code"], "image_attachment_failed");
+    }
 }

@@ -634,6 +634,13 @@ export type AgentFileCitation = {
   readonly kind?: "file" | "directory";
 };
 
+export type AgentMessageWebLink = {
+  /** UTF-16 offsets into the original message text, before display shortening. */
+  readonly start: number;
+  readonly end: number;
+  readonly url: string;
+};
+
 export type AgentTurnSendRequest = {
   readonly sessionId?: string | null;
   readonly turnId?: string | null;
@@ -643,6 +650,7 @@ export type AgentTurnSendRequest = {
   readonly citations?: readonly AgentTranscriptCitation[];
   readonly pageCitations?: readonly AgentPageCitation[];
   readonly fileCitations?: readonly AgentFileCitation[];
+  readonly webLinks?: readonly AgentMessageWebLink[];
 };
 
 export type AgentMessageResolveRequest = {

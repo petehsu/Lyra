@@ -1,4 +1,6 @@
+import { browserAgentOperationContext } from "../agent-operation-context";
 import { createBrowserNativeDialogs } from "./agent-native-dialog";
+import { createVisualSceneController } from "./visual-scene-controller";
 import { createSurfaceDrag } from "./surface-drag";
 import { createBrowserFileChooserController } from "./agent-file-chooser";
 import { createBrowserAgentElevationController } from "./agent-elevation-controller";
@@ -40,11 +42,15 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
   const observeAgentPage: typeof observationEngine.observeAgentPage = async (tabId, request) =>
     files.decorate(await observationEngine.observeAgentPage(tabId, request), tabId, request?.targetMode ?? "live");
   const assertSharedControlCanContinue: typeof host.assertSharedControlCanContinue = tabId => {
+    browserAgentOperationContext.getStore()?.signal?.throwIfAborted();
     files.assertInputAllowed();
     host.assertSharedControlCanContinue(tabId);
   };
   const sendAgentInputEvent: typeof host.sendAgentInputEvent = (target, event) => {
-    if (event.type !== "mouseUp" && event.type !== "keyUp") files.assertInputAllowed();
+    if (event.type !== "mouseUp" && event.type !== "keyUp") {
+      browserAgentOperationContext.getStore()?.signal?.throwIfAborted();
+      files.assertInputAllowed();
+    }
     host.sendAgentInputEvent(target, event);
   };
   const captureAction = <R extends { targetMode?: WorkbenchBrowserAgentTargetMode; effect?: import("../types").BrowserActionEffect }, T extends object>(
@@ -184,6 +190,13 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
     ...(host.osAxAdapter === undefined ? {} : { osAxAdapter: host.osAxAdapter })
   });
 
+  const visual = createVisualSceneController({
+    ...host, stateStore, observe: observeAgentPage,
+    act: interaction.actOnAgentElement, type: focusInput.typeIntoAgentElement,
+    press: focusInput.pressAgentKey, drag,
+    assertSharedControlCanContinue, sendAgentInputEvent
+  });
+
   // Invalidate AX document refs in lockstep with Lumen targets (navigation/reload/clearSiteData).
   const invalidateBrowserAgentTargets = (
     tabId: string,
@@ -191,6 +204,7 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
     reason: "navigation" | "frameReload" = "navigation"
   ): void => {
     files.clear(tabId, targetMode);
+    visual.clear(tabId);
     stateStore.invalidateBrowserAgentTargets(tabId, targetMode, reason);
     axSnapshotStore.invalidate(tabId, targetMode, reason);
   };
@@ -209,6 +223,7 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
   };
 
   const dispose = (): void => {
+    visual.dispose();
     dialogs.dispose();
     files.dispose();
     stateStore.dispose();
@@ -282,6 +297,9 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
     axExplainNode: ax.axExplainNode,
     axResolveAxRefBbox: ax.axResolveAxRefBbox,
     captureAgentPage: page.captureAgentPage,
+    describeAgentScene: visual.describe,
+    captureVisualScene: visual.capture,
+    actOnAgentVisualScene: captureAction(visual.act),
     readAgentPreviewPage: page.readAgentPreviewPage,
     detectAgentPageQr: qr.detectAgentPageQr,
     completeElevationSession: elevation.completeElevationSession,

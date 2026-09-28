@@ -26,7 +26,7 @@ diffy.workspace = true
 fs2.workspace = true
 glob.workspace = true
 hmac.workspace = true
-image = { workspace = true, features = ["png", "jpeg", "webp"] }
+image = { workspace = true, features = ["png", "jpeg", "webp", "gif"] }
 libc.workspace = true
 minijinja.workspace = true
 rand.workspace = true

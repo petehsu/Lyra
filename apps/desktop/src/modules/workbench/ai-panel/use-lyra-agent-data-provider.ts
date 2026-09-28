@@ -62,6 +62,7 @@ import {
   validateImageTurnCommit
 } from "./lyra-agents/features/chat/composer-image";
 import type { ComposerSegment } from "./lyra-agents/features/chat/message-citation";
+import { composerWebLinks } from "./lyra-agents/features/chat/message-web-links";
 import {
   fetchRemoteImageData,
   localPathFromImageSource,
@@ -658,6 +659,7 @@ export const useLyraAgentDataProvider = (
     await desktopApi.agent.sendTurn({
       sessionId: session.id,
       text: trimmed,
+      webLinks: composerWebLinks(segments, trimmed),
       ...(preparedImages.length === 0 ? {} : { images: preparedImages }),
       ...(citations.length === 0 ? {} : { citations }),
       ...(pageCitations.length === 0 ? {} : { pageCitations }),

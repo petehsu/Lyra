@@ -1,4 +1,5 @@
 import { delay } from "./normalizers";
+import { CHOICE_CONTROL_RUNTIME } from "./choice-control-runtime";
 
 export type PointerOptions = {
   readonly modifiers?: readonly ("shift" | "control" | "alt" | "meta")[];
@@ -31,15 +32,32 @@ export class BoundPointerError extends Error {
 // The guard lives only during one gesture and expires even if its caller dies.
 export const INSTALL_POINTER_GUARD = `function(token) {
   const node = this, store = globalThis.__lyraPointerGuards ??= new Map();
+  const choices = ${CHOICE_CONTROL_RUNTIME};
+  const nativeControl = node.tagName === 'LABEL' ? node.control : null;
+  const localChoice = choices.inputOf(node);
+  const forwardedControl = nativeControl && (!localChoice || localChoice === nativeControl) ? nativeControl : null;
   store.get(token)?.dispose();
   const state = { accepted: false, activated: false, blocked: false };
+  let labelClick = null, forwardedEvent = null;
   const removers = [];
   const types = ['pointerdown','mousedown','pointerup','mouseup','click','dblclick','auxclick','contextmenu'];
   const listen = (root, outer = false) => {
     const handler = event => {
       if (!event.isTrusted) return;
       const path = event.composedPath();
-      let matches = !outer && (path.includes(node) || node.contains(path[0]));
+      const direct = !outer && (path.includes(node) || node.contains(path[0]));
+      let matches = direct;
+      // Chromium's default label activation emits a second trusted click on its
+      // control. It is not an off-target pointer gesture. Bind to the
+      // original native association and only accept it after this label's click;
+      // never permit a changed for/id or an ambiguous structural association.
+      if (!matches && !outer && event.type === 'click' && (event === forwardedEvent || labelClick && !labelClick.defaultPrevented
+        && event.clientX === labelClick.clientX && event.clientY === labelClick.clientY && event.button === labelClick.button)
+        && state.accepted && state.activated && !state.blocked
+        && forwardedControl?.isConnected && node.control === forwardedControl && path[0] === forwardedControl
+        && !forwardedControl.matches(':disabled') && !forwardedControl.closest('[aria-disabled=true],[inert]')) {
+        matches = true; labelClick = null; forwardedEvent = event;
+      } else if (direct && event.type === 'click' && forwardedControl && path[0] !== forwardedControl) labelClick = event;
       // Outside a closed shadow root the path contains only the host; the
       // inner listener checks the actual target before the event reaches it.
       for (let r = node.getRootNode(); !matches && !outer && r.host; r = r.host.getRootNode()) {

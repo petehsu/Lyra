@@ -47,13 +47,13 @@ describe("LyraMarkdown", () => {
       <LyraMarkdown content="[OpenAI](https://openai.com/docs)" />
     );
 
-    const link = screen.getByRole("link", { name: "OpenAI" });
+    const link = screen.getByRole("link", { name: "openai.com/docs" });
     expect(link).toHaveClass("lyra-agents-md-link");
     expect(link).toHaveClass("lyra-agents-md-url-link");
     expect(link).toHaveClass("lyra-agents-inline-resource");
     expect(link).toHaveAttribute("href", "https://openai.com/docs");
     expect(link.querySelector(".lyra-agents-citation-chip-icon")).not.toBeNull();
-    expect(link.querySelector(".lyra-agents-citation-chip-preview")?.textContent).toBe("OpenAI");
+    expect(link.querySelector(".lyra-agents-citation-chip-preview")?.textContent).toBe("openai.com/docs");
   });
 
   it("does not dress a linked image as a website chip", () => {

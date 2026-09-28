@@ -424,10 +424,16 @@ fn provider_protocol_auxiliary_messages(protocol: &Value, field: &str) -> Vec<Va
             if !matches!(role, "user" | "system" | "developer") {
                 return None;
             }
-            Some(json!({
+            let mut restored = json!({
                 "role": role,
                 "content": message.get("content").cloned().unwrap_or(Value::Null),
-            }))
+            });
+            // Internal browser-image provenance survives resume so the provider
+            // can bound its working context without touching uploaded images.
+            if let Some(meta) = message.get("lyraVisualEvidence").filter(|v| v.is_object()) {
+                restored["lyraVisualEvidence"] = meta.clone();
+            }
+            Some(restored)
         })
         .collect()
 }

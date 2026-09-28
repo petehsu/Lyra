@@ -165,7 +165,31 @@ pub(crate) fn validate_browser_action_effect(
             (interaction == "hover") == (effect == BrowserActionEffect::Observe)
         }
         ("lyra_lumen", "vact") => {
-            matches!(interaction, "hover" | "scroll") == (effect == BrowserActionEffect::Observe)
+            if let Some(steps) = input.get("steps").and_then(Value::as_array) {
+                !steps.is_empty()
+                    && steps.len() <= 16
+                    && steps.iter().all(|step| {
+                        let gesture = step
+                            .get("interaction")
+                            .and_then(Value::as_str)
+                            .unwrap_or("");
+                        matches!(
+                            gesture,
+                            "click"
+                                | "doubleClick"
+                                | "rightClick"
+                                | "hover"
+                                | "drag"
+                                | "scroll"
+                                | "type"
+                                | "press"
+                        ) && (effect != BrowserActionEffect::Observe
+                            || matches!(gesture, "hover" | "scroll"))
+                    })
+            } else {
+                matches!(interaction, "hover" | "scroll")
+                    == (effect == BrowserActionEffect::Observe)
+            }
         }
         ("lyra_ax", "act") => {
             matches!(interaction, "hover" | "focus") == (effect == BrowserActionEffect::Observe)
@@ -797,6 +821,18 @@ pub(crate) fn strip_tool_fs_metadata(arguments: Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn visual_sequences_cannot_hide_mutation_inside_observation() {
+        let mut request = json!({"interaction":"sequence","effect":"observe","steps":[
+            {"interaction":"hover","mark":"1"},{"interaction":"click","mark":"2"}
+        ]});
+        assert!(validate_browser_action_effect("lyra_lumen", "vact", &request).is_err());
+        request["effect"] = json!("editDraft");
+        assert!(validate_browser_action_effect("lyra_lumen", "vact", &request).is_ok());
+        request["steps"][1]["interaction"] = json!("invented");
+        assert!(validate_browser_action_effect("lyra_lumen", "vact", &request).is_err());
+    }
 
     #[test]
     fn explicit_gestures_never_rewrite_declared_effects() {

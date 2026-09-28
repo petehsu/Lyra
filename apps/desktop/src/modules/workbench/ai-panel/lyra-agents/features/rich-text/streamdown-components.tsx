@@ -27,6 +27,7 @@ import {
 import { AdaptiveImage } from "../media";
 import { imageAttachmentFromSrc } from "../media/layout";
 import { WebsiteLinkIcon } from "../chat/page-citation-tab-icon";
+import { websiteLinkLabel } from "../chat/web-link-display";
 
 // ---- Image safety + local path rewrite (ported from @lyra/markdown-render) ----
 
@@ -226,12 +227,13 @@ export function LyraLink({
       className={classes}
       href={href}
       title={isWebsite ? target.value : props.title}
+      data-web-link-url={isWebsite ? target.value : undefined}
     >
       {isWebsite ? (
         <>
           <WebsiteLinkIcon pageUrl={target.value} />
           <span className="lyra-agents-citation-chip-preview-wrap">
-            <span className="lyra-agents-citation-chip-preview">{children}</span>
+            <span className="lyra-agents-citation-chip-preview">{websiteLinkLabel(target.value)}</span>
           </span>
         </>
       ) : children}

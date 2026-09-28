@@ -131,7 +131,7 @@ pub(crate) fn attach_lumen_screenshot_artifact(
     action: &str,
     value: &mut Value,
 ) {
-    if display_name != "lyra_lumen" || action != "see" {
+    if display_name != "lyra_lumen" || !matches!(action, "see" | "vact") {
         return;
     }
     if let Some(path) = value

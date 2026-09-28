@@ -45,6 +45,7 @@ export const SURFACE_REVISION_RUNTIME = String.raw`(() => {
     window.addEventListener(event, e => {if (!internal(e.target ?? document)) revision++;}, true);
   }
   const snapshot = () => {
+    for (const weak of window.__lyraKnownShadowRoots ?? []) {const root=weak.deref();if(root?.host?.isConnected)register(root);}
     for (const [root,observer] of observers) {
       if (root !== document && !root.host?.isConnected) {observer.disconnect();observers.delete(root);roots.delete(root);continue;}
       consume(observer.takeRecords());

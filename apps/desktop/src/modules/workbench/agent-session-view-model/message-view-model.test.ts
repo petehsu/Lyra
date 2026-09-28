@@ -341,7 +341,7 @@ describe("agentSessionToChatMessages", () => {
         sourceBlockId: "text-0",
         sourceMessageId: "assistant-1"
       },
-      { type: "thinking", id: "assistant-1-thinking-1", body: "中间思考。", status: "done" },
+      { type: "thinking", id: "assistant-1-thinking-1", body: "中间思考。", status: "done", sourceMessageId: "assistant-1" },
       {
         type: "text",
         id: "assistant-1-text-2",

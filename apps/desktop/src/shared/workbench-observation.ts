@@ -228,6 +228,7 @@ export type WorkbenchVisualCaptureResult = {
 };
 
 export type WorkbenchVisualFrame = {
+  readonly documentId?: string;
   readonly captureId: string;
   readonly dpr: number;
   readonly cssViewportWidth: number;

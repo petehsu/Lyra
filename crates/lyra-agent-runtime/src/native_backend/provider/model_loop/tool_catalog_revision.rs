@@ -16,18 +16,33 @@ pub(super) fn current_tool_catalog_revision(session_id: &str) -> Value {
 }
 
 pub(super) fn tool_can_change_catalog(call: &ModelToolCall) -> bool {
-    call.name == TOOL_SEARCH_TOOL_NAME
-        || ["mcp", "skill", "software"]
-            .iter()
-            .any(|prefix| call.name.starts_with(prefix))
+    // Discovery changes schemas; management changes registry membership.
+    // Executing a capability, listing or reading its state changes neither.
+    if call.name == TOOL_SEARCH_TOOL_NAME {
+        return true;
+    }
+    const MANAGEMENT: &[&str] = &[
+        "mcp_server_connect",
+        "mcp_server_upsert",
+        "mcp_server_remove",
+        "mcp_server_disconnect",
+        "mcp_server_reload",
+        "mcp_tool_discover",
+        "skills_activate",
+        "skills_deactivate",
+        "skills_install_local",
+        "skills_install_git",
+        "skills_install_store",
+        "skills_uninstall",
+    ];
+    MANAGEMENT.contains(&call.name.as_str())
         || call
             .arguments
             .get("path")
             .and_then(Value::as_str)
             .is_some_and(|path| {
-                ["/tools/mcp/", "/tools/skills/", "/tools/software/"]
-                    .iter()
-                    .any(|prefix| path.starts_with(prefix))
+                let name = path.trim_start_matches("/tools/").replace('/', "_");
+                MANAGEMENT.contains(&name.as_str())
             })
 }
 
@@ -42,6 +57,10 @@ mod tests {
             "browser_wait",
             "exec_command",
             "read_file",
+            "software_invoke",
+            "software__image-viewer__image-viewer_openSource",
+            "mcp__docs__search",
+            "skills_list",
         ] {
             assert!(!tool_can_change_catalog(&ModelToolCall {
                 id: "call".into(),
@@ -52,8 +71,7 @@ mod tests {
         for name in [
             TOOL_SEARCH_TOOL_NAME,
             "mcp_server_connect",
-            "skills_install",
-            "software_invoke",
+            "skills_install_local",
         ] {
             assert!(tool_can_change_catalog(&ModelToolCall {
                 id: "call".into(),

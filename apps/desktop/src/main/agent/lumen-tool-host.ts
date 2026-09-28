@@ -1,6 +1,8 @@
+import { enrichLumenStructure } from "./lumen-structure-result";
+import type { VisualActRequest } from "../workbench-browser/view-manager-runtime/visual-scene-types";
 import { validatePointerOptions, type PointerOptions } from "../workbench-browser/view-manager-runtime/bound-pointer";
 import { browserSensitiveBoundary } from "../sensitive-values/browser-boundary";
-import { browserAgentOperationContext } from "../workbench-browser/agent-operation-context";
+import { browserAgentOperationContext, trackBrowserOperation } from "../workbench-browser/agent-operation-context";
 import { createLumenSessionPages } from "./lumen-session-pages";
 import { lumenMapResult } from "./lumen-map-result";
 import { createLumenMapPager } from "./lumen-map-pager";
@@ -9,9 +11,7 @@ import { isLyraSensitiveValueRef, type LyraSensitiveValueRef } from "../../share
 import type {
   WorkbenchBrowserAgentModeRequest,
   WorkbenchBrowserAgentObserveStrategy,
-  WorkbenchBrowserAgentTargetMode,
-  LumenScreenshotHighlightRegion,
-  LumenScreenshotHighlightColor
+  WorkbenchBrowserAgentTargetMode
 } from "../workbench-browser/types";
 import {
   clampHostActionTimeoutMs,
@@ -43,7 +43,6 @@ import {
   type WorkbenchBrowserTabResolver
 } from "./workbench-observation-adapter";
 import {
-  annotationColorForIndex,
   applyBrowserBlockedEnvelope,
   findActiveBrowserBlock,
   InvalidLumenElementIdError,
@@ -276,6 +275,7 @@ export const createLumenToolHost = ({
       readOptionalNumberField(normalized, "timeoutMs"),
       LUMEN_HOST_ACTION_TIMEOUT_MS
     );
+    const operation = trackBrowserOperation(readRuntimeTurnId(normalized));
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       normalized = sessionPages.prepare(requestedMethod, normalized);
@@ -287,14 +287,16 @@ export const createLumenToolHost = ({
       }
       const startedAt = Date.now();
       const result = await Promise.race([
-        browserAgentOperationContext.run({sessionId:readRuntimeSessionId(normalized),
+        browserAgentOperationContext.run({signal:operation.controller.signal,sessionId:readRuntimeSessionId(normalized),
           ...(readRuntimeTurnId(normalized) ? {turnId:readRuntimeTurnId(normalized)!} : {})}, async () => {
           const pendingTab = readTabId(normalized) ?? sessionPages.current(normalized);
           if (pendingTab && requestedMethod !== "lyraLumen.dialog" && requestedMethod !== "lyraLumen.navigate") {
             const pending=getBrowserBridge()?.peekAgentDialog?.(pendingTab,readLumenTargetMode(normalized));
             if(pending)return pending;
           }
-          const action = await handler(normalized);
+          let action = await handler(normalized);
+          const structureBrowser=getBrowserBridge();
+          if(structureBrowser && isRecord(action))action=await enrichLumenStructure(structureBrowser,requestedMethod,normalized,action);
           if (!awaitResponse || !isRecord(action) || action.ok === false || action.status === "dialogPending") return action;
           const browser = getBrowserBridge();
           if (!browser || typeof action.tabId !== 'string' || !isRecord(action.responseWatch) || typeof action.responseWatch.operationId !== 'string') {
@@ -318,6 +320,7 @@ export const createLumenToolHost = ({
         }),
         new Promise<never>((_resolve, reject) => {
           timer = setTimeout(() => {
+            operation.controller.abort(new Error("Browser action timed out"));
             reject(new LumenActionTimeoutError(requestedMethod, actionTimeoutMs));
           }, actionTimeoutMs);
         })
@@ -415,7 +418,7 @@ export const createLumenToolHost = ({
         nextRecommendedAction: "lyra_lumen.map"
       };
     }
-    finally { if (timer !== undefined) clearTimeout(timer); }
+    finally { operation.dispose(); if (timer !== undefined) clearTimeout(timer); }
   };
 
   const elementRevealKey = (element: unknown): string => {
@@ -600,7 +603,8 @@ export const createLumenToolHost = ({
       const targetMode = readLumenTargetMode(payload);
       const tabId = await resolveBrowserAgentTabId(payload, targetMode);
       const timeoutMs = readOptionalNumberField(payload, "timeoutMs");
-      if (payload.modelSupportsImageInput === false) {
+      const markedInput = typeof payload.mark === "string" || (Array.isArray(payload.steps) && payload.steps.length > 0 && payload.steps.every(step => isRecord(step) && (typeof step.mark === "string" || step.interaction === "press") && !step.point && !step.to));
+      if (payload.modelSupportsImageInput === false && !markedInput) {
         const fallback = await browser.readAgentPage(tabId, {
           strategy: "focus",
           ...readLumenModeRequest(payload, targetMode),
@@ -621,76 +625,45 @@ export const createLumenToolHost = ({
           nextRecommendedAction: "lyra_lumen.map"
         }, tabId);
       }
-      const to = readOptionalLumenToPoint(payload);
-      const scrollDy = readOptionalNumberField(payload, "scrollDy");
-      const verification = readLumenVerification(payload);
       const effect = readOptionalLumenActionEffect(payload);
-      const captureId = readStringField(payload, "captureId");
+      if (!effect) throw new Error("Visual input requires its effect");
+      // Legacy AX callers use the semantic executor directly, never mix CSS
+      // coordinates with screenshot pixels.
       const axRef = readOptionalStringField(payload, "axRef");
-      // When axRef is supplied, derive the click point from the AX node's bbox
-      // center instead of reading device-pixel coordinates from the screenshot.
-      // The captureId is still required so the executor can verify the viewport
-      // hasn't scrolled/resized since the see call.
-      let point = readOptionalLumenPoint(payload);
-      if (axRef !== undefined) {
-        const bbox = await browser.axResolveAxRefBbox(tabId, { axRef, targetMode });
-        if (!bbox.ok || bbox.bounds === undefined) {
-          return withLumenTargetIds({
-            ok: false,
-            kind: "lyraLumenVactStale",
-            tabId,
-            targetMode,
-            captureId,
-            reason: "axref_unresolved",
-            message: bbox.ok === false
-              ? `Could not resolve axRef for vact: ${bbox.error.message}`
-              : "The AX node has no bounding box; cannot derive a click point.",
-            nextRecommendedAction: "browser_ax.map"
-          }, tabId);
+      if (axRef) return withLumenTargetIds(await browser.axActOnNode(tabId, {
+        axRef, targetMode, interaction: payload.interaction === "hover" ? "hover" : "click", effect
+      }), tabId);
+      if (browser.actOnAgentVisualScene) {
+        const request = { ...payload, ...(payload.modelSupportsImageInput === false ? {observe:"structure"} : {}), captureId: readOptionalStringField(payload, "captureId"),
+          effect, ...readLumenModeRequest(payload, targetMode) } as unknown as VisualActRequest;
+        const result = await browser.actOnAgentVisualScene(tabId, request);
+        const observation = result.observation;
+        if (isRecord(observation) && typeof observation.imageBase64 === "string") {
+          const { imageBase64: _pixels, ...metadata } = observation;
+          try {
+            const imageArtifact = await materializeLumenCapture(storageRoot, tabId,
+              observation as unknown as Parameters<typeof materializeLumenCapture>[2]);
+            return withLumenTargetIds({ ...result, observation: metadata, imageArtifact,
+              evidenceRefs: [imageArtifact.id], visual: true }, tabId);
+          } catch (error) {
+            // Input has already happened. Preserve its receipt if image storage fails.
+            return withLumenTargetIds({ ...result, observation: metadata, visual: true,
+              observationError: error instanceof Error ? error.message : String(error),
+              nextRecommendedAction: "Observe the current page without repeating delivered input." }, tabId);
+          }
         }
-        // bbox.bounds is in CSS pixels; the visual point is expected in
-        // device-pixel space (origin = top-left of the see screenshot). The
-        // executor's cssPointFromVisualFrame divides by dpr, so we pass CSS
-        // coordinates here and let it convert. Use bbox center.
-        point = {
-          x: bbox.bounds.x + Math.round(bbox.bounds.width / 2),
-          y: bbox.bounds.y + Math.round(bbox.bounds.height / 2),
-          reason: `axRef ${axRef} bbox center`
-        };
+        return withLumenTargetIds({ ...result, visual: true }, tabId);
       }
-      if (point === undefined) {
-        return withLumenTargetIds({
-          ok: false,
-          kind: "lyraLumenVactStale",
-          tabId,
-          targetMode,
-          captureId,
-          reason: "missing_point",
-          message: "vact requires either a point (device-pixel x/y) or an axRef. Provide one of them alongside captureId.",
-          nextRecommendedAction: "lyra_lumen.see"
-        }, tabId);
-      }
-      const result = await browser.actOnAgentVisualPoint(tabId, {
-        captureId,
-        point,
-        ...(effect === undefined ? {} : { effect }),
-        interaction: readLumenVisualInteraction(payload),
-        ...readLumenModeRequest(payload, targetMode),
-        ...(to === undefined ? {} : { to }),
-        ...(scrollDy === undefined ? {} : { scrollDy }),
-        ...(verification === "full" ? { verification } : {}),
+      // Compatibility with older host bridges. New hosts always use the shared scene.
+      const point = readOptionalLumenPoint(payload);
+      if (!point) throw new Error("This host requires screenshot point coordinates");
+      return withLumenTargetIds(await browser.actOnAgentVisualPoint(tabId, {
+        captureId: readStringField(payload, "captureId"), point, effect,
+        interaction: readLumenVisualInteraction(payload), ...readLumenModeRequest(payload, targetMode),
+        ...(readOptionalLumenToPoint(payload) ? { to: readOptionalLumenToPoint(payload)! } : {}),
+        ...(readOptionalNumberField(payload, "scrollDy") === undefined ? {} : { scrollDy: readOptionalNumberField(payload, "scrollDy")! }),
         ...(timeoutMs === undefined ? {} : { timeoutMs })
-      });
-      return withLumenTargetIds({
-        ...result,
-        visual: true,
-        captureId,
-        ...(axRef === undefined ? {} : { axRef }),
-        nextRecommendedAction:
-          result.kind === "lyraLumenVactStale"
-            ? "lyra_lumen.see"
-            : result.nextRecommendedAction ?? "lyra_lumen.see"
-      }, tabId);
+      }), tabId);
     }),
     "lyraLumen.reveal": withLyraLumenResult("lyraLumen.reveal", async (payload) => {
       const browser = getBrowserBridge();
@@ -1183,9 +1156,9 @@ export const createLumenToolHost = ({
           content: budgeted.content,
           readStatus: budgeted.content.length === 0 ? "empty" : "text",
           truncated: budgeted.truncated,
-          message: `Read browser page for structured extraction. Conform your next reply to the provided JSON schema${
-            schemaHint === undefined ? "" : " (schemaHint)"
-          }.${instruction === undefined ? "" : ` Instruction: ${instruction}`}`,
+          extractionMode: "renderedText",
+          schemaApplied: false,
+          message: "Returned rendered page text only. The instruction and schemaHint are hints for interpreting this evidence; they were not executed and no HTML/source or hidden application state was extracted. Use mapped object metadata or focused source inspection when those facts are needed. Keep the final reply aligned with the user's task.",
           nextRecommendedAction: "lyra_lumen.map"
         }, tabId);
       }
@@ -1253,6 +1226,15 @@ export const createLumenToolHost = ({
       if (!browser) throw new Error("Browser capability is not available");
       const targetMode = readLumenTargetMode(payload);
       const tabId = await resolveBrowserAgentTabId(payload, targetMode);
+      if ((payload.representation === "structure" || payload.modelSupportsImageInput === false) && browser.describeAgentScene) {
+        const observed=await browser.describeAgentScene(tabId,{...readLumenModeRequest(payload,targetMode),
+          ...(typeof payload.region === "string" ? {region:payload.region}:{}),
+          ...(payload.cell ? {cell:payload.cell as {row:number;column:number}}:{}),
+          ...(typeof payload.offset === "number" ? {offset:payload.offset}:{}),
+          ...(typeof payload.maxMarks === "number" ? {maxMarks:payload.maxMarks}:{})});
+        if(observed){const {groupedTargetRefs:_grouped,...observation}=observed;return withLumenTargetIds({ok:true,kind:"lyraLumenScene",...observation},tabId);}
+        if(payload.representation === "structure")return withLumenTargetIds({ok:true,kind:"lyraLumenScene",message:"No rendered region was found; use the semantic map for controls.",nextRecommendedAction:"lyra_lumen.map"},tabId);
+      }
       if (payload.modelSupportsImageInput === false) {
         const fallback = await browser.readAgentPage(tabId, {
           strategy: "focus",
@@ -1283,91 +1265,18 @@ export const createLumenToolHost = ({
       const highlightTargetRefs = Array.isArray(payload.highlightTargetRefs)
         ? payload.highlightTargetRefs.filter((value): value is string => typeof value === "string")
         : undefined;
-      const annotateRequested = readOptionalBooleanField(payload, "annotate") === true;
-      const annotateAxRefs = Array.isArray(payload.annotateAxRefs)
-        ? payload.annotateAxRefs.filter((value): value is string => typeof value === "string")
-        : undefined;
-      // Build AX-derived annotation regions when annotate:true. We query the
-      // latest AX snapshot for nodes with bounds, optionally filtered to the
-      // caller-supplied axRefs, and convert their CSS bounds to device-pixel
-      // regions so captureAgentPage can draw them as colored boxes.
-      const annotationRegions: LumenScreenshotHighlightRegion[] = [];
-      const annotationTable: Array<{
-        readonly index: number;
-        readonly axRef: string;
-        readonly role: string;
-        readonly name: string;
-        readonly color: LumenScreenshotHighlightColor;
-      }> = [];
-      if (annotateRequested) {
-        const query = await Promise.resolve()
-          .then(() => browser.axQueryAgentSnapshot(tabId, {
-            targetMode,
-            maxResults: 50
-          }))
-          .catch(() => null);
-        const allowedAxRefs = annotateAxRefs === undefined ? null : new Set(annotateAxRefs);
-        const visualFrameHint = (await browser.captureAgentPage(tabId, {
-          ...readLumenModeRequest(payload, targetMode),
-          highlightTargets: false,
-          downsampleForVision: false
-        }).catch(() => null));
-        const dpr = (visualFrameHint !== null && "visualFrame" in visualFrameHint && visualFrameHint.visualFrame !== undefined)
-          ? visualFrameHint.visualFrame.dpr
-          : 1;
-        const scrollX = (visualFrameHint !== null && "visualFrame" in visualFrameHint && visualFrameHint.visualFrame !== undefined)
-          ? visualFrameHint.visualFrame.scrollX
-          : 0;
-        const scrollY = (visualFrameHint !== null && "visualFrame" in visualFrameHint && visualFrameHint.visualFrame !== undefined)
-          ? visualFrameHint.visualFrame.scrollY
-          : 0;
-        if (query !== null && query.ok) {
-          for (let i = 0; i < query.matches.length; i += 1) {
-            const match = query.matches[i]!;
-            if (match.bounds === undefined) {
-              continue;
-            }
-            if (allowedAxRefs !== null && !allowedAxRefs.has(match.axRef)) {
-              continue;
-            }
-            const color = annotationColorForIndex(annotationRegions.length);
-            const deviceBounds = {
-              x: Math.round((match.bounds.x - scrollX) * dpr),
-              y: Math.round((match.bounds.y - scrollY) * dpr),
-              width: Math.max(1, Math.round(match.bounds.width * dpr)),
-              height: Math.max(1, Math.round(match.bounds.height * dpr))
-            };
-            annotationRegions.push({
-              targetRef: match.axRef,
-              elementId: -1,
-              label: match.name,
-              role: match.role,
-              bounds: match.bounds,
-              deviceBounds,
-              index: annotationRegions.length,
-              color,
-              axRef: match.axRef
-            });
-            annotationTable.push({
-              index: annotationTable.length - 1,
-              axRef: match.axRef,
-              role: match.role,
-              name: match.name,
-              color
-            });
-          }
-        }
-      }
-      const capture = await browser.captureAgentPage(
+      const capture = await (browser.captureVisualScene ?? browser.captureAgentPage)(
         tabId,
         {
           ...readLumenModeRequest(payload, targetMode),
-          highlightTargets: annotateRequested ? false : (readOptionalBooleanField(payload, "highlightTargets") ?? true),
+          highlightTargets: readOptionalBooleanField(payload, "highlightTargets") ?? true,
           downsampleForVision: readOptionalBooleanField(payload, "downsampleForVision") ?? true,
-          ...(highlightTargetRefs === undefined || highlightTargetRefs.length === 0
-            ? {}
-            : { highlightTargetRefs }),
-          ...(annotationRegions.length === 0 ? {} : { prebuiltHighlightRegions: annotationRegions })
+          ...(highlightTargetRefs === undefined ? {} : { highlightTargetRefs }),
+          ...(typeof payload.region === "string" ? { region: payload.region } : {}),
+          ...(payload.cell !== undefined ? { cell: payload.cell as { row: number; column: number } } : {}),
+          ...(payload.zoom !== undefined ? { zoom: payload.zoom as number } : {}),
+          ...(typeof payload.offset === "number" ? { offset: payload.offset } : {}),
+          ...(typeof payload.maxMarks === "number" ? { maxMarks: payload.maxMarks } : {})
         }
       ).catch(async (error: unknown) => {
         if (
@@ -1423,18 +1332,13 @@ export const createLumenToolHost = ({
           : {}),
         ...("highlighted" in capture && capture.highlighted === true ? { highlighted: true } : {}),
         ...("downsampled" in capture && capture.downsampled === true ? { downsampled: true } : {}),
-        ...(annotationTable.length === 0 ? {} : { annotations: annotationTable }),
+        ...("scene" in capture ? { scene: capture.scene } : {}),
         imageArtifact,
         evidenceRefs: [imageArtifact.id],
-        message:
-          `Captured browser visual evidence ${imageArtifact.id} (${capture.width}x${capture.height})${
-            "highlighted" in capture && capture.highlighted === true ? " with targetRef highlights" : ""
-          }${
-            annotationTable.length > 0
-              ? `. Annotated ${annotationTable.length} AX node${annotationTable.length === 1 ? "" : "s"} with colored boxes; use the annotations table (index → axRef → role → name → color) to pick a target, then call /tools/browser/vact with axRef.`
-              : ""
-          }.`,
-        nextRecommendedAction: annotationTable.length > 0 ? "lyra_lumen.vact" : "lyra_lumen.map"
+        message: `Captured ${capture.width}x${capture.height}. ${"scene" in capture && capture.scene.marks.length === 0
+          ? "No numbered objects were resolved. Inspect this image and use an explicit point with its captureId if the intended target is visible; no additional map is required."
+          : "Use a boxed mark with browser vact; reuse its mark while the object remains. For regions use position/path fractions. Occluding hit surfaces are visible targets, not confirmed buttons; choose their intended action from the current evidence."}`,
+        nextRecommendedAction: "lyra_lumen.vact"
       }, tabId);
     }),
     "lyraLumen.detectQr": withLyraLumenResult("lyraLumen.detectQr", async (payload) => {
@@ -1593,16 +1497,24 @@ export const createLumenToolHost = ({
       // next decision without another model round trip or activating anything.
       let mapAppendix: string | undefined;
       let mapError: string | undefined;
+      let scene: Record<string, unknown> | undefined;
       const completedResponse = until === "responseComplete" && result.matched;
       try {
         if (!completedResponse) {
           const remainingMs = timeoutMs - (Date.now() - preparationStarted) - 100;
           if (remainingMs < 250) throw new Error("Wait budget exhausted before the final map; text and condition state are retained.");
-          const observation = await browser.observeAgentPage(tabId, {
-            strategy: "interactiveOnly", mapScope: "document", ...readLumenModeRequest(payload, targetMode), timeoutMs: Math.min(mapBudgetMs, remainingMs)
-          });
-          const key = JSON.stringify([readRuntimeSessionId(payload) ?? "", targetMode, tabId]);
-          mapAppendix = mapPager.start(key, observation, {}, Date.now(), 3_000).mapAppendix;
+          // Reuse the current scene for dynamic regions. A wait for new state
+          // does not require rediscovering all controls on the document.
+          const structure = browser.describeAgentScene
+            ? await browser.describeAgentScene(tabId, { targetMode }) : undefined;
+          if (structure) scene = structure.scene;
+          else {
+            const observation = await browser.observeAgentPage(tabId, {
+              strategy: "interactiveOnly", mapScope: "document", ...readLumenModeRequest(payload, targetMode), timeoutMs: Math.min(mapBudgetMs, remainingMs)
+            });
+            const key = JSON.stringify([readRuntimeSessionId(payload) ?? "", targetMode, tabId]);
+            mapAppendix = mapPager.start(key, observation, {}, Date.now(), 3_000).mapAppendix;
+          }
         }
       } catch (error) { mapError = String(error); }
       return withLumenTargetIds({
@@ -1620,6 +1532,7 @@ export const createLumenToolHost = ({
         waitState: result.content.waitState,
         coverage: result.content.waitState?.coverage ?? { scope, scanComplete: result.content.truncated !== true },
         ...(mapAppendix === undefined ? { mapError } : { mapAppendix }),
+        ...(scene ? { scene } : {}),
         matched: result.matched,
         ...("stopReason" in result ? { stopReason: result.stopReason } : {}),
         completion: result.matched && until !== "textStable" ? "conditionMet" : "unknown",
@@ -1634,7 +1547,7 @@ export const createLumenToolHost = ({
           ? `Wait condition '${until}' was met after ${result.elapsedMs}ms.${until === "textStable" ? " Text stability is not proof that a new reply finished; verify an expected page state." : " This confirms the requested condition only."}`
           : "stopReason" in result ? "Navigation reached another ready page without the anticipated text. Inspect the returned page and controls; the text condition was not met."
           : `Wait condition '${until}' timed out after ${result.elapsedMs}ms.`,
-        nextRecommendedAction: completedResponse || mapAppendix !== undefined ? "use_returned_state" : "inspect_returned_state_before_waiting"
+        nextRecommendedAction: completedResponse || scene || mapAppendix !== undefined ? "use_returned_state" : "inspect_returned_state_before_waiting"
       }, tabId);
     })
   };

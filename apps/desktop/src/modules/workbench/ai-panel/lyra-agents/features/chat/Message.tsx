@@ -22,12 +22,13 @@ import { formatMessage, t } from "@workbench/i18n";
 import { toolGroupLabel } from "@workbench/agent-session-view-model/tool-view-model";
 import { AppButton } from "@renderer/ui/components";
 import { MessageCitationText } from "./MessageCitationText";
-import { textHasInlineContentMarkers } from "./message-citation";
+import { withStreamingReasoning } from "./message-activity-blocks";
 
-/** Check if any tool group in the message is still running. */
+/** Local activity is separate from the lifecycle of the whole turn. */
 export function isAgentMessageWorking(message: ChatMessage): boolean {
   return message.blocks.some(
-    (b) => b.type === "tools" && b.group.status === "running"
+    (b) => (b.type === "tools" && b.group.status === "running")
+      || (b.type === "thinking" && b.status === "running")
   );
 }
 
@@ -51,10 +52,12 @@ export function resolveAgentActivityHostMessageId(
   isTurnRunning: boolean
 ): string | null {
   if (!isTurnRunning) return null;
-  const reversed = [...messages].reverse();
-  const active = reversed.find(shouldShowAgentActivityIndicator);
-  if (active !== undefined) return active.id;
-  return reversed.find((message) => message.author === "agent")?.id ?? null;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message?.author === "user") break;
+    if (message?.author === "agent") return message.id;
+  }
+  return null;
 }
 
 const normalizeFollowActivity = (
@@ -99,7 +102,7 @@ type AgentMessageProps = {
   showActivityIndicator: boolean;
   activityIndicatorMessage: ChatMessage | null;
   isTurnRunning: boolean;
-  deferChangedFiles: boolean;
+  isActiveTurnRunning: boolean;
   followActivity: string | null | undefined;
   highlightCitationTarget?: boolean;
   onContextMenu?: (event: MouseEvent<HTMLElement>, message: ChatMessage) => void;
@@ -535,6 +538,7 @@ const messageBlockEqual = (left: MessageBlock, right: MessageBlock): boolean => 
       return right.type === "tools" && toolGroupEqual(left.group, right.group);
     case "thinking":
       return right.type === "thinking" &&
+        left.sourceMessageId === right.sourceMessageId &&
         left.body === right.body &&
         left.status === right.status;
     default:
@@ -550,6 +554,7 @@ const chatMessageEqual = (
   if (left === null || right === null) return left === right;
   if (
     left.id !== right.id ||
+    left.streamingMessageId !== right.streamingMessageId ||
     left.author !== right.author ||
     left.isApiError !== right.isApiError ||
     left.time !== right.time ||
@@ -574,7 +579,7 @@ const chatMessageEqual = (
 const agentMessagePropsAreEqual = (prev: AgentMessageProps, next: AgentMessageProps): boolean => {
   if (prev.showActivityIndicator !== next.showActivityIndicator) return false;
   if (prev.isTurnRunning !== next.isTurnRunning) return false;
-  if (prev.deferChangedFiles !== next.deferChangedFiles) return false;
+  if (prev.isActiveTurnRunning !== next.isActiveTurnRunning) return false;
   if (prev.followActivity !== next.followActivity) return false;
   if (prev.highlightCitationTarget !== next.highlightCitationTarget) return false;
   if (prev.onContextMenu !== next.onContextMenu) return false;
@@ -716,6 +721,7 @@ export function Message({
     followActivity,
     scrollToMessage,
     navigateToPageCitation,
+    openUrlInWorkbench,
     openImageInWorkbench,
     canOpenImageInWorkbench,
     openFileInWorkbench,
@@ -814,42 +820,39 @@ export function Message({
                 const pageCitations = message.pageCitations ?? [];
                 const inlineImages = message.inlineImages ?? [];
                 const fileAttachments = message.fileAttachments ?? [];
-                const renderCitations = textHasInlineContentMarkers(b.body);
                 return (
                   <p
                     key={b.id}
                     className="lyra-agents-message-text"
                     data-message-block-id={b.id}
                   >
-                    {renderCitations ? (
-                      <MessageCitationText
-                        text={b.body}
-                        transcriptCitations={transcriptCitations}
-                        pageCitations={pageCitations}
-                        inlineImages={inlineImages}
-                        fileAttachments={fileAttachments}
-                        onTranscriptCitationClick={(citation) => {
-                          void scrollToMessage(citation.messageId, {
-                            blockId: citation.blockId ?? null,
-                            startOffset: citation.startOffset ?? null
-                          });
-                        }}
-                        onPageCitationClick={(citation) => {
-                          void navigateToPageCitation(citation);
-                        }}
-                        onImageAttachmentClick={(image) => {
-                          if (!canOpenImageInWorkbench(image)) {
-                            return;
-                          }
-                          void openImageInWorkbench(image);
-                        }}
-                        onFileAttachmentClick={(file) => {
-                          void openFileInWorkbench(file.path);
-                        }}
-                      />
-                    ) : (
-                      b.body
-                    )}
+                    <MessageCitationText
+                      text={b.body}
+                      webLinks={message.webLinks}
+                      onWebLinkClick={(url) => { void openUrlInWorkbench(url); }}
+                      transcriptCitations={transcriptCitations}
+                      pageCitations={pageCitations}
+                      inlineImages={inlineImages}
+                      fileAttachments={fileAttachments}
+                      onTranscriptCitationClick={(citation) => {
+                        void scrollToMessage(citation.messageId, {
+                          blockId: citation.blockId ?? null,
+                          startOffset: citation.startOffset ?? null
+                        });
+                      }}
+                      onPageCitationClick={(citation) => {
+                        void navigateToPageCitation(citation);
+                      }}
+                      onImageAttachmentClick={(image) => {
+                        if (!canOpenImageInWorkbench(image)) {
+                          return;
+                        }
+                        void openImageInWorkbench(image);
+                      }}
+                      onFileAttachmentClick={(file) => {
+                        void openFileInWorkbench(file.path);
+                      }}
+                    />
                   </p>
                 );
               };
@@ -984,7 +987,7 @@ export function Message({
       showActivityIndicator={showActivityIndicator}
       activityIndicatorMessage={activityIndicatorMessage}
       isTurnRunning={isTurnRunning}
-      deferChangedFiles={isTurnRunning && isActiveTurnMessage(messages, message.id)}
+      isActiveTurnRunning={isTurnRunning && isActiveTurnMessage(messages, message.id)}
       followActivity={followActivity}
       {...(highlightCitationTarget ? { highlightCitationTarget } : {})}
       {...(onContextMenu === undefined ? {} : { onContextMenu })}
@@ -1003,40 +1006,29 @@ const AgentMessage = memo(function AgentMessage({
   showActivityIndicator,
   activityIndicatorMessage,
   isTurnRunning,
-  deferChangedFiles,
+  isActiveTurnRunning,
   followActivity,
   highlightCitationTarget = false,
   onContextMenu,
   onCiteMessage
 }: AgentMessageProps) {
-  const working = isAgentMessageWorking(message);
-  const isLiveTurnMessage = (isTurnRunning && showActivityIndicator) || working;
+  const isLiveTurnMessage = isActiveTurnRunning;
   const streamingTextActive = isLiveTurnMessage;
+  const streamingMessageId = message.streamingMessageId ?? message.id;
   const liveReasoning = useStreamingMessageReasoning(
-    message.id,
+    streamingMessageId,
     showActivityIndicator && streamingTextActive
   );
   const reasoningChannelOpen = useStreamingReasoningOpen(
-    message.id,
+    streamingMessageId,
     showActivityIndicator && streamingTextActive
   );
-  const hasPersistedThinking = message.blocks.some((block) => block.type === "thinking");
-  const hasLiveReasoning = liveReasoning.length > 0 && !hasPersistedThinking;
-  const displayBlocks: readonly MessageBlock[] = hasLiveReasoning
-    ? [
-        {
-          type: "thinking",
-          id: `${message.id}-streaming-thinking`,
-          body: liveReasoning,
-          status: reasoningChannelOpen ? "running" : "done"
-        },
-        ...message.blocks
-      ]
-    : message.blocks;
+  const displayBlocks = withStreamingReasoning(message, liveReasoning, reasoningChannelOpen);
+  const hasLiveReasoning = displayBlocks !== message.blocks;
   const activitySource = activityIndicatorMessage ?? message;
   const textBlocks = displayBlocks.filter((b) => b.type === "text");
   const lastTextId = textBlocks.at(-1)?.id ?? null;
-  const finalSummaryBlockId = deferChangedFiles
+  const finalSummaryBlockId = isActiveTurnRunning
     ? null
     : resolveFinalSummaryBlockId(message);
   const preSummaryBlocks = finalSummaryBlockId === null
@@ -1052,10 +1044,7 @@ const AgentMessage = memo(function AgentMessage({
   const hasImages = displayBlocks.some((b) => b.type === "image");
   const showRespondingStatus =
     showActivityIndicator &&
-    isTurnRunning &&
-    (isRecognizedFollowActivity(followActivity) ||
-      isAgentMessageWorking(activitySource) ||
-      isEmptyPendingAgentMessage(activitySource));
+    isActiveTurnRunning;
 
   if (isEmptyPendingAgent && !showActivityIndicator && !isTurnRunning) {
     return null;
@@ -1255,14 +1244,14 @@ const AgentMessage = memo(function AgentMessage({
         onContextMenu={(event) => onContextMenu?.(event, message)}
       >
         {renderedBlocks}
-        {deferChangedFiles ? null : (
+        {isActiveTurnRunning ? null : (
           <ChangedFilesCard files={collectChangedFiles(message)} />
         )}
         {showRespondingStatus ? (
           <span className="lyra-agents-message-time lyra-agents-message-time-agent" aria-label={t("lyra-agents-message.agentResponding")}>
             {messageActivityIndicator(activitySource, followActivity)}
           </span>
-        ) : (message.time && (hasTextBlocks || hasImages)) ? (
+        ) : (!isLiveTurnMessage && message.time && (hasTextBlocks || hasImages)) ? (
           <span className="lyra-agents-message-time lyra-agents-message-time-agent">
             <span className="lyra-agents-time-text">{message.time}</span>
             <span className="lyra-agents-time-actions">

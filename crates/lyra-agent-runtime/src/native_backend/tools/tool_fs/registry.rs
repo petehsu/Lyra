@@ -271,38 +271,7 @@ pub(super) fn tool_fs_call_needs_dynamic_software(tool_name: &str, input: &Value
 pub(super) fn software_manifests_with_diagnostics(
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
 ) -> (Vec<ToolManifest>, Vec<Value>) {
-    let Some(dispatcher) = dispatcher else {
-        return (Vec::new(), software_capability_provider_diagnostics(None));
-    };
-    let Ok(value) = invoke_host_capability_with_timeout(
-        dispatcher.clone(),
-        "software.listCapabilities".to_string(),
-        json!({ "includeSchemas": true }),
-        DEFAULT_HOST_TOOL_TIMEOUT_MS,
-    ) else {
-        return (
-            Vec::new(),
-            software_capability_provider_diagnostics(Some(dispatcher)),
-        );
-    };
-    let manifests = value
-        .get("software")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .flat_map(software_action_manifests)
-        .collect::<Vec<_>>();
-    let diagnostics = if manifests.is_empty() {
-        vec![json!({
-            "code": "dynamic_provider_empty",
-            "domain": "software",
-            "message": "No Lyra software capabilities are currently registered.",
-            "recoverable": true,
-        })]
-    } else {
-        Vec::new()
-    };
-    (manifests, diagnostics)
+    super::software_catalog::software_catalog(dispatcher, false)
 }
 
 pub(super) fn count_registry_domains(registry: &ToolFsRegistry, domains: &[&str]) -> usize {
@@ -354,44 +323,7 @@ pub(super) fn empty_software_capability_directory(
 pub(super) fn software_capability_provider_diagnostics(
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
 ) -> Vec<Value> {
-    let Some(dispatcher) = dispatcher else {
-        return vec![json!({
-            "code": "host_unavailable",
-            "domain": "software",
-            "message": "Lyra software capability provider is not available.",
-            "recoverable": true,
-        })];
-    };
-    match invoke_host_capability_with_timeout(
-        dispatcher.clone(),
-        "software.listCapabilities".to_string(),
-        json!({ "includeSchemas": true }),
-        DEFAULT_HOST_TOOL_TIMEOUT_MS,
-    ) {
-        Ok(value) => {
-            let count = value
-                .get("software")
-                .and_then(Value::as_array)
-                .map(Vec::len)
-                .unwrap_or(0);
-            if count == 0 {
-                vec![json!({
-                    "code": "dynamic_provider_empty",
-                    "domain": "software",
-                    "message": "No Lyra software capabilities are currently registered.",
-                    "recoverable": true,
-                })]
-            } else {
-                Vec::new()
-            }
-        }
-        Err(error) => vec![json!({
-            "code": "dynamic_provider_failed",
-            "domain": "software",
-            "message": error,
-            "recoverable": true,
-        })],
-    }
+    software_manifests_with_diagnostics(dispatcher).1
 }
 
 pub(super) fn with_tool_directory_diagnostics(

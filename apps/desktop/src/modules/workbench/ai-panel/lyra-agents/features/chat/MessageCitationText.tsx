@@ -1,15 +1,22 @@
 import { Fragment, useMemo } from "react";
-import type { AgentPageCitation, AgentTranscriptCitation } from "../../../../../../shared/agent";
+import type { AgentMessageWebLink, AgentPageCitation, AgentTranscriptCitation } from "../../../../../../shared/agent";
 import type { AgentImageAttachment } from "../../core/types";
 import type { AgentFileAttachment } from "./composer-file";
 import { CitationChipView } from "./CitationChipView";
 import { FileAttachmentChipView } from "./FileAttachmentChipView";
 import { ImageAttachmentChipView } from "./ImageAttachmentChipView";
-import { parseRenderedCitationSegments } from "./message-citation";
+import { parseRenderedCitationSegments, type ComposerTextSegment, type RenderedCitationSegment } from "./message-citation";
 import { PageCitationChipView } from "./PageCitationChipView";
+import { splitMessageWebLinks } from "./message-web-links";
+import { websiteLinkLabel } from "./web-link-display";
+import { WebsiteLinkIcon } from "./page-citation-tab-icon";
+import { ResourceChip } from "./ResourceChip";
+import { useWebLinkClipboard } from "./web-link-clipboard";
 
 type MessageCitationTextProps = {
   text: string;
+  webLinks?: readonly AgentMessageWebLink[] | undefined;
+  onWebLinkClick?: (url: string) => void;
   transcriptCitations?: readonly AgentTranscriptCitation[];
   pageCitations?: readonly AgentPageCitation[];
   inlineImages?: readonly AgentImageAttachment[];
@@ -20,8 +27,12 @@ type MessageCitationTextProps = {
   onFileAttachmentClick?: (file: AgentFileAttachment) => void;
 };
 
+type MessageTextSegment = ComposerTextSegment | RenderedCitationSegment | { type: "link"; url: string };
+
 export const MessageCitationText = ({
   text,
+  webLinks = [],
+  onWebLinkClick,
   transcriptCitations = [],
   pageCitations = [],
   inlineImages = [],
@@ -31,19 +42,23 @@ export const MessageCitationText = ({
   onImageAttachmentClick,
   onFileAttachmentClick
 }: MessageCitationTextProps) => {
+  useWebLinkClipboard();
   const segments = useMemo(
-    () => parseRenderedCitationSegments(
-      text,
-      transcriptCitations,
-      pageCitations,
-      inlineImages,
-      fileAttachments
+    () => splitMessageWebLinks(text, webLinks).flatMap<MessageTextSegment>((part) =>
+      part.type === "link" ? [part] : parseRenderedCitationSegments(
+        part.value,
+        transcriptCitations,
+        pageCitations,
+        inlineImages,
+        fileAttachments
+      )
     ),
-    [fileAttachments, inlineImages, pageCitations, text, transcriptCitations]
+    [fileAttachments, inlineImages, pageCitations, text, transcriptCitations, webLinks]
   );
   const hasRenderedCitations = segments.some(
     (segment) =>
-      segment.type === "transcript"
+      segment.type === "link"
+      || segment.type === "transcript"
       || segment.type === "page"
       || segment.type === "image"
       || segment.type === "file"
@@ -67,6 +82,20 @@ export const MessageCitationText = ({
   const contents = (
     <>
       {segments.map((segment, index) => {
+        if (segment.type === "link") {
+          return (
+            <ResourceChip
+              key={`link-${index}`}
+              className="lyra-agents-citation-chip-link"
+              webLinkUrl={segment.url}
+              title={segment.url}
+              ariaLabel={segment.url}
+              icon={<WebsiteLinkIcon pageUrl={segment.url} />}
+              label={websiteLinkLabel(segment.url)}
+              onActivate={onWebLinkClick === undefined ? undefined : () => onWebLinkClick(segment.url)}
+            />
+          );
+        }
         if (segment.type === "text") {
           if (hasOnlyRenderedCitations && segment.value.trim().length === 0) {
             return null;

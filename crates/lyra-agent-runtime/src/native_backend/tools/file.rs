@@ -108,6 +108,14 @@ pub(crate) fn tool_file_read(
             "suggestedSchemaPath": "/provider/tools/glob",
         })));
     }
+    if super::image_read::is_image_file(&workspace_path.absolute) {
+        return super::image_read::read_image(
+            session_id,
+            turn_id,
+            tool_call_id,
+            &workspace_path.absolute,
+        );
+    }
     let bytes = fs::read(&workspace_path.absolute).map_err(|error| {
         NativeToolFailure::new(
             "read_failed",
@@ -119,7 +127,7 @@ pub(crate) fn tool_file_read(
         return Err(NativeToolFailure::new(
             "unsupported_encoding",
             "binary files are not inlined into model context",
-            "Use a text file path or inspect the file through a binary-aware viewer.",
+            "Read supports text and PNG/JPEG/WebP/GIF images; use a format-specific tool for other binary formats.",
         ));
     }
     let requested_max = value_usize(
@@ -199,9 +207,9 @@ pub(crate) fn tool_file_read(
 }
 
 pub(crate) fn tool_artifact_read(
-    _session_id: &str,
-    _turn_id: &str,
-    _tool_call_id: &str,
+    session_id: &str,
+    turn_id: &str,
+    tool_call_id: &str,
     input: &Value,
 ) -> NativeToolResult {
     let artifact = if let Some(path) = value_string(input, "path") {
@@ -250,43 +258,12 @@ pub(crate) fn tool_artifact_read(
     }
     let is_image = artifact.media_type.starts_with("image/");
     if is_image {
-        return Ok(NativeToolSuccess {
-            content: format!(
-                "Lyra artifact image {} is readable.\n- kind: {}\n- mediaType: {}\n- bytes: {}\n- path: {}\nThe image will be attached to the next provider request as model vision input when the active model supports image input. Do not call file_read for this artifact path again.",
-                artifact.artifact_id,
-                artifact.kind,
-                artifact.media_type,
-                metadata.len(),
-                artifact.absolute.display()
-            ),
-            raw: json!({
-                "kind": "lyra_artifact_read",
-                "artifactId": artifact.artifact_id,
-                "artifactKind": artifact.kind,
-                "path": artifact.absolute.display().to_string(),
-                "mediaType": artifact.media_type,
-                "bytes": metadata.len(),
-                "providerImage": {
-                    "path": artifact.absolute.display().to_string(),
-                    "mediaType": artifact.media_type,
-                    "bytes": metadata.len(),
-                },
-                "imageArtifact": {
-                    "id": artifact.artifact_id,
-                    "kind": "image",
-                    "mediaType": artifact.media_type,
-                    "path": artifact.absolute.display().to_string(),
-                    "openTarget": {
-                        "kind": "file",
-                        "path": artifact.absolute.display().to_string(),
-                        "mediaType": artifact.media_type,
-                    }
-                }
-            }),
-            recommended_next_action: Some(
-                "Use the attached model vision evidence in the next reasoning step.".to_string(),
-            ),
-        });
+        return super::image_read::read_image(
+            session_id,
+            turn_id,
+            tool_call_id,
+            &artifact.absolute,
+        );
     }
 
     let bytes = fs::read(&artifact.absolute).map_err(|error| {

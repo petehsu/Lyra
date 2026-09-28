@@ -189,7 +189,7 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
     address: string
   ): Promise<BrowserPageEntry | undefined> => {
     const existing = entries.get(tabId);
-    if (existing !== undefined && existing.isDestroyed === false) {
+    if (existing !== undefined && existing.isDestroyed === false && !existing.webContents.isDestroyed()) {
       return existing;
     }
     publishEvent({
@@ -203,13 +203,13 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
     const deadline = Date.now() + 3_000;
     while (Date.now() < deadline) {
       const entry = entries.get(tabId);
-      if (entry !== undefined && entry.isDestroyed === false) {
+      if (entry !== undefined && entry.isDestroyed === false && !entry.webContents.isDestroyed()) {
         return entry;
       }
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     const timedOut = entries.get(tabId);
-    return timedOut !== undefined && timedOut.isDestroyed === false ? timedOut : undefined;
+    return timedOut !== undefined && timedOut.isDestroyed === false && !timedOut.webContents.isDestroyed() ? timedOut : undefined;
   };
 
   const navigateAgentPage = async (
@@ -233,6 +233,9 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
       await ensureLiveWorkbenchPageEntry(tabId, "about:blank");
     }
     const target = await resolveBrowserAgentTarget(tabId, request, request.timeoutMs);
+    if (target.webContents.isDestroyed()) {
+      throw new Error(`Browser navigation target was closed before dispatch: ${tabId}`);
+    }
     grantBrowserAuthorizeAct(address, tabId);
     const openAddress = normalizeAddress(target.webContents.getURL()) ?? agentTargetAddress(target);
     if (areNavigationAddressesEquivalent(openAddress, address)) {
@@ -262,6 +265,11 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
           ...(request.useFrameworkRouter === undefined ? {} : {useFrameworkRouter:request.useFrameworkRouter})
         });
         const navigationState = await completion.done;
+        if (target.webContents.isDestroyed()) {
+          // A tab may be closed/replaced while navigation is pending. Never
+          // dereference or replay navigation against the old WebContents.
+          return { ...result, navigationState: "failed", targetMode: "live", browserMode: target.browserMode };
+        }
         return { ...result, address:target.webContents.getURL() || address,
           navigationState, targetMode:"live",browserMode:target.browserMode };
       } finally { completion.cancel(); }
@@ -290,6 +298,9 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
     await waitForAgentPageLoad(shadow.webContents, address, request.timeoutMs ?? 8_000, {
       waitForReady: true
     });
+    if (shadow.webContents.isDestroyed()) {
+      return { address, tabId, title: shadow.title, navigationState: "failed", targetMode: shadow.targetMode, browserMode: target.browserMode };
+    }
     shadow.address = normalizeAddress(shadow.webContents.getURL()) ?? address;
     shadow.title = normalizeString(shadow.webContents.getTitle()) ?? shadow.address;
     invalidateBrowserAgentTargets(tabId, shadow.targetMode, "navigation");
@@ -445,13 +456,13 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
       durationMs: 1_500
     });
     let capture = await captureTargetPage(tabId, target);
-    const visualFrame = await createVisualFrame({
+    let visualFrame = await createVisualFrame({
       tabId,
       target,
       imageWidth: capture.width,
       imageHeight: capture.height
     });
-    rememberVisualFrame(tabId, target.targetMode, visualFrame);
+    const originalWidth = capture.width;
 
     const shouldHighlight = request?.highlightTargets !== false;
     const cacheEntry = readBrowserAgentCacheEntry(tabId, target.targetMode);
@@ -497,6 +508,8 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
       }
     }
 
+    visualFrame = {...visualFrame, imageWidth:capture.width, imageHeight:capture.height, imageScale:capture.width/originalWidth};
+    rememberVisualFrame(tabId, target.targetMode, visualFrame);
     return {
       ...capture,
       targetMode: target.targetMode,

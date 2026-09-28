@@ -596,7 +596,9 @@ fn model_loop_attaches_lyra_artifact_images_as_vision_input() {
     let lumen_dir = agent_root.join("lumen-evidence");
     fs::create_dir_all(&lumen_dir).expect("create lumen evidence dir");
     let lumen_path = lumen_dir.join("lumen-see-vision-browser-tab-1.png");
-    fs::write(&lumen_path, b"\x89PNG\r\n\x1a\nlyra-vision-image").expect("write lumen image");
+    image::RgbImage::new(8, 8)
+        .save(&lumen_path)
+        .expect("write lumen image");
     let lumen_path = lumen_path
         .canonicalize()
         .expect("canonical lumen path")
@@ -684,7 +686,6 @@ fn model_loop_attaches_lyra_artifact_images_as_vision_input() {
             &json!({ "discoveredToolNames": ["artifact_read"] }),
             None,
             Some(128_000),
-            false,
         ),
         tool_choice: ModelToolChoice::Auto,
         host_dispatcher: None,

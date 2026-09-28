@@ -153,7 +153,7 @@ fn budgeted_raw_output(
     )
 }
 
-fn preserve_raw_timeline_facts(raw: &Value, envelope: &mut Value) {
+pub(crate) fn preserve_raw_timeline_facts(raw: &Value, envelope: &mut Value) {
     let Some(object) = envelope.as_object_mut() else {
         return;
     };
@@ -165,6 +165,9 @@ fn preserve_raw_timeline_facts(raw: &Value, envelope: &mut Value) {
         "beforeRef",
         "afterRef",
         "artifactRefs",
+        "providerImage",
+        "imageArtifact",
+        "screenshotArtifactRef",
         "policyDecision",
         "verificationRequired",
     ] {

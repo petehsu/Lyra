@@ -373,6 +373,13 @@ export const formatAffordanceLine = (
   if (facts?.activeDescendant) line += ` activeCandidate=${JSON.stringify(facts.activeDescendant)}`;
   if (facts?.popup) line += ` opens=${facts.popup}`;
   if (facts?.appearance) line += ` appearance=${JSON.stringify(facts.appearance)}`;
+  if (facts?.choice) {
+    const choice = facts.choice;
+    if (choice.conflict) line += " state-conflict";
+    if (choice.conflict || choice.binding !== "native") line += ` nativeChecked=${choice.nativeChecked} binding=${choice.binding}`;
+    for (const evidence of choice.evidence) line += ` ${evidence.source}(${JSON.stringify(evidence.detail)})=${evidence.value}`;
+    for (const issue of choice.issues) line += ` [${issue}]`;
+  }
   if (element.stateHint === "hover") {
     line += " shows on hover";
   }

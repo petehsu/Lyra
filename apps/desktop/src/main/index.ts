@@ -25,6 +25,7 @@ import {
   type LyraAppIconVariant
 } from "./app-identity";
 import { configureBrowserIdentityCompatibility } from "./browser-identity-compat";
+import { registerWindowTheme } from "./window-theme";
 import { loadAccessibilityNativeBindings } from "./accessibility";
 import { createAutoUpdateService } from "./auto-update/service";
 import {
@@ -1401,24 +1402,21 @@ const registerIpcHandlers = async (): Promise<void> => {
     mainWindow?.close();
   });
 
-  ipcMain.handle(
-    LYRA_CHANNELS.setWindowThemeSource,
-    (_event, source: unknown): void => {
-      if (source !== "system" && source !== "light" && source !== "dark") {
-        throw new Error("Invalid Lyra window theme source.");
-      }
-      nativeTheme.themeSource = source;
+  const disposeWindowTheme = registerWindowTheme(
+    () => mainWindow,
+    (dark) => {
       if (
         activeWindowMaterialMode === "opaque"
         && mainWindow !== null
         && mainWindow.isDestroyed() === false
       ) {
         mainWindow.setBackgroundColor(
-          resolveOpaqueWindowBackground(nativeTheme.shouldUseDarkColors)
+          resolveOpaqueWindowBackground(dark)
         );
       }
     }
   );
+  app.once("will-quit", disposeWindowTheme);
 
   ipcMain.handle(LYRA_CHANNELS.readAppMeta, (): AppMetaPayload => readAppMetaPayload());
 

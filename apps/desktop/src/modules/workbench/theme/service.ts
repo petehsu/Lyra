@@ -102,25 +102,59 @@ export const readSystemPrefersDark = (): boolean => {
 };
 
 export const observeSystemPrefersDark = (onChange: (prefersDark: boolean) => void): (() => void) => {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+  if (typeof window === "undefined") {
     return () => undefined;
   }
 
-  const media = window.matchMedia(SYSTEM_DARK_QUERY);
-  const listener = (event: MediaQueryListEvent): void => {
-    onChange(event.matches);
+  const media = typeof window.matchMedia === "function" ? window.matchMedia(SYSTEM_DARK_QUERY) : null;
+  const controls = window.lyraDesktop?.windowControls;
+  let disposed = false;
+  let nativeReady = false;
+  let revision = 0;
+  const listener = (): void => {
+    if (!nativeReady && !disposed && media) onChange(media.matches);
   };
-
-  if (typeof media.addEventListener === "function") {
+  if (typeof media?.addEventListener === "function") {
     media.addEventListener("change", listener);
-    return () => {
-      media.removeEventListener("change", listener);
-    };
+  } else {
+    media?.addListener?.(listener);
   }
 
-  media.addListener(listener);
+  // Subscribe before reading, so startup/restore cannot miss a theme change.
+  const unsubscribe = controls?.onThemeChange?.((theme) => {
+    if (disposed) return;
+    revision += 1;
+    nativeReady = true;
+    onChange(theme.shouldUseDarkColors);
+  });
+  const refresh = (): void => {
+    listener();
+    if (!controls?.readTheme) return;
+    const requestRevision = ++revision;
+    void controls.readTheme().then((theme) => {
+      if (disposed || requestRevision !== revision) return;
+      nativeReady = true;
+      onChange(theme.shouldUseDarkColors);
+    }).catch(() => {
+      // Browser-only previews and an older preload can still use matchMedia.
+    });
+  };
+  const onVisibilityChange = () => {
+    if (document.visibilityState === "visible") refresh();
+  };
+  window.addEventListener("focus", refresh);
+  document.addEventListener("visibilitychange", onVisibilityChange);
+  refresh();
   return () => {
-    media.removeListener(listener);
+    disposed = true;
+    unsubscribe?.();
+    window.removeEventListener("focus", refresh);
+    document.removeEventListener("visibilitychange", onVisibilityChange);
+    if (typeof media?.removeEventListener === "function") {
+      media.removeEventListener("change", listener);
+    } else {
+      media?.removeListener?.(listener);
+    }
   };
 };
 
