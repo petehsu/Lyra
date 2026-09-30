@@ -165,13 +165,16 @@ fn find_osc_terminator(bytes: &[u8], from: usize) -> Option<(usize, usize)> {
 }
 
 fn parse_osc_payload(payload: &str) -> Option<ShellIntegrationEvent> {
-    if payload.starts_with("7;") {
+    if let Some(rest) = payload.strip_prefix("7;") {
+        // OSC 7 is a file URI (VS Code, iTerm, kitty). A prompt fragment such
+        // as `#/home/user/Documents%` is not a directory.
+        let cwd = parse_osc7_cwd(rest)?;
         return Some(ShellIntegrationEvent {
             kind: ShellIntegrationEventKind::CwdChanged,
             raw: payload.to_string(),
             command_id: None,
             command: None,
-            cwd: parse_osc7_cwd(payload.strip_prefix("7;").unwrap_or_default()),
+            cwd: Some(cwd),
             exit_code: None,
             signal: None,
             confidence: 1.0,
@@ -264,16 +267,19 @@ fn parse_osc_payload(payload: &str) -> Option<ShellIntegrationEvent> {
                 confidence: 1.0,
             })
         }
-        ["633", "Cwd", cwd, ..] => Some(ShellIntegrationEvent {
-            kind: ShellIntegrationEventKind::CwdChanged,
-            raw: payload.to_string(),
-            command_id: None,
-            command: None,
-            cwd: Some(percent_decode(cwd)),
-            exit_code: None,
-            signal: None,
-            confidence: 1.0,
-        }),
+        ["633", "Cwd", cwd, ..] => {
+            let cwd = shell_cwd_from_encoded(cwd)?;
+            Some(ShellIntegrationEvent {
+                kind: ShellIntegrationEventKind::CwdChanged,
+                raw: payload.to_string(),
+                command_id: None,
+                command: None,
+                cwd: Some(cwd),
+                exit_code: None,
+                signal: None,
+                confidence: 1.0,
+            })
+        }
         _ => None,
     }
 }
@@ -332,12 +338,48 @@ fn parse_params(params: &[&str]) -> ParsedParams {
     parsed
 }
 
-fn parse_osc7_cwd(value: &str) -> Option<String> {
-    if let Some(rest) = value.strip_prefix("file://") {
-        let path_start = rest.find('/').unwrap_or(0);
-        return Some(percent_decode(&rest[path_start..]));
+fn is_absolute_shell_cwd(value: &str) -> bool {
+    let value = value.trim();
+    value.starts_with('/')
+        || (value.len() >= 3
+            && value.as_bytes()[0].is_ascii_alphabetic()
+            && value.as_bytes()[1] == b':'
+            && matches!(value.as_bytes()[2], b'/' | b'\\'))
+}
+
+/// A prompt marker such as `Lyra%` is not a percent-escape. Real paths encode
+/// `%` as `%25`.
+fn percent_encoding_is_well_formed(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            if index + 2 >= bytes.len() {
+                return false;
+            }
+            if u8::from_str_radix(&value[index + 1..index + 3], 16).is_err() {
+                return false;
+            }
+            index += 3;
+            continue;
+        }
+        index += 1;
     }
-    Some(percent_decode(value))
+    true
+}
+
+fn shell_cwd_from_encoded(encoded: &str) -> Option<String> {
+    let encoded = encoded.trim();
+    if !percent_encoding_is_well_formed(encoded) {
+        return None;
+    }
+    let path = percent_decode(encoded);
+    is_absolute_shell_cwd(&path).then_some(path)
+}
+
+fn parse_osc7_cwd(value: &str) -> Option<String> {
+    let rest = value.trim().strip_prefix("file://")?;
+    shell_cwd_from_encoded(&rest[rest.find('/')?..])
 }
 
 fn percent_decode(value: &str) -> String {

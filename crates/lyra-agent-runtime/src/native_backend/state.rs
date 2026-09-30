@@ -395,10 +395,6 @@ impl NativeRuntimeState {
             sessions,
             active_session_id,
             config,
-            active_skills: state_file
-                .as_ref()
-                .map(|state| state.active_skills.clone())
-                .unwrap_or_default(),
             pending_permissions,
             pending_clarifications,
             suppressed_tool_usage_by_turn: HashMap::new(),
@@ -454,7 +450,6 @@ impl NativeRuntimeState {
             tool_usage_cache: self.tool_usage_cache.clone(),
             active_session_id: self.active_session_id.clone(),
             config: self.config.clone(),
-            active_skills: self.active_skills.clone(),
             pending_permissions,
             pending_clarifications,
             first_used_at: self.first_used_at.clone(),
@@ -1933,7 +1928,6 @@ mod persistence_tests {
             tool_usage_cache: HashMap::new(),
             active_session_id: None,
             config,
-            active_skills: HashSet::new(),
             pending_permissions: HashMap::new(),
             pending_clarifications: HashMap::new(),
             first_used_at: None,
@@ -1977,7 +1971,6 @@ mod persistence_tests {
             sessions: HashMap::new(),
             active_session_id: None,
             config,
-            active_skills: HashSet::new(),
             pending_permissions: HashMap::new(),
             pending_clarifications: HashMap::new(),
             model_capabilities: HashMap::new(),

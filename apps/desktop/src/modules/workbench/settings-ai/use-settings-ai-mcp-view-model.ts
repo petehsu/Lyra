@@ -59,7 +59,7 @@ const mcpDraftFromServer = (server: AgentMcpServer): McpEditDraft => {
       args: server.transport.args.join(" "),
       command: server.transport.command,
       enabled: server.enabled,
-      env: formatMcpMap(server.transport.env),
+      env: formatMcpMap({ ...server.transport.env, ...server.transport.secretEnv }),
       headers: "",
       name: server.name,
       transport: "stdio",
@@ -71,7 +71,7 @@ const mcpDraftFromServer = (server: AgentMcpServer): McpEditDraft => {
     command: "",
     enabled: server.enabled,
     env: "",
-    headers: formatMcpMap(server.transport.headers),
+    headers: formatMcpMap({ ...server.transport.headers, ...server.transport.secretHeaders }),
     name: server.name,
     transport: server.transport.kind,
     url: server.transport.url,
@@ -144,6 +144,9 @@ export const useSettingsAiMcpViewModel = (model: SettingsAiModel) => {
           command: editingDraft.command,
           args: editingDraft.args,
           env: editingDraft.env,
+          ...(server.transport.kind === "stdio" ? { envVars: server.transport.envVars ?? [], cwd: server.transport.cwd ?? null } : {}),
+          startupTimeoutMs: server.startupTimeoutMs ?? null,
+          toolTimeoutMs: server.toolTimeoutMs ?? null,
           enabled: editingDraft.enabled,
         }
         : {
@@ -152,6 +155,9 @@ export const useSettingsAiMcpViewModel = (model: SettingsAiModel) => {
           transport: editingDraft.transport,
           url: editingDraft.url,
           headers: editingDraft.headers,
+          ...(server.transport.kind !== "stdio" ? { envHttpHeaders: server.transport.envHttpHeaders ?? {}, bearerTokenEnvVar: server.transport.bearerTokenEnvVar ?? null } : {}),
+          startupTimeoutMs: server.startupTimeoutMs ?? null,
+          toolTimeoutMs: server.toolTimeoutMs ?? null,
           enabled: editingDraft.enabled,
         });
       cancelEditServer();
@@ -160,13 +166,9 @@ export const useSettingsAiMcpViewModel = (model: SettingsAiModel) => {
 
   const toggleServer = useCallback((server: AgentMcpServer, active: boolean): void => {
     void runMcpOperation(`server:${server.id}`, async () => {
-      if (active) {
-        await model.connectAgentMcpServer?.({ serverId: server.id });
-      } else {
-        await model.disconnectAgentMcpServer?.({ serverId: server.id });
-      }
+      await model.setAgentMcpEnabled?.({ serverId: server.id, enabled: active });
     });
-  }, [model.connectAgentMcpServer, model.disconnectAgentMcpServer, runMcpOperation]);
+  }, [model.setAgentMcpEnabled, runMcpOperation]);
 
   const removeServer = useCallback((server: AgentMcpServer): void => {
     void runMcpOperation(`server:${server.id}`, async () => {

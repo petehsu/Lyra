@@ -7,7 +7,10 @@ pub(crate) struct RuntimeToolManifestProvider {
 }
 
 impl RuntimeToolManifestProvider {
-    fn from_runtime(dispatcher: Option<&Arc<HostCapabilityDispatcher>>) -> Self {
+    fn from_runtime(
+        dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
+        root: Option<&str>,
+    ) -> Self {
         let builtin_registry = ToolFsRegistry::builtin();
         let enabled_media_paths = enabled_media_tool_paths();
         let mut sources = vec![runtime_manifest_source(
@@ -52,7 +55,7 @@ impl RuntimeToolManifestProvider {
                 diagnostics,
             ));
         }
-        let (mcp_manifests, mcp_diagnostics) = mcp_capability_manifests();
+        let (mcp_manifests, mcp_diagnostics) = mcp_capability_manifests(root);
         sources.push(runtime_manifest_source(
             "mcp_server_capabilities",
             "dynamic",
@@ -60,7 +63,7 @@ impl RuntimeToolManifestProvider {
             mcp_manifests.len(),
             mcp_diagnostics,
         ));
-        let (skills_manifests, skills_diagnostics) = skill_capability_manifests();
+        let (skills_manifests, skills_diagnostics) = skill_capability_manifests(root);
         sources.push(runtime_manifest_source(
             "skill_capabilities",
             "dynamic",
@@ -98,9 +101,10 @@ impl RuntimeToolManifestProvider {
 
 pub(crate) fn dynamic_capability_manifests(
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
+    root: Option<&str>,
 ) -> Vec<ToolManifest> {
-    let (mut manifests, _) = mcp_capability_manifests();
-    let (skills, _) = skill_capability_manifests();
+    let (mut manifests, _) = mcp_capability_manifests(root);
+    let (skills, _) = skill_capability_manifests(root);
     let (software, _) = software_manifests_with_diagnostics(dispatcher);
     manifests.extend(skills);
     manifests.extend(software);
@@ -216,7 +220,14 @@ pub(crate) fn runtime_registry() -> ToolFsRegistry {
 pub(crate) fn runtime_registry_with_dispatcher(
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
 ) -> ToolFsRegistry {
-    let provider = RuntimeToolManifestProvider::from_runtime(dispatcher);
+    runtime_registry_for_project(dispatcher, None)
+}
+
+pub(crate) fn runtime_registry_for_project(
+    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
+    root: Option<&str>,
+) -> ToolFsRegistry {
+    let provider = RuntimeToolManifestProvider::from_runtime(dispatcher, root);
     ToolFsRegistry::with_builtin_filter_and_providers(
         |manifest| provider.include_builtin_manifest(manifest),
         &[&provider],
@@ -225,17 +236,22 @@ pub(crate) fn runtime_registry_with_dispatcher(
 
 pub(crate) fn runtime_manifest_source_summary(
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
+    root: Option<&str>,
 ) -> Value {
-    RuntimeToolManifestProvider::from_runtime(dispatcher).source_summary()
+    RuntimeToolManifestProvider::from_runtime(dispatcher, root).source_summary()
 }
 
 pub(super) fn runtime_registry_for_tool_fs_call(
+    session_id: &str,
     tool_name: &str,
     input: &Value,
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
 ) -> ToolFsRegistry {
     if tool_fs_call_needs_dynamic_software(tool_name, input) {
-        runtime_registry_with_dispatcher(dispatcher)
+        match projects::session_root(session_id) {
+            Ok(root) => runtime_registry_for_project(dispatcher, root.as_deref()),
+            Err(_) => ToolFsRegistry::builtin(),
+        }
     } else {
         ToolFsRegistry::builtin()
     }

@@ -1,0 +1,41 @@
+{
+  "rootCause": "Public AgentRuntimeServices dispatcher omitted four agent.projects methods and agent.mcp.setEnabled; previous browser fixture bypassed that dispatcher.",
+  "before": {
+    "liveDaemonError": {
+      "code": "METHOD_NOT_FOUND",
+      "message": "unknown agent runtime method: agent.projects.list"
+    },
+    "routingRegression": "failed on agent.projects.list"
+  },
+  "after": {
+    "routingTestsPassed": 6,
+    "desktopMethodLiteralsChecked": 93,
+    "unregisteredDesktopMethodLiterals": [],
+    "browser": {
+      "results": [
+        "Global MCP defaults update through the public runtime dispatcher without connecting.",
+        "Unsent composer project appears immediately; project can enable a globally disabled MCP without affecting another project.",
+        "Keyboard tab navigation and Skill override persist through the real backend.",
+        "Restart retains overrides; reset follows global defaults; disabled stale MCP call is rejected.",
+        "Missing directory remains listed as unavailable."
+      ],
+      "errors": []
+    },
+    "daemon": {
+      "passed": 3,
+      "checks": [
+        "Real daemon socket exposes project list, register and settings.",
+        "Real daemon socket saves global MCP defaults without connecting.",
+        "Real daemon socket preserves true, false and follow-global overrides."
+      ],
+      "isolatedData": true
+    }
+  },
+  "validation": {
+    "cargoFmt": "passed",
+    "runtimeClippyAllTargets": "passed with existing warnings",
+    "structure": "same 5 existing violations: state.rs, tools/file.rs, tools/web.rs, main/index.ts, main/storage/roots.ts",
+    "nativeStage": "passed; target and staged lyrad SHA256 match"
+  },
+  "limits": "Browser fixture covers real React components through public runtime services; separate isolated daemon test covers socket transport. Owner desktop click-through remains pending. No real provider or MCP connection was started."
+}

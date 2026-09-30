@@ -46,7 +46,28 @@ pub(crate) fn run_memory_agent_extraction_for_event(
             }).to_string(),
         }),
     ];
-    let reply = call_model_once_non_streaming(&provider, &model, &messages, &[])?;
+    let reply = turn_engine::block_on(async {
+        tokio::time::timeout(
+            Duration::from_millis(memory_job_budget::per_job_time_budget_ms(event_type) as u64),
+            scheduled_background_provider_request(
+                &provider,
+                &model,
+                call_model_once_non_streaming_with_choice_async(
+                    &provider,
+                    &model,
+                    &messages,
+                    &[],
+                    &ModelToolChoice::Auto,
+                    session_id,
+                    turn_id,
+                ),
+            ),
+        )
+        .await
+        .map_err(|_| {
+            AgentRuntimeError::Core("memory extraction time budget exceeded".to_string())
+        })?
+    })?;
     let content = reply
         .content
         .as_deref()

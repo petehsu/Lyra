@@ -4,7 +4,8 @@
 //
 // The DataProvider limits how many messages are materialized as DOM nodes
 // (render-budget system). This view renders all provided messages directly —
-// no virtual scrolling, no height estimation.
+// Native content visibility skips offscreen history layout without unmounting
+// text or the live tail. Browser anchoring owns the reader's position when paused.
 
 import {
   useCallback,
@@ -306,7 +307,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
   const composerWrapRef = useRef<HTMLDivElement | null>(null);
   const autoScroll = useAutoScroll({
     working: true,
-    overflowAnchor: "none",
+    overflowAnchor: "dynamic",
     bottomThreshold: APP_CONFIG.scroll.atBottomThreshold
   });
   const bindScrollRef = useCallback((node: HTMLDivElement | null) => {

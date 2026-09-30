@@ -212,4 +212,25 @@ describe("provider icon public-only resolution", () => {
     expect(networkMocks.lookup).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  test("drops the URL path, then uses the parent site icon and caches it", async () => {
+    fetchMock
+      .mockResolvedValueOnce(new Response("<html></html>", { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(pngResponse());
+    const cache = createProviderIconCache({ storageRoot });
+
+    const first = await cache.resolve("https://mcp.deepwiki.com/mcp");
+
+    expect(first.iconUrl).toMatch(/^lyra-file:\/\/preview\?/u);
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "https://mcp.deepwiki.com",
+      "https://mcp.deepwiki.com/favicon.ico",
+      "https://deepwiki.com/favicon.ico"
+    ]);
+
+    fetchMock.mockClear();
+    await expect(cache.resolve("https://mcp.deepwiki.com/mcp")).resolves.toEqual(first);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

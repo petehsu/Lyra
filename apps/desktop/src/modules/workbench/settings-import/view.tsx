@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { FolderOpen } from "@lyra/icons";
 
 import type {
   AgentImportDetection,
@@ -24,9 +23,6 @@ import {
 export type SettingsImportLabels = {
   readonly title: string;
   readonly description: string;
-  readonly project: string;
-  readonly chooseProject: string;
-  readonly clearProject: string;
   readonly detect: string;
   readonly sync: string;
   readonly synced: string;
@@ -66,7 +62,6 @@ const SourceTitle = ({ source }: { readonly source: AgentImportSource }) => (
 );
 
 const emptyPreferences = (): AgentImportPreferences => ({
-  projectRoot: null,
   sources: {
     claude: { skills: true, mcp: true },
     cursor: { skills: true, mcp: true },
@@ -151,8 +146,7 @@ export const SettingsImportView = ({ desktopApi, labels }: Props) => {
         }
       }
       const detection = await agent.detectImport({
-        sourceId: source.id,
-        ...(preferences.projectRoot === undefined ? {} : { projectRoot: preferences.projectRoot })
+        sourceId: source.id
       });
       setDetections((value) => ({ ...value, [source.id]: detection }));
     } catch (reason) {
@@ -160,12 +154,6 @@ export const SettingsImportView = ({ desktopApi, labels }: Props) => {
     } finally {
       setPendingSourceId(null);
     }
-  };
-
-  const chooseProject = async (): Promise<void> => {
-    const selected = await desktopApi?.files.selectDirectories();
-    const path = selected?.[0]?.path;
-    if (path !== undefined) await updatePreferences({ projectRoot: path });
   };
 
   if (agent === undefined) {
@@ -181,12 +169,12 @@ export const SettingsImportView = ({ desktopApi, labels }: Props) => {
         <AppSettingsSection label={selectedSource.label}>
           <AppSettingsRow
             title={labels.skills}
-            description={detection?.candidates.filter((item) => item.kind === "skill").map((item) => `${item.sourceItemId} · ${item.scope} · ${item.status}`).join("\n")}
+            description={detection?.candidates.filter((item) => item.kind === "skill").map((item) => `${item.sourceItemId} · ${item.projectRoot ?? item.sourcePath} · ${item.status}`).join("\n")}
             control={<AppSwitch aria-label={labels.skills} checked={preference.skills} onCheckedChange={(skills) => void updatePreferences({ sourceId: selectedSource.id, skills })} />}
           />
           <AppSettingsRow
             title={labels.mcp}
-            description={detection?.candidates.filter((item) => item.kind === "mcp").map((item) => `${item.sourceItemId} · ${item.scope} · ${item.status}`).join("\n")}
+            description={detection?.candidates.filter((item) => item.kind === "mcp").map((item) => `${item.sourceItemId} · ${item.projectRoot ?? item.sourcePath} · ${item.status}`).join("\n")}
             control={<AppSwitch aria-label={labels.mcp} checked={preference.mcp} onCheckedChange={(mcp) => void updatePreferences({ sourceId: selectedSource.id, mcp })} />}
           />
         </AppSettingsSection>
@@ -196,22 +184,6 @@ export const SettingsImportView = ({ desktopApi, labels }: Props) => {
 
   return (
     <div className="lyra-settings-import">
-      <AppSettingsSection label={labels.title}>
-        <AppSettingsRow
-          title={labels.project}
-          description={preferences.projectRoot ?? labels.description}
-          control={(
-            <span className="lyra-settings-import-project-actions">
-              <AppButton type="button" variant="secondary" onClick={() => void chooseProject()}>
-                <FolderOpen size={14} aria-hidden="true" />{labels.chooseProject}
-              </AppButton>
-              {preferences.projectRoot == null ? null : (
-                <AppButton type="button" variant="ghost" onClick={() => void updatePreferences({ projectRoot: null })}>{labels.clearProject}</AppButton>
-              )}
-            </span>
-          )}
-        />
-      </AppSettingsSection>
       <AppSettingsSection label={labels.title} titlePlacement="none">
         {sources.map((source) => {
           const state = actionState(detections[source.id]);

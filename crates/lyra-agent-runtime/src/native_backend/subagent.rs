@@ -341,6 +341,12 @@ pub(crate) async fn tool_agent(
                 working_dir.clone(),
                 SUBAGENT_SESSION_KIND,
             );
+            child.snapshot["workingDirIsHome"] = state
+                .sessions
+                .get(session_id)
+                .and_then(|parent| parent.snapshot.get("workingDirIsHome"))
+                .cloned()
+                .unwrap_or(json!(false));
             let child_id = child.id.clone();
             child.snapshot["parentSessionId"] = json!(session_id);
             child.snapshot["subagent"] = json!({

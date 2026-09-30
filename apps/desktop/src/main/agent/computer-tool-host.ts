@@ -432,14 +432,30 @@ export const createComputerToolHost = ({
         };
       }
       const scope = readOptionalStringField(input, "scope") === "screen" ? "screen" : "focused-window";
-      const capture = await visualFallback.captureScreen(scope);
-      if (capture === null) {
+      let capture: Awaited<ReturnType<typeof visualFallback.captureScreen>>;
+      try {
+        capture = await visualFallback.captureScreen(scope);
+      } catch (error) {
+        const message = error instanceof Error ? error.message.trim() : "";
         return {
           ok: false,
           platform: process.platform,
           error: {
             kind: "captureFailed",
-            message: `Could not capture the ${scope}. Screen recording permission may be denied.`
+            message: message.length > 0 ? message : `Could not capture the ${scope}.`
+          }
+        };
+      }
+      if (capture === null) {
+        const permissionHint = process.platform === "darwin"
+          ? " Screen recording permission may be denied."
+          : "";
+        return {
+          ok: false,
+          platform: process.platform,
+          error: {
+            kind: "captureFailed",
+            message: `Could not capture the ${scope}.${permissionHint}`
           }
         };
       }

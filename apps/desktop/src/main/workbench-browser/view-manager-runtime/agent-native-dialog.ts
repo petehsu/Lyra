@@ -78,7 +78,8 @@ export const createBrowserNativeDialogs = (host:Host) => {
     const mode=request.targetMode??"live",op=operations.get(key(tabId,mode));
     if(!op?.dialog || op.dialog.id!==request.dialogId || op.owner!==owner()) throw new Error("No matching native dialog belongs to this task and tab");
     if(op.handling) throw new Error("This dialog is already being handled; do not replay");
-    if(request.accept && request.effect!==op.effect) throw new Error("Accepting the dialog must retain the triggering action's declared effect");
+    // An alert has one button. Closing it does not authorize the action that opened it.
+    if(request.accept && op.dialog.type!=="alert" && request.effect!==op.effect) throw new Error("Accepting the dialog must retain the triggering action's declared effect");
     if(request.promptText!==undefined && op.dialog.type!=="prompt") throw new Error("promptText is valid only for a prompt dialog");
     if(mode==="live")host.assertSharedControlCanContinue(tabId);
     op.handling=true;

@@ -93,22 +93,37 @@ pub(crate) fn software_catalog(
         json!({"includeSchemas":true}),
         DEFAULT_HOST_TOOL_TIMEOUT_MS,
     )
-    .and_then(|value| {
-        let software = value
-            .get("software")
-            .and_then(Value::as_array)
-            .ok_or_else(|| "software catalog response is missing its software array".to_string())?;
-        if software.iter().any(|entry| {
-            entry.get("id").and_then(Value::as_str).is_none()
-                || entry.get("actions").and_then(Value::as_array).is_none()
-        }) {
-            return Err("software catalog contains an invalid capability entry".into());
-        }
-        Ok(software
-            .iter()
-            .flat_map(registry::software_action_manifests)
-            .collect::<Vec<_>>())
-    });
+    .and_then(|value| parse_catalog(&value));
+    store_result(&slot, result);
+    let (_, manifests, diagnostics) = slot.read();
+    (manifests, diagnostics)
+}
+
+fn parse_catalog(value: &Value) -> Result<Vec<ToolManifest>, String> {
+    if value
+        .get("hostCapabilityAvailable")
+        .and_then(Value::as_bool)
+        == Some(false)
+    {
+        return Err("Software capability snapshot is not available yet.".into());
+    }
+    let software = value
+        .get("software")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "software catalog response is missing its software array".to_string())?;
+    if software.iter().any(|entry| {
+        entry.get("id").and_then(Value::as_str).is_none()
+            || entry.get("actions").and_then(Value::as_array).is_none()
+    }) {
+        return Err("software catalog contains an invalid capability entry".into());
+    }
+    Ok(software
+        .iter()
+        .flat_map(registry::software_action_manifests)
+        .collect::<Vec<_>>())
+}
+
+fn store_result(slot: &CatalogSlot, result: Result<Vec<ToolManifest>, String>) {
     let mut snapshot = slot.snapshot.lock().unwrap_or_else(|e| e.into_inner());
     snapshot.attempted = true;
     match result {
@@ -128,11 +143,19 @@ pub(crate) fn software_catalog(
             ];
         }
     }
-    (snapshot.manifests.clone(), snapshot.diagnostics.clone())
 }
 
-/// Refresh at a new user turn or an explicit catalog refresh, not after an
-/// ordinary software action. Search, schema assembly and dispatch share it.
+/// Install the catalog already captured for this turn. No renderer round trip.
+pub(crate) fn update_software_catalog(
+    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
+    value: &Value,
+) {
+    if let Some(dispatcher) = dispatcher {
+        store_result(&slot(dispatcher), parse_catalog(value));
+    }
+}
+
+/// Explicit ToolSearch refresh; ordinary turn preparation supplies its snapshot.
 pub(crate) fn refresh_software_catalog(dispatcher: Option<&Arc<HostCapabilityDispatcher>>) {
     software_catalog(dispatcher, true);
 }

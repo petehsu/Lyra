@@ -46,6 +46,7 @@ export type WorkbenchObservationDependencies = {
     readonly titleHint?: string;
   }[];
   readonly activateEmbeddedBrowserTab?: (tabId: string) => boolean;
+  readonly closeEmbeddedBrowserTab?: (tabId: string) => boolean;
 };
 
 export type WorkbenchObservationRequestHandlers = {

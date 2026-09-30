@@ -1,0 +1,201 @@
+{
+  "date": "2026-09-29",
+  "baselineCommit": "571e81d4838756ea0ba3c3e1ee549ebf17285653",
+  "chrome": {
+    "environment": "Production components and styles; synthetic session; empty workspace",
+    "passed": true,
+    "assertions": [
+      "200 loaded messages: bottom follow survives divider resize",
+      "history reading anchor returns to the same pixel after resize",
+      "offscreen history reveals and selects complete text",
+      "incoming text does not steal history scroll position",
+      "stream completion preserves wrap control, full code and exact copy source",
+      "interrupted drag cleans up interaction state",
+      "native viewport resize settles and retains bottom follow"
+    ],
+    "trials": [
+      {
+        "count": 0,
+        "repeat": 0,
+        "frames": 119,
+        "p95": 16.799999999999272,
+        "max": 16.799999999999272
+      },
+      {
+        "count": 0,
+        "repeat": 1,
+        "frames": 119,
+        "p95": 16.700000000000728,
+        "max": 16.80000000000291
+      },
+      {
+        "count": 50,
+        "repeat": 0,
+        "frames": 126,
+        "p95": 16.799999999999272,
+        "max": 16.80000000000291
+      },
+      {
+        "count": 50,
+        "repeat": 1,
+        "frames": 123,
+        "p95": 16.799999999995634,
+        "max": 16.80000000000291
+      },
+      {
+        "count": 200,
+        "repeat": 0,
+        "frames": 144,
+        "p95": 16.799999999995634,
+        "max": 33.400000000001455
+      },
+      {
+        "count": 200,
+        "repeat": 1,
+        "frames": 143,
+        "p95": 16.700000000004366,
+        "max": 16.80000000000291
+      },
+      {
+        "count": 1,
+        "kind": "single",
+        "streaming": true,
+        "repeat": 0,
+        "frames": 194,
+        "p95": 16.799999999995634,
+        "max": 116.69999999999709
+      },
+      {
+        "count": 1,
+        "kind": "single",
+        "streaming": true,
+        "repeat": 1,
+        "frames": 181,
+        "p95": 16.700000000004366,
+        "max": 116.59999999999854
+      },
+      {
+        "count": 1,
+        "kind": "code",
+        "repeat": 0,
+        "frames": 168,
+        "p95": 50.10000000000582,
+        "max": 83.30000000000291
+      },
+      {
+        "count": 1,
+        "kind": "code",
+        "repeat": 1,
+        "frames": 173,
+        "p95": 50.099999999998545,
+        "max": 100
+      },
+      {
+        "count": 1,
+        "kind": "code",
+        "streaming": true,
+        "repeat": 0,
+        "frames": 187,
+        "p95": 16.80000000000291,
+        "max": 116.60399999999208
+      },
+      {
+        "count": 1,
+        "kind": "code",
+        "streaming": true,
+        "repeat": 1,
+        "frames": 187,
+        "p95": 16.80000000000291,
+        "max": 116.54200000000128
+      }
+    ],
+    "browser": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "beforeNativeResize": {
+      "top": 32440,
+      "gap": 0,
+      "anchor": "none"
+    },
+    "afterNativeResize": {
+      "top": 32440,
+      "gap": 0,
+      "anchor": "none"
+    },
+    "viewport": {
+      "width": 1440,
+      "height": 900,
+      "devicePixelRatio": 1
+    },
+    "errors": []
+  },
+  "types": {
+    "baseline": 95,
+    "current": 94,
+    "added": [],
+    "removed": [
+      [
+        "apps/desktop/src/modules/workbench/syntax/highlighted-source.tsx",
+        2459,
+        "Module '\"@streamdown/code\"' declares 'BundledLanguage' locally, but it is not exported."
+      ]
+    ]
+  },
+  "limitations": [
+    "Synthetic session, empty adjacent workspace. Not whole-app acceptance.",
+    "Static highlighted code still has p95 around 50 ms.",
+    "Streaming cases retain occasional ~117 ms maximum gaps."
+  ],
+  "electron": {
+    "environment": "Production components and styles; synthetic session; empty workspace",
+    "passed": true,
+    "assertions": [
+      "200 loaded messages: bottom follow survives divider resize",
+      "history reading anchor returns to the same pixel after resize",
+      "offscreen history reveals and selects complete text",
+      "incoming text does not steal history scroll position",
+      "stream completion preserves wrap control, full code and exact copy source",
+      "interrupted drag cleans up interaction state",
+      "native viewport resize settles and retains bottom follow"
+    ],
+    "trials": [],
+    "browser": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7871.250 Electron/43.6.0 Safari/537.36",
+    "beforeNativeResize": {
+      "top": 32440,
+      "gap": 0,
+      "anchor": "none"
+    },
+    "afterNativeResize": {
+      "top": 32440,
+      "gap": 0,
+      "anchor": "none"
+    },
+    "nativeResizeSamples": [
+      {
+        "time": 23897.799999999814,
+        "width": 1320,
+        "height": 900
+      },
+      {
+        "time": 24012.599999999627,
+        "width": 1180,
+        "height": 900
+      },
+      {
+        "time": 24089.89999999944,
+        "width": 1380,
+        "height": 900
+      },
+      {
+        "time": 24099.89999999944,
+        "width": 1440,
+        "height": 900
+      }
+    ],
+    "viewport": {
+      "width": 1440,
+      "height": 900,
+      "devicePixelRatio": 1
+    },
+    "errors": []
+  },
+  "electronHarness": "Visible floating utility BrowserWindow; X11 on Linux; 1440x900. No OS edge-drag certification."
+}

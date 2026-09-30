@@ -152,6 +152,7 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
     createVisualFrame: host.createVisualFrame,
     entries: host.entries,
     navigateInEntry: host.navigateInEntry,
+    prepareAgentPage: host.prepareAgentPage,
     publishBrowserAgentActivity: host.publishBrowserAgentActivity,
     publishEvent: host.publishEvent,
     readBrowserAgentShadow: host.readBrowserAgentShadow,
@@ -310,8 +311,18 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
     focusAgentPage: focusInput.focusAgentPage,
     invalidateBrowserAgentTargets,
     locateAgentPage: locator.locateAgentPage,
-    navigateAgentPage: page.navigateAgentPage,
-    reloadAgentPage: page.reloadAgentPage,
+    navigateAgentPage: async (tabId: string, request: Parameters<typeof page.navigateAgentPage>[1]) => {
+      // Dialog capture resolves the page before the navigation runs. A new
+      // live tab has to exist first, or the open is rejected as not materialized.
+      if (request.targetMode !== "isolated") {
+        const prepared = await page.ensureLiveWorkbenchPageEntry(tabId, "about:blank");
+        if (prepared === undefined) {
+          throw new Error(`Live browser page is not materialized: ${tabId || "(missing-tab-id)"}`);
+        }
+      }
+      return captureAction(page.navigateAgentPage)(tabId, request);
+    },
+    reloadAgentPage: captureAction(page.reloadAgentPage),
     observeAgentPage,
     planAgentPage: plan.planAgentPage,
     pressAgentKey: captureAction(focusInput.pressAgentKey),

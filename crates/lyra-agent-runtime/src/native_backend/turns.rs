@@ -625,6 +625,7 @@ pub(crate) fn finish_turn_with_metadata_for_message(
     };
     let mut metadata = metadata;
     let mut compress_check_job: Option<(PathBuf, String, String)> = None;
+    let mut memory_job = None;
     let mut recall_index_job: Option<(PathBuf, NativeSession)> = None;
     let mut ledger_turn: Option<(PathBuf, NativeSession, String, String, Option<String>)> = None;
     let (callback, events) = match state().lock() {
@@ -717,6 +718,11 @@ pub(crate) fn finish_turn_with_metadata_for_message(
                         update_runtime_turn(session, turn_id, status);
                     }
                     let _ = prune_empty_assistant_messages(session);
+                    if status == "finished" {
+                        memory_job =
+                            memory_trigger_from_turn(&session.snapshot, session_id, turn_id)
+                                .map(|event| (root.clone(), event));
+                    }
                     let retention_metrics = prune_transient_tool_outputs(session);
                     prune_goal_continuation_session_messages(session);
                     touch_session(session);
@@ -830,6 +836,9 @@ pub(crate) fn finish_turn_with_metadata_for_message(
     let _ = flush_state();
     for event in events {
         emit_with_callback(&callback, event);
+    }
+    if let Some((root, event)) = memory_job {
+        emit_memory_trigger(&root, event);
     }
     if let Some((root, session)) = recall_index_job {
         let _ = index_session_messages_for_recall(&root, &session);

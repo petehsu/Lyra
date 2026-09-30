@@ -20,6 +20,7 @@ vi.mock("electron", () => ({
 }));
 
 vi.mock("node:os", () => ({
+  release: () => "test-release",
   hostname: osMock.hostname,
   userInfo: osMock.userInfo
 }));

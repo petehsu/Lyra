@@ -1,0 +1,305 @@
+{
+  "runtimeTurnId": "turn-90021b6b-9964-4288-9107-fc8e05d0de76",
+  "startedAtIso": "2026-09-29T10:51:16.240Z",
+  "completedAtIso": "2026-09-29T11:01:18.854Z",
+  "state": "completed",
+  "providerMetadata": {
+    "providerAttempts": [
+      {
+        "attemptId": "attempt-daa53dd8-4134-4921-9e8c-5c3a853ee472",
+        "committedBefore": true,
+        "errorCategory": null,
+        "latencyMs": 461966,
+        "model": "mimo-v2.6-pro",
+        "outcome": "tool_use",
+        "protocolId": "openai_chat_completions",
+        "providerId": "mimo_token_plan_cn",
+        "rawStopReason": "tool_calls",
+        "reasoningChars": 9990,
+        "recoveryAction": null,
+        "requestDurationMs": 461965,
+        "routeId": "mimo_token_plan_cn",
+        "schedulerWaitMs": 0,
+        "stopSignal": "tool_use",
+        "streaming": true,
+        "toolCallCount": 3,
+        "transportKind": null,
+        "usage": {
+          "cacheRead": 24576,
+          "cacheWrite": null,
+          "inputTotal": 35407,
+          "inputUncached": 10831,
+          "output": 2468,
+          "reasoning": 2210
+        },
+        "visibleChars": 61
+      },
+      {
+        "attemptId": "attempt-16016bdf-69e0-4ea8-821a-4631259dbc5a",
+        "committedBefore": true,
+        "errorCategory": null,
+        "latencyMs": 28271,
+        "model": "mimo-v2.6-pro",
+        "outcome": "tool_use",
+        "protocolId": "openai_chat_completions",
+        "providerId": "mimo_token_plan_cn",
+        "rawStopReason": "tool_calls",
+        "reasoningChars": 2730,
+        "recoveryAction": null,
+        "requestDurationMs": 28269,
+        "routeId": "mimo_token_plan_cn",
+        "schedulerWaitMs": 2,
+        "stopSignal": "tool_use",
+        "streaming": true,
+        "toolCallCount": 1,
+        "transportKind": null,
+        "usage": {
+          "cacheRead": 35328,
+          "cacheWrite": null,
+          "inputTotal": 39810,
+          "inputUncached": 4482,
+          "output": 952,
+          "reasoning": 736
+        },
+        "visibleChars": 87
+      },
+      {
+        "attemptId": "attempt-d622d16c-b340-470c-8074-5509f8f8d472",
+        "committedBefore": true,
+        "errorCategory": null,
+        "latencyMs": 44295,
+        "model": "mimo-v2.6-pro",
+        "outcome": "tool_use",
+        "protocolId": "openai_chat_completions",
+        "providerId": "mimo_token_plan_cn",
+        "rawStopReason": "tool_calls",
+        "reasoningChars": 2032,
+        "recoveryAction": null,
+        "requestDurationMs": 44293,
+        "routeId": "mimo_token_plan_cn",
+        "schedulerWaitMs": 1,
+        "stopSignal": "tool_use",
+        "streaming": true,
+        "toolCallCount": 1,
+        "transportKind": null,
+        "usage": {
+          "cacheRead": 39808,
+          "cacheWrite": null,
+          "inputTotal": 40804,
+          "inputUncached": 996,
+          "output": 1982,
+          "reasoning": 658
+        },
+        "visibleChars": 15
+      },
+      {
+        "attemptId": "attempt-665ca0de-7fd7-4071-980d-a6d0570963e0",
+        "committedBefore": true,
+        "errorCategory": null,
+        "latencyMs": 25716,
+        "model": "mimo-v2.6-pro",
+        "outcome": "tool_use",
+        "protocolId": "openai_chat_completions",
+        "providerId": "mimo_token_plan_cn",
+        "rawStopReason": "tool_calls",
+        "reasoningChars": 1074,
+        "recoveryAction": null,
+        "requestDurationMs": 25714,
+        "routeId": "mimo_token_plan_cn",
+        "schedulerWaitMs": 2,
+        "stopSignal": "tool_use",
+        "streaming": true,
+        "toolCallCount": 1,
+        "transportKind": null,
+        "usage": {
+          "cacheRead": 40704,
+          "cacheWrite": null,
+          "inputTotal": 42819,
+          "inputUncached": 2115,
+          "output": 1561,
+          "reasoning": 239
+        },
+        "visibleChars": 0
+      },
+      {
+        "attemptId": "attempt-5dfb8743-ad75-4792-abc3-782384ed018d",
+        "committedBefore": true,
+        "errorCategory": null,
+        "latencyMs": 8497,
+        "model": "mimo-v2.6-pro",
+        "outcome": "tool_use",
+        "protocolId": "openai_chat_completions",
+        "providerId": "mimo_token_plan_cn",
+        "rawStopReason": "tool_calls",
+        "reasoningChars": 481,
+        "recoveryAction": null,
+        "requestDurationMs": 8495,
+        "routeId": "mimo_token_plan_cn",
+        "schedulerWaitMs": 1,
+        "stopSignal": "tool_use",
+        "streaming": true,
+        "toolCallCount": 1,
+        "transportKind": null,
+        "usage": {
+          "cacheRead": 42752,
+          "cacheWrite": null,
+          "inputTotal": 44415,
+          "inputUncached": 1663,
+          "output": 320,
+          "reasoning": 102
+        },
+        "visibleChars": 0
+      },
+      {
+        "attemptId": "attempt-a9285305-eadb-4c40-ad63-4e50aa1367dc",
+        "committedBefore": true,
+        "errorCategory": null,
+        "latencyMs": 16136,
+        "model": "mimo-v2.6-pro",
+        "outcome": "tool_use",
+        "protocolId": "openai_chat_completions",
+        "providerId": "mimo_token_plan_cn",
+        "rawStopReason": "tool_calls",
+        "reasoningChars": 1048,
+        "recoveryAction": null,
+        "requestDurationMs": 16134,
+        "routeId": "mimo_token_plan_cn",
+        "schedulerWaitMs": 1,
+        "stopSignal": "tool_use",
+        "streaming": true,
+        "toolCallCount": 1,
+        "transportKind": null,
+        "usage": {
+          "cacheRead": 44288,
+          "cacheWrite": null,
+          "inputTotal": 44775,
+          "inputUncached": 487,
+          "output": 306,
+          "reasoning": 222
+        },
+        "visibleChars": 0
+      }
+    ],
+    "providerUsage": {
+      "cacheRead": 227456,
+      "cacheReadShare": 0.917050356811676,
+      "cacheWrite": 0,
+      "callCount": 6,
+      "hitRequestCount": 6,
+      "inputTotal": 248030,
+      "inputUncached": 20574,
+      "output": 7589,
+      "reasoning": 4167,
+      "telemetryIncomplete": false
+    }
+  },
+  "messages": [
+    {
+      "id": "message-aa08f035-37e0-4dde-b479-f0327cb63715",
+      "role": "user",
+      "createdAt": "2026-09-29T10:51:16.235Z",
+      "visibleChars": 77,
+      "reasoningChars": 0,
+      "streamTelemetry": null
+    },
+    {
+      "id": "message-46612f4b-88c7-40c3-902e-a7b7a8f507f1",
+      "role": "assistant",
+      "createdAt": "2026-09-29T10:51:22.099Z",
+      "visibleChars": 61,
+      "reasoningChars": 9990,
+      "streamTelemetry": {
+        "firstReasoningAtMs": 1790679082100,
+        "firstVisibleAtMs": 1790679515838,
+        "lastReasoningAtMs": 1790679515818,
+        "lastVisibleAtMs": 1790679518841,
+        "reasoningBytes": 10176,
+        "reasoningChars": 9990,
+        "reasoningChunkCount": 854,
+        "visibleBytes": 143,
+        "visibleChars": 61,
+        "visibleChunkCount": 14
+      }
+    },
+    {
+      "id": "message-a9eb0cf8-1f63-4491-be87-2ffbcba6c883",
+      "role": "assistant",
+      "createdAt": "2026-09-29T10:59:06.362Z",
+      "visibleChars": 87,
+      "reasoningChars": 2730,
+      "streamTelemetry": {
+        "firstReasoningAtMs": 1790679546365,
+        "firstVisibleAtMs": 1790679566398,
+        "lastReasoningAtMs": 1790679566315,
+        "lastVisibleAtMs": 1790679568121,
+        "reasoningBytes": 2834,
+        "reasoningChars": 2730,
+        "reasoningChunkCount": 255,
+        "visibleBytes": 223,
+        "visibleChars": 87,
+        "visibleChunkCount": 24
+      }
+    },
+    {
+      "id": "message-bdb1f6a4-42ef-4376-b0f3-8165f9a399f0",
+      "role": "assistant",
+      "createdAt": "2026-09-29T10:59:45.953Z",
+      "visibleChars": 15,
+      "reasoningChars": 2032,
+      "streamTelemetry": {
+        "firstReasoningAtMs": 1790679585957,
+        "firstVisibleAtMs": 1790679599962,
+        "lastReasoningAtMs": 1790679599960,
+        "lastVisibleAtMs": 1790679600237,
+        "reasoningBytes": 2175,
+        "reasoningChars": 2032,
+        "reasoningChunkCount": 183,
+        "visibleBytes": 45,
+        "visibleChars": 15,
+        "visibleChunkCount": 5
+      }
+    },
+    {
+      "id": "message-7c5342f2-ddc1-4e28-b045-e544faa18f08",
+      "role": "assistant",
+      "createdAt": "2026-09-29T11:00:30.235Z",
+      "visibleChars": 0,
+      "reasoningChars": 1074,
+      "streamTelemetry": {
+        "firstReasoningAtMs": 1790679630235,
+        "lastReasoningAtMs": 1790679637595,
+        "reasoningBytes": 1082,
+        "reasoningChars": 1074,
+        "reasoningChunkCount": 95
+      }
+    },
+    {
+      "id": "message-2874e08a-2296-416e-bc73-e899fa304913",
+      "role": "assistant",
+      "createdAt": "2026-09-29T11:00:54.855Z",
+      "visibleChars": 0,
+      "reasoningChars": 481,
+      "streamTelemetry": {
+        "firstReasoningAtMs": 1790679654856,
+        "lastReasoningAtMs": 1790679658319,
+        "reasoningBytes": 483,
+        "reasoningChars": 481,
+        "reasoningChunkCount": 44
+      }
+    },
+    {
+      "id": "message-42f59548-d63a-4ca1-934e-44a3bb3bf845",
+      "role": "assistant",
+      "createdAt": "2026-09-29T11:01:07.236Z",
+      "visibleChars": 0,
+      "reasoningChars": 1048,
+      "streamTelemetry": {
+        "firstReasoningAtMs": 1790679667240,
+        "lastReasoningAtMs": 1790679675777,
+        "reasoningBytes": 1054,
+        "reasoningChars": 1048,
+        "reasoningChunkCount": 108
+      }
+    }
+  ]
+}

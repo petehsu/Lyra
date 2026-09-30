@@ -50,6 +50,7 @@ export const createTerminalToolHost = ({
     readonly title?: string;
     readonly cwd?: string;
     readonly placement?: "dock" | "workspace";
+    readonly sourceAgentSessionId?: string;
   };
   type PrivateTerminalEntry = {
     readonly type: "private";
@@ -154,6 +155,9 @@ export const createTerminalToolHost = ({
     paneId: pane.paneId,
     title: pane.title,
     placement: pane.placement,
+    ...(pane.sourceAgentSessionId === undefined
+      ? {}
+      : { sourceAgentSessionId: pane.sourceAgentSessionId }),
     ...(pane.currentCwd !== undefined || pane.cwd !== undefined
       ? { cwd: pane.currentCwd ?? pane.cwd }
       : {})
@@ -425,6 +429,16 @@ export const createTerminalToolHost = ({
       if (privateEntry !== null) {
         privateEntry.lastUsedAt = new Date().toISOString();
         return targetFromPrivateEntry(privateEntry);
+      }
+      const service = getWorkbenchObservationService();
+      if (service !== null && typeof service.listTerminalPanes === "function") {
+        try {
+          return await resolveUiTerminal(agentSessionId, payload, false);
+        } catch (error) {
+          if (!(error instanceof Error) || !error.message.startsWith("Requested UI terminal pane was not found")) {
+            throw error;
+          }
+        }
       }
     }
     return await resolvePrivateTerminal(
@@ -812,6 +826,10 @@ export const createTerminalToolHost = ({
       const agentSessionId = readRuntimeSessionId(request);
       const targetPreference = readTerminalTargetPreference(request);
       const createNew = request.createNew === true;
+      const namedUiTarget =
+        readOptionalTerminalId(request, "sessionId") !== undefined
+        || readOptionalTerminalId(request, "terminalTabId") !== undefined
+        || readOptionalTerminalId(request, "paneId") !== undefined;
       let target = await resolveTerminalTarget(agentSessionId, request, {
         privateCreateIfMissing:
           targetPreference === "private"
@@ -819,6 +837,17 @@ export const createTerminalToolHost = ({
           || targetPreference !== "ui",
         uiOpenIfMissing: targetPreference === "ui"
       });
+      if (
+        target.type === "ui"
+        && target.sourceAgentSessionId !== agentSessionId
+      ) {
+        if (namedUiTarget) {
+          throw new Error(
+            "That terminal belongs to the user. Omit sessionId, terminalTabId, and paneId so write_stdin uses this task's private terminal."
+          );
+        }
+        target = await resolvePrivateTerminal(agentSessionId, request, true);
+      }
       target = await ensureWritableTerminalTarget(
         agentSessionId,
         request,

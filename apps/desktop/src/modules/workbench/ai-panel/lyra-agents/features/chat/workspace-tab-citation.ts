@@ -1,8 +1,11 @@
 import type { AgentPageCitation } from "../../../../../../shared/agent";
+import { isImageViewerSupportedPath } from "../../../../image-viewer";
 import type { WorkspaceTab } from "../../../../workspace-tabs/types";
+import type { AgentImageAttachment } from "../../core/types";
 import { truncateQuotedText } from "./message-citation";
 import { compactCitationTrail } from "./page-citation";
 import { pageCitationIconFieldsFromWorkspaceTab } from "./page-citation-tab-icon";
+import { imageAttachmentMetadataFromPath } from "./read-image-attachment";
 
 const pageCitationId = (): string => {
   const randomId = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
@@ -17,6 +20,26 @@ const workspaceTabPageUrl = (tab: WorkspaceTab): string => {
     return tab.filePath.trim();
   }
   return `lyra://workspace-tab/${tab.pageKind}/${tab.id}`;
+};
+
+export const citedImageViewerAttachment = (
+  tab: WorkspaceTab
+): AgentImageAttachment | null => {
+  if (tab.pageKind !== "app" || tab.appId !== "image-viewer") {
+    return null;
+  }
+  const filePath = tab.filePath?.trim() ?? "";
+  if (!isImageViewerSupportedPath(filePath)) {
+    return null;
+  }
+  const title = tab.title.trim();
+  return {
+    ...imageAttachmentMetadataFromPath(filePath, title.length > 0 ? { label: title } : {}),
+    workspaceTabId: tab.id,
+    workspaceTabTitle: title.length > 0 ? title : null,
+    workspaceTabPageKind: "image-viewer",
+    workspaceTabAddress: filePath
+  };
 };
 
 export const buildWorkspaceTabPageCitation = (tab: WorkspaceTab): AgentPageCitation => {

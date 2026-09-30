@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import type {
   BrowserSettingsCategoryId,
   BrowserSettingsSurfaceProps
@@ -43,6 +44,7 @@ export type SettingsFieldId =
   | "aiModels"
   | "aiSkills"
   | "aiMcp"
+  | "projects"
   | "importSettings"
   | "actCache"
   | "leanPromptDelivery"
@@ -180,6 +182,7 @@ export const createWorkbenchSettingsSchema = (
     createField("aiModels", "models", props.modelsCategoryLabel, "custom"),
     createField("aiSkills", "skills", props.skillsCategoryLabel, "custom"),
     createField("aiMcp", "mcp", props.mcpCategoryLabel, "custom"),
+    createField("projects", "projects", t("settings.projectsCategoryLabel"), "custom"),
     createField("importSettings", "importSettings", props.importSettingsCategoryLabel, "custom"),
     createField("actCache", "experimental", props.actCacheLabel, "boolean-choice"),
     createField("leanPromptDelivery", "experimental", props.leanPromptDeliveryLabel, "boolean-choice"),
@@ -259,6 +262,11 @@ export const createWorkbenchSettingsSchema = (
       id: "mcp",
       label: props.mcpCategoryLabel,
       sectionIds: sections.filter((section) => section.categoryId === "mcp").map((section) => section.id)
+    },
+    {
+      id: "projects",
+      label: t("settings.projectsCategoryLabel"),
+      sectionIds: sections.filter((section) => section.categoryId === "projects").map((section) => section.id)
     },
     {
       id: "importSettings",

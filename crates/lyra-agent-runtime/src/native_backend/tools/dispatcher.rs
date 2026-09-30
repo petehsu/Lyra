@@ -378,7 +378,11 @@ pub(crate) async fn execute_model_tool_with_runtime(
         )
         .await;
     }
-    if let Some(deferred) = lookup_deferred_tool(&call.name, dispatcher.as_ref()) {
+    if let Some(deferred) = lookup_deferred_tool(
+        &call.name,
+        dispatcher.as_ref(),
+        projects::session_root(session_id).ok().flatten().as_deref(),
+    ) {
         return execute_deferred_named_tool(
             session_id,
             turn_id,
@@ -721,7 +725,7 @@ pub(crate) async fn execute_tool_fs_target(context: ToolFsTargetExecution<'_>) -
                         host_method,
                         display_name,
                         action,
-                        host_adapter_arguments(context.arguments, action),
+                        host_call_arguments(display_name, context.arguments, action),
                         &started_at,
                     )
                     .await

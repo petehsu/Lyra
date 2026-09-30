@@ -116,6 +116,7 @@ fn duplicate_dead_and_hardware_manifests_are_absent() {
         "/tools/todo/write",
         "/tools/terminal/read",
         "/tools/hardware/list",
+        "/tools/software/invoke_capability",
     ] {
         assert!(
             registry.inspect_path(path).is_err(),

@@ -29,9 +29,13 @@ pub(crate) async fn execute_skill_tool_adapter(
     // a blocking thread — same rationale as mcp_adapter.
     let tool_name_owned = tool_name.to_string();
     let task_arguments = arguments.clone();
+    let project_root = projects::session_root(session_id);
     let raw_result = match tokio::task::spawn_blocking(move || {
-        execute_skill_state_change(&tool_name_owned, &task_arguments)
-            .map_err(AgentRuntimeError::Core)
+        skill_catalog::execute_for_project(
+            &tool_name_owned,
+            &task_arguments,
+            project_root?.as_deref(),
+        )
     })
     .await
     {

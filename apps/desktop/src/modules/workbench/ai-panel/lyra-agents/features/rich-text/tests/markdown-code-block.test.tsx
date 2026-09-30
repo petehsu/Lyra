@@ -46,6 +46,36 @@ describe("Markdown code block controls", () => {
     expect(view.container.textContent).toContain("console.log(value)");
   });
 
+  it("keeps streaming code plain, preserves wrapping on completion, then highlights", async () => {
+    const code = 'const value = 1;\n'.repeat(180);
+    const view = render(<LyraMarkdown content={`\`\`\`typescript\n${code}`} streaming />);
+    expect(view.container.querySelector('[data-code-streaming="true"] code')?.textContent).toBe(code.trimEnd());
+    expect(view.container.querySelectorAll('code span')).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: t("richText.codeBlock.wrap") }));
+    view.rerender(<LyraMarkdown content={`\`\`\`typescript\n${code}\`\`\``} />);
+    expect(screen.getByRole("button", { name: t("richText.codeBlock.wrap") })).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => expect(view.container.querySelector('code span[style]')).not.toBeNull(), { timeout: 8000 });
+    expect(view.container.querySelector('[data-code-streaming="true"]')).toBeNull();
+  });
+
+  it("does not replace selected code when the response finishes", () => {
+    const content = '```js\nconst value = 1;';
+    const view = render(<LyraMarkdown content={content} streaming />);
+    const code = view.container.querySelector('code')!;
+    const selection = window.getSelection()!;
+    const range = document.createRange();
+    range.selectNodeContents(code);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    fireEvent(document, new Event('selectionchange'));
+    view.rerender(<LyraMarkdown content={`${content}\n\`\`\``} />);
+    expect(view.container.querySelector('code')).toBe(code);
+    expect(selection.toString()).toBe('const value = 1;');
+    selection.removeAllRanges();
+    fireEvent(document, new Event('selectionchange'));
+    expect(view.container.querySelector('[data-code-streaming="true"]')).toBeNull();
+  });
+
   it("reports failed copy and allows retry instead of claiming success", async () => {
     vi.mocked(writeClipboardText).mockResolvedValueOnce(false);
     render(<LyraMarkdown content={'```\ncopy me\n```'} />);

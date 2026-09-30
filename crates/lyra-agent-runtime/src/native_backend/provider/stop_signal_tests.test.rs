@@ -104,7 +104,6 @@ fn parses_openai_chat_response_metadata_and_usage() {
 fn parses_openai_chat_stream_usage_only_chunk() {
     let mut state = ProviderStreamState::default();
     let mut ui_message_id = None;
-    let mut delta_batcher = StreamDeltaBatcher::default();
 
     map_provider_stream_chunk(
         &json!({
@@ -117,7 +116,6 @@ fn parses_openai_chat_stream_usage_only_chunk() {
         }),
         &mut state,
         &mut ui_message_id,
-        &mut delta_batcher,
         false,
         "",
         "",
@@ -136,7 +134,6 @@ fn parses_openai_chat_stream_usage_only_chunk() {
 fn merges_openai_chat_stream_choice_fragments_with_the_same_index() {
     let mut state = ProviderStreamState::default();
     let mut ui_message_id = None;
-    let mut delta_batcher = StreamDeltaBatcher::default();
 
     map_provider_stream_chunk(
         &json!({
@@ -186,7 +183,6 @@ fn merges_openai_chat_stream_choice_fragments_with_the_same_index() {
         }),
         &mut state,
         &mut ui_message_id,
-        &mut delta_batcher,
         false,
         "",
         "",
@@ -218,7 +214,6 @@ fn merges_openai_chat_stream_choice_fragments_with_the_same_index() {
 fn ignores_additional_openai_chat_stream_choices_without_an_index() {
     let mut state = ProviderStreamState::default();
     let mut ui_message_id = None;
-    let mut delta_batcher = StreamDeltaBatcher::default();
 
     map_provider_stream_chunk(
         &json!({
@@ -255,7 +250,6 @@ fn ignores_additional_openai_chat_stream_choices_without_an_index() {
         }),
         &mut state,
         &mut ui_message_id,
-        &mut delta_batcher,
         true,
         "",
         "",
@@ -267,6 +261,81 @@ fn ignores_additional_openai_chat_stream_choices_without_an_index() {
     assert_eq!(state.finish_reason.as_deref(), Some("tool_calls"));
     assert_eq!(call.id.as_deref(), Some("call-selected"));
     assert_eq!(call.arguments, "{}");
+}
+
+#[test]
+fn separate_tool_call_ids_stay_separate_when_index_is_missing_or_reused() {
+    let mut state = ProviderStreamState::default();
+    let mut ui_message_id = None;
+
+    map_provider_stream_chunk(
+        &json!({
+            "choices": [{
+                "delta": {
+                    "content": "收尾：<tool_call><function=write_stdin><parameter=chars>\u{3}</parameter></function></tool_call>",
+                    "tool_calls": [
+                        {
+                            "id": "call-write",
+                            "function": { "name": "write_stdin", "arguments": "{\"chars\":" }
+                        },
+                        {
+                            "index": 0,
+                            "id": "call-close",
+                            "function": {
+                                "name": "workbench_close_tab",
+                                "arguments": "{\"tabId\":\"browser-agent-1\"}"
+                            }
+                        }
+                    ]
+                }
+            }]
+        }),
+        &mut state,
+        &mut ui_message_id,
+        true,
+        "",
+        "",
+    )
+    .expect("two tool calls");
+
+    map_provider_stream_chunk(
+        &json!({
+            "choices": [{
+                "delta": {
+                    "tool_calls": [{
+                        "id": "call-write",
+                        "function": { "arguments": "\"\\u0003\"}" }
+                    }]
+                },
+                "finish_reason": "tool_calls"
+            }]
+        }),
+        &mut state,
+        &mut ui_message_id,
+        true,
+        "",
+        "",
+    )
+    .expect("write_stdin arguments");
+
+    let tools = [
+        json!({"type":"function","function":{"name":"write_stdin","parameters":{"type":"object"}}}),
+        json!({"type":"function","function":{"name":"workbench_close_tab","parameters":{"type":"object"}}}),
+    ];
+    let mut calls = openai_chat::finalize_streaming_tool_calls(
+        state.tool_calls,
+        &openai_chat::tool_name_set(&tools),
+    )
+    .expect("finalized");
+    calls.sort_by_key(|(index, _)| *index);
+
+    assert_eq!(state.content, "收尾：");
+    assert_eq!(calls.len(), 2);
+    assert_eq!(calls[0].1.name, "write_stdin");
+    assert_eq!(calls[0].1.id, "call-write");
+    assert_eq!(calls[1].1.name, "workbench_close_tab");
+    assert_eq!(calls[1].1.id, "call-close");
+    assert_eq!(calls[1].1.arguments["tabId"], "browser-agent-1");
 }
 
 #[test]

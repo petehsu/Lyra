@@ -1269,11 +1269,13 @@ mod tests {
         tool_plan_finalize(&session_id, "turn-hold", &json!({}))
             .expect("plan review must open while auto-resolve is thinking");
 
+        // Parallel waits belong to the same active turn. Different turn IDs
+        // in one session race the cancellation guard and invalidate this test.
         let sibling_session = session_id.clone();
         let sibling_task = tokio::spawn(wait_for_clarification_async(ClarificationRequest {
             id: sibling_id.clone(),
             session_id: sibling_session,
-            turn_id: "turn-sibling".to_string(),
+            turn_id: "turn-hold".to_string(),
             tool_call_id: "tool-sibling".to_string(),
             question: "Keep going?".to_string(),
             i18n_key: None,
@@ -1304,7 +1306,7 @@ mod tests {
                 PermissionRequest {
                     id: permission_id,
                     session_id: permission_session,
-                    turn_id: "turn-perm".to_string(),
+                    turn_id: "turn-hold".to_string(),
                     tool_call_id: "tool-perm".to_string(),
                     action: "exec_command".to_string(),
                     risk: "shell".to_string(),

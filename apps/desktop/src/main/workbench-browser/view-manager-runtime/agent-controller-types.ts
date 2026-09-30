@@ -73,6 +73,7 @@ export type WorkbenchBrowserAgentControllerHost = {
     entry: Omit<import("../../../shared/desktop-bridge").WorkbenchBrowserPageDiagnosticEntry, "id" | "at">
   ) => void;
   readonly publishEvent: WorkbenchBrowserPublishEvent;
+  readonly prepareAgentPage?: (tabId: string, address: string) => BrowserPageEntry | null;
   readonly updateRuntimeState: (entry: BrowserPageEntry, patch: Partial<WorkbenchBrowserPageRuntimeState>) => void;
   readonly publishBrowserAgentActivity: (request: {
     readonly tabId: string;

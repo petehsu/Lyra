@@ -199,4 +199,48 @@ describe("workbench observation tab control bridge", () => {
       activeTabId: "tab-a"
     });
   });
+
+  test("closes a listed embedded browser tab that is not a workspace tab", async () => {
+    const tabsModel = createTabsModel();
+    const closeEmbeddedBrowserTab = vi.fn(() => true);
+    type ObservationHandler = (
+      request: WorkbenchObservationQueryRequest
+    ) => Promise<WorkbenchObservationQueryResult> | WorkbenchObservationQueryResult;
+    const registered: { current: ObservationHandler | null } = { current: null };
+    attachWorkbenchObservationBridge({
+      ...createDependencies(tabsModel),
+      embeddedBrowserPages: [{
+        tabId: "browser-agent-1",
+        address: "https://example.com",
+        titleHint: "Example"
+      }],
+      closeEmbeddedBrowserTab,
+      desktopApi: {
+        workbenchObservation: {
+          registerHandler: (nextHandler: ObservationHandler) => {
+            registered.current = nextHandler;
+            return () => undefined;
+          }
+        }
+      } as never
+    });
+    const handler = registered.current;
+    if (handler === null) {
+      throw new Error("bridge handler was not registered");
+    }
+    const closed = await handler({
+      requestId: "req-embedded-close",
+      method: "workbench.tab.close_local",
+      payload: { tabId: "browser-agent-1" }
+    });
+    expect(closeEmbeddedBrowserTab).toHaveBeenCalledWith("browser-agent-1");
+    expect(closed).toMatchObject({
+      ok: true,
+      result: {
+        tabId: "browser-agent-1",
+        closed: true
+      }
+    });
+    expect(tabsModel.closeTab).not.toHaveBeenCalled();
+  });
 });

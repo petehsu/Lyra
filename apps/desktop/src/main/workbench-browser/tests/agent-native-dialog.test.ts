@@ -49,6 +49,15 @@ test("native dialogs cannot cross task, tab, effect, or prompt boundaries", asyn
   } finally {f.dialogs.dispose();}
 });
 
+test("an alert can be closed without repeating the action that opened it", async () => {
+  const f=fixture();
+  try {
+    const pending=await f.start("alert");
+    expect(await f.handle(pending.dialog.id,{effect:"observe"})).toMatchObject({dialogAccepted:true});
+    expect(f.sendCommand).toHaveBeenCalledWith("Page.handleJavaScriptDialog",{accept:true});
+  } finally {f.dialogs.dispose();}
+});
+
 test("dialog dismissal does not require authorizing its original consequence", async () => {
   const f=fixture();
   try {

@@ -707,6 +707,10 @@ describe("Settings AI views", () => {
       command: "uvx",
       args: "mcp-server-git --repository /repo",
       env: "GIT_TOKEN=<configured>\nDEBUG=1",
+      envVars: [],
+      cwd: null,
+      startupTimeoutMs: null,
+      toolTimeoutMs: null,
       enabled: true,
     });
   });

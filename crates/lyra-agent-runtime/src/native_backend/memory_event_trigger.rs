@@ -6,7 +6,6 @@ use std::{
 
 static MEMORY_JOB_WORKER_RUNNING: AtomicBool = AtomicBool::new(false);
 
-pub(crate) const EVENT_TOOL_CALL_COMPLETED: &str = "tool_call_completed";
 pub(crate) const EVENT_FILE_CHANGE_RECORDED: &str = "file_change_recorded";
 
 #[derive(Clone, Debug)]
@@ -90,9 +89,7 @@ pub(crate) fn drain_memory_jobs(root: &Path) -> AgentRuntimeResult<usize> {
 
 fn process_memory_job(root: &Path, job: &MemoryJobRecord) -> AgentRuntimeResult<Value> {
     match job.job_type.as_str() {
-        EVENT_TOOL_CALL_COMPLETED | EVENT_FILE_CHANGE_RECORDED => {
-            run_event_memory_extraction(root, job)
-        }
+        EVENT_FILE_CHANGE_RECORDED => run_event_memory_extraction(root, job),
         other => Err(AgentRuntimeError::Core(format!(
             "unsupported memory job type: {other}"
         ))),
@@ -138,113 +135,72 @@ fn run_event_memory_extraction(root: &Path, job: &MemoryJobRecord) -> AgentRunti
     }))
 }
 
-pub(crate) fn memory_trigger_from_tool(
-    tool: &Value,
+/// Read/search/status observations are already in conversation context. Only
+/// verified file changes justify background extraction, once at turn completion.
+pub(crate) fn memory_trigger_from_turn(
+    snapshot: &Value,
     session_id: &str,
     turn_id: &str,
 ) -> Option<MemoryTriggerEvent> {
-    let status = tool.get("status").and_then(Value::as_str)?;
-    if status != "completed" {
+    let changes: Vec<Value> = snapshot
+        .get("tools")?
+        .as_array()?
+        .iter()
+        .filter(|tool| tool_runtime_turn_id(tool) == Some(turn_id))
+        .filter(|tool| tool.get("status").and_then(Value::as_str) == Some("completed"))
+        .flat_map(|tool| {
+            tool.pointer("/output/raw/changedFiles")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+        })
+        .filter(|change| change.get("path").and_then(Value::as_str).is_some())
+        .take(64)
+        .map(|change| {
+            json!({
+                "path": change["path"], "operation": change["operation"],
+                "additions": change["additions"], "deletions": change["deletions"]
+            })
+        })
+        .collect();
+    if changes.is_empty() {
         return None;
     }
-    let name = tool
-        .get("name")
-        .or_else(|| tool.pointer("/input/name"))
-        .and_then(Value::as_str)
-        .unwrap_or("unknown");
-    let event_type = if is_file_change_tool(name) {
-        EVENT_FILE_CHANGE_RECORDED
-    } else {
-        EVENT_TOOL_CALL_COMPLETED
-    };
     Some(MemoryTriggerEvent {
-        event_type: event_type.to_string(),
+        event_type: EVENT_FILE_CHANGE_RECORDED.to_string(),
         session_id: session_id.to_string(),
         turn_id: turn_id.to_string(),
-        payload: json!({
-            "toolName": name,
-            "toolId": tool.get("id").cloned().unwrap_or(Value::Null),
-            "label": tool.get("label").cloned().unwrap_or(Value::Null),
-            "output": tool.get("output").cloned().unwrap_or(Value::Null),
-            "input": tool.get("input").cloned().unwrap_or(Value::Null),
-            "evidence": {
-                "toolName": name,
-                "toolId": tool.get("id").cloned().unwrap_or(Value::Null),
-                "output": tool.get("output").cloned().unwrap_or(Value::Null),
-            },
-        }),
+        payload: json!({"changedFiles": changes}),
     })
-}
-
-fn is_file_change_tool(name: &str) -> bool {
-    matches!(
-        name,
-        "file_write"
-            | "file_edit"
-            | "file_strict_edit"
-            | "file_multiedit"
-            | "apply_patch"
-            | "tool_fs_run"
-    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn memory_trigger_accepts_completed_tool_status() {
-        let event = memory_trigger_from_tool(
-            &json!({
-                "id": "call-1",
-                "name": "grep",
-                "status": "completed",
-                "label": "Search",
-                "output": { "content": "ok" },
-                "input": { "pattern": "license" }
-            }),
-            "session-1",
-            "turn-1",
-        )
-        .expect("completed tool must enqueue");
-        assert_eq!(event.event_type, EVENT_TOOL_CALL_COMPLETED);
-        assert_eq!(event.session_id, "session-1");
-        assert_eq!(event.payload["toolName"], "grep");
+    fn tool(turn: &str, status: &str, output: Value) -> Value {
+        json!({"input": {"runtimeCancellation": {"turnId": turn}}, "status": status, "output": output})
     }
 
     #[test]
-    fn memory_trigger_ignores_finished_turn_status_on_tools() {
-        assert!(
-            memory_trigger_from_tool(
-                &json!({ "id": "call-1", "name": "grep", "status": "finished" }),
-                "session-1",
-                "turn-1",
-            )
-            .is_none(),
-            "tool status is completed/failed, not turn status finished"
-        );
-        assert!(
-            memory_trigger_from_tool(
-                &json!({ "id": "call-1", "name": "grep", "status": "cancelled" }),
-                "session-1",
-                "turn-1",
-            )
-            .is_none()
-        );
+    fn read_only_turn_does_not_request_memory_extraction() {
+        let snapshot =
+            json!({"tools": [tool("turn", "completed", json!({"content":"read file"}))]});
+        assert!(memory_trigger_from_turn(&snapshot, "session", "turn").is_none());
     }
 
     #[test]
-    fn memory_trigger_file_tools_use_file_change_event() {
-        let event = memory_trigger_from_tool(
-            &json!({
-                "id": "call-write",
-                "name": "file_write",
-                "status": "completed"
-            }),
-            "session-1",
-            "turn-1",
-        )
-        .expect("file write");
+    fn one_event_contains_only_verified_changes_from_this_turn() {
+        let change = json!({"raw": {"changedFiles": [{"path":"README.md", "operation":"write"}]}});
+        let snapshot = json!({"tools": [
+            tool("old", "completed", change.clone()),
+            tool("turn", "failed", change.clone()),
+            tool("turn", "completed", change.clone()),
+            tool("turn", "completed", change)
+        ]});
+        let event = memory_trigger_from_turn(&snapshot, "session", "turn").unwrap();
         assert_eq!(event.event_type, EVENT_FILE_CHANGE_RECORDED);
+        assert_eq!(event.payload["changedFiles"].as_array().unwrap().len(), 2);
+        assert!(memory_trigger_from_turn(&snapshot, "session", "other").is_none());
     }
 }

@@ -102,6 +102,29 @@ pub(crate) fn build_signed_json_request(
     )
 }
 
+pub(crate) fn build_signed_json_request_async(
+    client: &reqwest::Client,
+    provider: &NativeProviderProfile,
+    url: &str,
+    body: &Value,
+) -> AgentRuntimeResult<reqwest::RequestBuilder> {
+    let body = serde_json::to_string(body)
+        .map_err(|error| AgentRuntimeError::Serialization(error.to_string()))?;
+    let headers = sigv4::signed_json_headers(
+        "POST",
+        url,
+        &body,
+        &sigv4::credentials_for_provider(provider)?,
+        &region_for_provider(provider)?,
+        SIGNING_SERVICE,
+    )?;
+    let mut request = client.post(url);
+    for (name, value) in headers {
+        request = request.header(name, value);
+    }
+    Ok(request.body(body))
+}
+
 pub(crate) fn discover_models(
     client: &Client,
     provider: &NativeProviderProfile,

@@ -591,23 +591,6 @@ impl ToolProvider for BuiltInLyraToolProvider {
                 Some("software.readState"),
             ),
             capability(
-                "lyra-software",
-                "software_invoke_capability",
-                "Invoke a Lyra software adapter capability when the task requires an installed app.",
-                "hostCapability",
-                "runtimePolicy",
-                json!({
-                    "type": "object",
-                    "properties": {
-                        "softwareId": { "type": "string" },
-                        "capabilityId": { "type": "string" },
-                        "input": { "type": "object" }
-                    },
-                    "required": ["softwareId", "capabilityId"]
-                }),
-                Some("software.invoke"),
-            ),
-            capability(
                 "lyra-browser",
                 "lyra_lumen_map",
                 "Map the visible surface: the topmost painted control at each viewport point, collapsed by CSS cursor into one operable control. A short page is one payload. A crowded page is this window plus how many controls remain.",
@@ -1486,6 +1469,7 @@ mod tests {
 
         assert!(names.contains(&"file_read"));
         assert!(names.contains(&"software_list_capabilities"));
+        assert!(!names.contains(&"software_invoke_capability"));
         assert!(names.contains(&"lyra_lumen_map"));
         assert!(names.contains(&"terminal_write"));
     }

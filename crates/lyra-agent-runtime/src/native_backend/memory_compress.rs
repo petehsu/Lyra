@@ -1030,6 +1030,13 @@ pub(crate) fn spawn_extract_and_compress(root: PathBuf, session_id: String, turn
             }
 
             let token_before = estimate_messages_tokens(&messages);
+            super::activity::record_context_compression_tool(
+                &session_id,
+                &turn_id,
+                "running",
+                None,
+                None,
+            );
 
             // 中间段收成摘要。首问由 head_keep 保住；checkpoint/session_read 不再是找回首问的主路径。
             let parsed = match try_llm_compression(&session_id, &turn_id, &selected) {
@@ -1069,6 +1076,13 @@ pub(crate) fn spawn_extract_and_compress(root: PathBuf, session_id: String, turn
                 state.save_state()?;
             }
 
+            super::activity::record_context_compression_tool(
+                &session_id,
+                &turn_id,
+                "completed",
+                Some(token_before),
+                Some(token_after),
+            );
             emit_context_compression_progress(
                 &session_id,
                 "completed",
@@ -1091,6 +1105,13 @@ pub(crate) fn spawn_extract_and_compress(root: PathBuf, session_id: String, turn
             // ponytail: 隐式重试 — 压缩失败时 active_compressions 已 remove，
             // 下轮 turn 若仍超窗口阈值会重新触发。无显式重试队列，避免过度工程。
             eprintln!("[lyra-agent-runtime] extract+compress failed for {session_id}: {error}");
+            super::activity::record_context_compression_tool(
+                &session_id,
+                &turn_id,
+                "failed",
+                None,
+                None,
+            );
             emit_context_compression_progress(&session_id, "failed", None, None);
         }
     });

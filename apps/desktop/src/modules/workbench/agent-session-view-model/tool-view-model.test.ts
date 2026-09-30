@@ -190,16 +190,48 @@ describe("agent tool family projection", () => {
     expect(call.title).toBe("Update todo");
   });
 
-  test("hides ToolSearch activity from the tool group", () => {
+  test("keeps session compression visible after the turn is idle", () => {
+    const group = toToolGroup([
+      tool({
+        name: "context_compress",
+        label: "",
+        status: "running",
+        input: {},
+        output: {}
+      })
+    ], "lyra-agent-tools", { turnStatus: "idle" });
+    expect(group).toMatchObject({
+      status: "running",
+      label: "Compressing context",
+      calls: [{
+        title: "Compressing context",
+        toolName: "context_compress",
+        status: "running"
+      }]
+    });
+  });
+
+  test("shows a running ToolSearch in the tool group", () => {
     const group = toToolGroup([
       tool({
         name: "ToolSearch",
         label: "",
-        input: { query: "select:web_search" },
-        output: { content: "Loaded deferred tools: web_search." }
+        status: "running",
+        input: { query: "select:web_search,browser_read" },
+        output: {}
       })
     ]);
-    expect(group).toBeNull();
+    expect(group).toMatchObject({
+      status: "running",
+      label: "web_search, browser_read",
+      currentCallId: "tool-1",
+      calls: [{
+        kind: "search",
+        title: "web_search, browser_read",
+        toolName: "toolsearch",
+        status: "running"
+      }]
+    });
   });
 
   test("projects legacy named browser and shell tools", () => {

@@ -677,6 +677,7 @@ const SettingsAiSkillCard = ({
       {skill.description.length === 0 ? null : (
         <p className="lyra-settings-ai-skill-description">{skill.description}</p>
       )}
+      {skill.source.kind === "local" ? <p className="lyra-settings-ai-skill-description">{skill.source.path}</p> : null}
       {renderSkillMeta(labels, skill.permissions, skill.toolPaths)}
     </div>
     <div className="lyra-settings-ai-skill-actions">
@@ -766,7 +767,7 @@ const SettingsAiMcpServerCard = ({
   pending,
   server,
 }: SettingsAiMcpServerCardProps) => {
-  const active = server.enabled && server.state === "connected";
+  const active = server.enabled;
   const baseUrl = server.transport.kind === "stdio" ? null : server.transport.url;
   const toolCount = server.toolCount ?? server.tools?.length ?? 0;
   return (
@@ -787,7 +788,7 @@ const SettingsAiMcpServerCard = ({
             </span>
             <span>
               <h3>{server.name}</h3>
-              <p>{server.id} · {mcpStateLabel(labels, server.state)}</p>
+              <p>{server.id} · {mcpStateLabel(labels, server.state)}{server.sourceLabel ? ` · ${server.sourceLabel}` : ""}</p>
             </span>
           </div>
         </div>

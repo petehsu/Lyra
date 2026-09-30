@@ -285,6 +285,7 @@ export type SettingsAiModel = {
   readonly removeAgentMcpServer?: (
     request: AgentMcpServerRequest
   ) => Promise<void>;
+  readonly setAgentMcpEnabled?: (request: { readonly serverId: string; readonly enabled: boolean }) => Promise<void>;
   readonly connectAgentMcpServer?: (
     request: AgentMcpServerRequest
   ) => Promise<void>;

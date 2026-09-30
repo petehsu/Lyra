@@ -522,128 +522,45 @@ pub(crate) fn append_assistant_reasoning_delta(
     Ok(())
 }
 
-pub(crate) struct StreamDeltaBatcher {
-    visible: String,
-    reasoning: String,
-    last_flush: Instant,
-}
-
-impl Default for StreamDeltaBatcher {
-    fn default() -> Self {
-        Self {
-            visible: String::new(),
-            reasoning: String::new(),
-            last_flush: Instant::now(),
-        }
+/// Forward parsed deltas immediately. The renderer's StreamStore owns frame
+/// batching; a provider pause must never strand text in a second buffer.
+pub(crate) fn emit_visible_delta(
+    delta: &str,
+    ui_message_id: &mut Option<String>,
+    session_id: &str,
+    turn_id: &str,
+) -> AgentRuntimeResult<bool> {
+    if delta.is_empty() {
+        return Ok(false);
     }
-}
-
-impl StreamDeltaBatcher {
-    // Frame-scale batcher (OpenCode/Zed also paint on ~16ms). Larger waits make
-    // live tokens arrive as pops. The uncommitted tail is only the current
-    // fragment below these caps, so a safe retry can still drop a split token.
-    const MAX_BYTES: usize = 32;
-    const MAX_WAIT: Duration = Duration::from_millis(16);
-
-    pub(crate) fn push_visible(
-        &mut self,
-        delta: &str,
-        ui_message_id: &mut Option<String>,
-        session_id: &str,
-        turn_id: &str,
-    ) -> AgentRuntimeResult<bool> {
-        let mut flushed = self.flush_reasoning(ui_message_id, session_id, turn_id)?;
-        self.visible.push_str(delta);
-        flushed |= self.flush_if_ready(ui_message_id, session_id, turn_id)?;
-        Ok(flushed)
-    }
-
-    pub(crate) fn push_reasoning(
-        &mut self,
-        delta: &str,
-        ui_message_id: &mut Option<String>,
-        session_id: &str,
-        turn_id: &str,
-    ) -> AgentRuntimeResult<bool> {
-        let mut flushed = self.flush_visible(ui_message_id, session_id, turn_id)?;
-        self.reasoning.push_str(delta);
-        flushed |= self.flush_if_ready(ui_message_id, session_id, turn_id)?;
-        Ok(flushed)
-    }
-
-    pub(crate) fn flush(
-        &mut self,
-        ui_message_id: &mut Option<String>,
-        session_id: &str,
-        turn_id: &str,
-    ) -> AgentRuntimeResult<bool> {
-        let visible_flushed = self.flush_visible(ui_message_id, session_id, turn_id)?;
-        let reasoning_flushed = self.flush_reasoning(ui_message_id, session_id, turn_id)?;
-        if visible_flushed || reasoning_flushed {
-            self.last_flush = Instant::now();
-        }
-        Ok(visible_flushed || reasoning_flushed)
-    }
-
-    fn flush_if_ready(
-        &mut self,
-        ui_message_id: &mut Option<String>,
-        session_id: &str,
-        turn_id: &str,
-    ) -> AgentRuntimeResult<bool> {
-        if self.visible.len() + self.reasoning.len() < Self::MAX_BYTES
-            && self.last_flush.elapsed() < Self::MAX_WAIT
-        {
-            return Ok(false);
-        }
-        self.flush(ui_message_id, session_id, turn_id)
-    }
-
-    fn flush_visible(
-        &mut self,
-        ui_message_id: &mut Option<String>,
-        session_id: &str,
-        turn_id: &str,
-    ) -> AgentRuntimeResult<bool> {
-        if self.visible.is_empty() {
-            return Ok(false);
-        }
-        let delta = std::mem::take(&mut self.visible);
-        let message_id = ui_message_id
-            .get_or_insert_with(|| {
-                emit_assistant_message_placeholder(session_id, turn_id).unwrap_or_default()
-            })
-            .clone();
-        if !message_id.is_empty() {
-            append_assistant_delta(session_id, turn_id, &message_id, &delta)?;
-            // Chunk-level progress wakes pause-aware tool-batch waiters.
-            // `record_progress` is a no-op while the turn is paused
-            // (permission/clarification).
-            if !turn_id.is_empty() {
-                super::super::session_runtime::record_progress(turn_id);
-            }
-        }
-        Ok(true)
-    }
-
-    fn flush_reasoning(
-        &mut self,
-        ui_message_id: &mut Option<String>,
-        session_id: &str,
-        turn_id: &str,
-    ) -> AgentRuntimeResult<bool> {
-        if self.reasoning.is_empty() {
-            return Ok(false);
-        }
-        let delta = std::mem::take(&mut self.reasoning);
-        append_reasoning_delta(&delta, ui_message_id, session_id, turn_id)?;
-        // Reasoning chunks are also live turn progress — a reasoning-only
-        // response can stream for a long time before any visible text lands.
+    let message_id = ui_message_id
+        .get_or_insert_with(|| {
+            emit_assistant_message_placeholder(session_id, turn_id).unwrap_or_default()
+        })
+        .clone();
+    if !message_id.is_empty() {
+        append_assistant_delta(session_id, turn_id, &message_id, delta)?;
         if !turn_id.is_empty() {
             super::super::session_runtime::record_progress(turn_id);
         }
-        Ok(true)
     }
+    Ok(true)
+}
+
+pub(crate) fn emit_reasoning_delta(
+    delta: &str,
+    ui_message_id: &mut Option<String>,
+    session_id: &str,
+    turn_id: &str,
+) -> AgentRuntimeResult<bool> {
+    if delta.is_empty() {
+        return Ok(false);
+    }
+    append_reasoning_delta(delta, ui_message_id, session_id, turn_id)?;
+    if !turn_id.is_empty() {
+        super::super::session_runtime::record_progress(turn_id);
+    }
+    Ok(true)
 }
 
 /// Stream a reasoning delta to the UI, creating a placeholder message if needed.

@@ -1898,7 +1898,61 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
             ],
             &[],
         ),
-        ("software", "inspect_capability" | "invoke_capability" | "read_state") => object_schema(
+        ("mcp", "server_connect" | "server_disconnect" | "server_reload" | "server_remove") => {
+            object_schema(
+                [
+                    ("serverId", string("Configured MCP server id.")),
+                    ("name", string("Configured MCP server name.")),
+                    (
+                        "serverUrl",
+                        string("MCP server URL, for example https://mcp.deepwiki.com/mcp."),
+                    ),
+                    ("url", string("MCP server URL. Same as serverUrl.")),
+                ],
+                &[],
+            )
+        }
+        ("mcp", "server_upsert") => object_schema(
+            [
+                ("name", string("Name to save this server under.")),
+                ("serverId", string("Existing server id to update.")),
+                (
+                    "serverUrl",
+                    string("HTTP or SSE endpoint, for example https://mcp.deepwiki.com/mcp."),
+                ),
+                ("url", string("HTTP or SSE endpoint. Same as serverUrl.")),
+                ("command", string("Command for a local stdio MCP server.")),
+                ("args", string_array("Arguments for the stdio command.")),
+            ],
+            &[],
+        ),
+        ("mcp", "tool_discover") => object_schema(
+            [
+                ("serverId", string("Configured MCP server id.")),
+                (
+                    "serverUrl",
+                    string("MCP server URL when the id is not known."),
+                ),
+                ("query", string("Optional text to filter discovered tools.")),
+            ],
+            &[],
+        ),
+        ("mcp", "tool_inspect" | "tool_execute") => object_schema(
+            [
+                ("serverId", string("Configured MCP server id.")),
+                (
+                    "serverUrl",
+                    string("MCP server URL when the id is not known."),
+                ),
+                ("toolName", string("Tool name on that server.")),
+                (
+                    "arguments",
+                    json!({ "type": "object", "description": "Arguments for mcp_tool_execute." }),
+                ),
+            ],
+            &["toolName"],
+        ),
+        ("software", "inspect_capability" | "read_state") => object_schema(
             [
                 ("softwareId", string("Software adapter id.")),
                 ("capabilityId", string("Capability id.")),
@@ -1937,6 +1991,25 @@ Project / code
 - File mutation → use direct edit_file/write_file tools.
 
 Do not flatten these into interchangeable tools: map the visible surface before fetch/crawl; use pixel coordinates only for an unnamed canvas or cross-origin region."#
+}
+
+#[cfg(test)]
+mod tests {
+    use super::input_schema_for;
+
+    #[test]
+    fn mcp_tools_expose_the_server_and_tool_fields() {
+        let connect = input_schema_for("/tools/mcp/server_connect", "mcp", "server_connect");
+        let properties = connect["properties"].as_object().expect("properties");
+        assert!(properties.contains_key("serverId"));
+        assert!(properties.contains_key("serverUrl"));
+        let execute = input_schema_for("/tools/mcp/tool_execute", "mcp", "tool_execute");
+        assert!(
+            execute["properties"]["toolName"].is_string()
+                || execute["properties"]["toolName"].is_object()
+        );
+        assert_eq!(execute["required"][0], "toolName");
+    }
 }
 
 pub fn domain_summary(domain: &str) -> &'static str {

@@ -3351,7 +3351,6 @@ fn native_state_save_only_rewrites_dirty_sessions() {
         ]),
         active_session_id: None,
         config: NativeConfig::default(),
-        active_skills: HashSet::new(),
         pending_permissions: HashMap::new(),
         pending_clarifications: HashMap::new(),
         model_capabilities: HashMap::new(),
@@ -3437,7 +3436,6 @@ fn native_state_schema_upgrade_preserves_sessions_and_snapshots() {
         tool_usage_cache: HashMap::new(),
         active_session_id: Some(legacy_session_id.clone()),
         config,
-        active_skills: HashSet::from(["test-skill".to_string()]),
         model_capabilities: HashMap::new(),
         media_model_defaults: HashMap::new(),
         pending_permissions: HashMap::from([(
@@ -3502,7 +3500,6 @@ fn native_state_schema_upgrade_preserves_sessions_and_snapshots() {
         Some("custom-provider")
     );
     assert!(loaded.config.providers.contains_key("custom-provider"));
-    assert!(loaded.active_skills.contains("test-skill"));
     let memory_records = list_long_term_memory(
         temp.path(),
         MemoryQuery {
@@ -3547,7 +3544,6 @@ fn native_state_schema_upgrade_preserves_sessions_and_snapshots() {
         persisted.config.default_provider.as_deref(),
         Some("custom-provider")
     );
-    assert!(persisted.active_skills.contains("test-skill"));
 }
 
 #[test]
@@ -3563,7 +3559,6 @@ fn native_state_schema_upgrade_keeps_old_version_when_snapshot_fails() {
         tool_usage_cache: HashMap::new(),
         active_session_id: Some(session_id.clone()),
         config: NativeConfig::default(),
-        active_skills: HashSet::new(),
         pending_permissions: HashMap::new(),
         pending_clarifications: HashMap::new(),
         model_capabilities: HashMap::new(),

@@ -109,6 +109,32 @@ fn cwd_updates_after_cd_are_parsed_from_osc7() {
 }
 
 #[test]
+fn prompt_shaped_osc7_is_not_a_directory() {
+    let mut parser = ShellIntegrationParser::new();
+    let poisoned = parser.feed(b"\x1b]7;#/home/xu-yuanhao/Documents%\x07");
+    assert!(poisoned.is_empty());
+    let events = parser.feed(b"\x1b]7;file://localhost/home/xu-yuanhao/Documents\x07");
+    assert_eq!(events.len(), 1);
+    assert_eq!(
+        events[0].cwd.as_deref(),
+        Some("/home/xu-yuanhao/Documents")
+    );
+    let marker = parser.feed(b"\x1b]633;Cwd;#/home/xu-yuanhao/Documents%\x07");
+    assert!(marker.is_empty());
+    let absolute = parser.feed(b"\x1b]633;Cwd;/tmp/lyra\x07");
+    assert_eq!(absolute[0].cwd.as_deref(), Some("/tmp/lyra"));
+    let prompt_suffix = parser.feed(b"\x1b]7;file://localhost/home/xu-yuanhao/Documents/Lyra%\x07");
+    assert!(prompt_suffix.is_empty());
+    let prompt_cwd = parser.feed(b"\x1b]633;Cwd;/home/xu-yuanhao/Documents/Lyra%\x07");
+    assert!(prompt_cwd.is_empty());
+    let encoded = parser.feed(b"\x1b]7;file://localhost/home/xu-yuanhao/Lyra%20Project\x07");
+    assert_eq!(
+        encoded[0].cwd.as_deref(),
+        Some("/home/xu-yuanhao/Lyra Project")
+    );
+}
+
+#[test]
 fn command_mode_session_completes_with_exit_code() {
     let mut tracker = CommandTracker::new("session-command-mode");
     let command_id = tracker.submit_command(CommandSubmission {

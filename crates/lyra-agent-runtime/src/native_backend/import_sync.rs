@@ -2,6 +2,9 @@ use super::*;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
+mod global;
+#[cfg(test)]
+mod global_tests;
 mod jsonc;
 
 use jsonc::read_jsonc_value;
@@ -99,8 +102,6 @@ impl Default for SourcePreference {
 #[serde(rename_all = "camelCase")]
 struct ImportPreferences {
     #[serde(default)]
-    project_root: Option<String>,
-    #[serde(default)]
     sources: BTreeMap<String, SourcePreference>,
 }
 
@@ -118,6 +119,8 @@ struct ProvenanceEntry {
     kind: String,
     scope: String,
     source_path: String,
+    #[serde(default)]
+    project_root: Option<String>,
     source_item_id: String,
     target_id: String,
     source_fingerprint: String,
@@ -136,6 +139,7 @@ struct ImportCandidate {
     kind: String,
     scope: String,
     source_path: PathBuf,
+    project_root: Option<String>,
     source_item_id: String,
     target_id: String,
     fingerprint: String,
@@ -148,7 +152,6 @@ struct ImportCandidate {
 #[derive(Clone, Debug)]
 struct DetectionSnapshot {
     source: ImportSourceId,
-    project_root: Option<PathBuf>,
     source_fingerprint: String,
     candidates: Vec<ImportCandidate>,
     diagnostics: Vec<Value>,
@@ -243,7 +246,7 @@ pub(crate) fn import_list_sources() -> AgentRuntimeResult<Value> {
         ImportSourceId::Zed,
     ]
     .into_iter()
-    .filter(|source| source_present(*source, &home))
+    .filter(|source| source_present(*source, &home) || global::has_project_source(*source))
     .map(|source| {
         json!({
             "id": source.id(),
@@ -257,9 +260,6 @@ pub(crate) fn import_list_sources() -> AgentRuntimeResult<Value> {
 
 pub(crate) fn import_get_preferences() -> AgentRuntimeResult<Value> {
     let mut preferences = read_preferences();
-    if preferences.project_root.is_none() {
-        preferences.project_root = recent_project_root();
-    }
     for source in [
         ImportSourceId::Claude,
         ImportSourceId::Cursor,
@@ -275,50 +275,8 @@ pub(crate) fn import_get_preferences() -> AgentRuntimeResult<Value> {
     serde_json::to_value(preferences).map_err(|error| AgentRuntimeError::Core(error.to_string()))
 }
 
-fn recent_project_root() -> Option<String> {
-    let runtime = state().lock().ok()?;
-    let valid_root = |session: &NativeSession| {
-        let project_bound = session
-            .snapshot
-            .get("projectBound")
-            .and_then(Value::as_bool)
-            .unwrap_or(false);
-        let working_dir = session.snapshot.get("workingDir").and_then(Value::as_str)?;
-        (project_bound && Path::new(working_dir).is_dir()).then(|| working_dir.to_string())
-    };
-    if let Some(root) = runtime
-        .active_session_id
-        .as_ref()
-        .and_then(|id| runtime.sessions.get(id))
-        .and_then(valid_root)
-    {
-        return Some(root);
-    }
-    runtime
-        .sessions
-        .values()
-        .filter_map(|session| {
-            let root = valid_root(session)?;
-            let updated = session
-                .snapshot
-                .get("updatedAt")
-                .and_then(Value::as_str)
-                .unwrap_or(&session.created_at);
-            Some((updated.to_string(), root))
-        })
-        .max_by(|left, right| left.0.cmp(&right.0))
-        .map(|(_, root)| root)
-}
-
 pub(crate) fn import_set_preferences(payload: Value) -> AgentRuntimeResult<Value> {
     let mut preferences = read_preferences();
-    if let Some(project_root) = payload.get("projectRoot") {
-        preferences.project_root = project_root
-            .as_str()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
-    }
     if let Some(source_id) = string_opt(&payload, "sourceId") {
         let source = ImportSourceId::parse(&source_id)?;
         let entry = preferences
@@ -339,30 +297,11 @@ pub(crate) fn import_set_preferences(payload: Value) -> AgentRuntimeResult<Value
     import_get_preferences()
 }
 
-fn canonical_project_root(
-    payload: &Value,
-    preferences: &ImportPreferences,
-) -> AgentRuntimeResult<Option<PathBuf>> {
-    let raw = string_opt(payload, "projectRoot").or_else(|| preferences.project_root.clone());
-    let Some(raw) = raw.filter(|value| !value.trim().is_empty()) else {
-        return Ok(None);
-    };
-    let path = fs::canonicalize(raw)
-        .map_err(|error| AgentRuntimeError::Core(format!("invalid project root: {error}")))?;
-    if !path.is_dir() {
-        return Err(AgentRuntimeError::Core(
-            "project root must be a directory".to_string(),
-        ));
-    }
-    Ok(Some(path))
-}
-
-fn sha256_bytes(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
-}
-
 fn hash_value(value: &Value) -> String {
-    sha256_bytes(&serde_json::to_vec(value).unwrap_or_default())
+    format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(value).unwrap_or_default())
+    )
 }
 
 fn skill_id(root: &Path) -> AgentRuntimeResult<String> {
@@ -384,6 +323,7 @@ fn append_skill_candidate(candidates: &mut Vec<ImportCandidate>, scope: &str, pa
             kind: "skill".to_string(),
             scope: scope.to_string(),
             source_path: path.clone(),
+            project_root: None,
             source_item_id: id.clone(),
             target_id: id,
             fingerprint,
@@ -806,6 +746,7 @@ fn append_mcp_candidates(
                 kind: "mcp".to_string(),
                 scope: scope.to_string(),
                 source_path: source_path.to_path_buf(),
+                project_root: None,
                 source_item_id: name.clone(),
                 target_id: slug_mcp_id(&name),
                 fingerprint: source_mcp_fingerprint(&config),
@@ -841,7 +782,7 @@ fn insert_nonempty(
 
 fn source_mcp_fingerprint(config: &Value) -> String {
     let mut normalized = serde_json::Map::new();
-    for key in ["id", "name", "enabled"] {
+    for key in ["name"] {
         insert_nonempty(&mut normalized, key, config.get(key).cloned());
     }
     if config.get("command").is_some() {
@@ -922,32 +863,19 @@ fn slug_mcp_id(value: &str) -> String {
     }
 }
 
-fn target_storage_root(
-    kind: &str,
-    scope: &str,
-    project_root: Option<&Path>,
-) -> AgentRuntimeResult<PathBuf> {
-    if scope == "project" {
-        let root = project_root
-            .ok_or_else(|| AgentRuntimeError::Core("project root is required".to_string()))?;
-        return Ok(root
-            .join(".lyra/agent")
-            .join(if kind == "skill" { "skills" } else { "mcp" }));
-    }
-    Ok(if kind == "skill" {
+fn target_storage_root(kind: &str) -> PathBuf {
+    if kind == "skill" {
         skill_storage_root()
     } else {
         mcp_storage_root()
-    })
+    }
 }
 
-fn current_target_fingerprint(
-    candidate: &ImportCandidate,
-    project_root: Option<&Path>,
-) -> Option<String> {
-    let storage = target_storage_root(&candidate.kind, &candidate.scope, project_root).ok()?;
+fn current_target_fingerprint(candidate: &ImportCandidate) -> Option<String> {
+    let storage = target_storage_root(&candidate.kind);
     if candidate.kind == "skill" {
-        let registry: Value = read_json(&storage.join("registry.v1.json"))?;
+        let registry: Value =
+            serde_json::from_slice(&fs::read(storage.join("registry.v1.json")).ok()?).ok()?;
         let package = registry
             .get("installed")?
             .as_array()?
@@ -959,7 +887,8 @@ fn current_target_fingerprint(
             .as_str()?;
         return skill_catalog::skill_package_fingerprint(Path::new(package)).ok();
     }
-    let registry: Value = read_json(&storage.join("registry.v1.json"))?;
+    let registry: Value =
+        serde_json::from_slice(&fs::read(storage.join("registry.v1.json")).ok()?).ok()?;
     let server = registry.get("servers")?.as_array()?.iter().find(|item| {
         item.get("id").and_then(Value::as_str) == Some(candidate.target_id.as_str())
     })?;
@@ -970,16 +899,8 @@ fn stored_mcp_fingerprint(server: &Value) -> String {
     let transport = server.get("transport").cloned().unwrap_or(Value::Null);
     let mut normalized = serde_json::Map::new();
     normalized.insert(
-        "id".to_string(),
-        server.get("id").cloned().unwrap_or(Value::Null),
-    );
-    normalized.insert(
-        "name".to_string(),
+        "name".into(),
         server.get("name").cloned().unwrap_or(Value::Null),
-    );
-    normalized.insert(
-        "enabled".to_string(),
-        server.get("enabled").cloned().unwrap_or(Value::Bool(true)),
     );
     if let Some(object) = transport.as_object() {
         match object.get("kind").and_then(Value::as_str) {
@@ -1009,40 +930,8 @@ fn stored_mcp_fingerprint(server: &Value) -> String {
     hash_value(&Value::Object(normalized))
 }
 
-fn apply_statuses(
-    source: ImportSourceId,
-    project_root: Option<&Path>,
-    candidates: &mut [ImportCandidate],
-) {
-    let provenance = read_provenance();
-    for candidate in candidates {
-        let target_fingerprint = current_target_fingerprint(candidate, project_root);
-        let record = provenance.entries.iter().find(|entry| {
-            entry.source_id == source.id()
-                && entry.kind == candidate.kind
-                && entry.scope == candidate.scope
-                && entry.source_item_id == candidate.source_item_id
-        });
-        let identical_owner = provenance.entries.iter().any(|entry| {
-            entry.kind == candidate.kind
-                && entry.scope == candidate.scope
-                && entry.target_id == candidate.target_id
-                && entry.source_fingerprint == candidate.fingerprint
-        });
-        candidate.status = match (record, target_fingerprint) {
-            (None, None) => "pending",
-            (None, Some(_)) if identical_owner => "synced",
-            (None, Some(target)) if target == candidate.fingerprint => "synced",
-            (None, Some(_)) => "conflict",
-            (Some(_), None) => "pending",
-            (Some(record), Some(target)) if target != record.target_fingerprint => "conflict",
-            (Some(record), Some(_)) if record.source_fingerprint == candidate.fingerprint => {
-                "synced"
-            }
-            (Some(_), Some(_)) => "update",
-        }
-        .to_string();
-    }
+fn apply_statuses(source: ImportSourceId, candidates: &mut [ImportCandidate]) {
+    global::assign_targets_and_statuses(source, candidates);
 }
 
 fn scan_source(
@@ -1055,39 +944,41 @@ fn scan_source(
     let mut candidates = Vec::new();
     let mut diagnostics = Vec::new();
     if preference.skills {
-        match source {
-            ImportSourceId::Claude => {
-                append_skill_candidates(&mut candidates, "user", [config_dir.join("skills")])
-            }
-            ImportSourceId::Cursor => append_skill_candidates(
-                &mut candidates,
-                "user",
-                [config_dir.join("skills"), config_dir.join("skills-cursor")],
-            ),
-            ImportSourceId::Codex => append_skill_candidates(
-                &mut candidates,
-                "user",
-                [config_dir.join("skills"), home.join(".agents/skills")],
-            ),
-            ImportSourceId::Opencode => {
-                let files = opencode_config_files(&config_dir, false);
-                let mut roots = vec![config_dir.join("skill"), config_dir.join("skills")];
-                if !env_flag("OPENCODE_DISABLE_EXTERNAL_SKILLS") {
-                    roots.push(home.join(".agents/skills"));
-                    if !env_flag("OPENCODE_DISABLE_CLAUDE_CODE_SKILLS") {
-                        roots.push(home.join(".claude/skills"));
-                    }
+        if project_root.is_none() {
+            match source {
+                ImportSourceId::Claude => {
+                    append_skill_candidates(&mut candidates, "user", [config_dir.join("skills")])
                 }
-                roots.extend(opencode_skill_paths(
-                    files,
-                    &config_dir,
-                    &home,
-                    &mut diagnostics,
-                ));
-                append_skill_candidates_recursive(&mut candidates, "user", roots);
-            }
-            ImportSourceId::Zed => {
-                append_skill_candidates(&mut candidates, "user", [home.join(".agents/skills")])
+                ImportSourceId::Cursor => append_skill_candidates(
+                    &mut candidates,
+                    "user",
+                    [config_dir.join("skills"), config_dir.join("skills-cursor")],
+                ),
+                ImportSourceId::Codex => append_skill_candidates(
+                    &mut candidates,
+                    "user",
+                    [config_dir.join("skills"), home.join(".agents/skills")],
+                ),
+                ImportSourceId::Opencode => {
+                    let files = opencode_config_files(&config_dir, false);
+                    let mut roots = vec![config_dir.join("skill"), config_dir.join("skills")];
+                    if !env_flag("OPENCODE_DISABLE_EXTERNAL_SKILLS") {
+                        roots.push(home.join(".agents/skills"));
+                        if !env_flag("OPENCODE_DISABLE_CLAUDE_CODE_SKILLS") {
+                            roots.push(home.join(".claude/skills"));
+                        }
+                    }
+                    roots.extend(opencode_skill_paths(
+                        files,
+                        &config_dir,
+                        &home,
+                        &mut diagnostics,
+                    ));
+                    append_skill_candidates_recursive(&mut candidates, "user", roots);
+                }
+                ImportSourceId::Zed => {
+                    append_skill_candidates(&mut candidates, "user", [home.join(".agents/skills")])
+                }
             }
         }
         if let Some(project) = project_root.as_ref() {
@@ -1126,44 +1017,64 @@ fn scan_source(
         }
     }
     if preference.mcp {
-        match source {
-            ImportSourceId::Claude => {
-                let servers = claude_mcp(&home, &home, &mut diagnostics);
-                append_mcp_candidates(&mut candidates, &mut diagnostics, "user", &home, servers);
-            }
-            ImportSourceId::Cursor => {
-                let servers = cursor_mcp(&config_dir, &mut diagnostics);
-                append_mcp_candidates(
-                    &mut candidates,
-                    &mut diagnostics,
-                    "user",
-                    &config_dir.join("mcp.json"),
-                    servers,
-                );
-            }
-            ImportSourceId::Codex => {
-                let path = config_dir.join("config.toml");
-                let servers = codex_mcp(&path, &mut diagnostics);
-                append_mcp_candidates(&mut candidates, &mut diagnostics, "user", &path, servers);
-            }
-            ImportSourceId::Opencode => {
-                let files = opencode_config_files(&config_dir, false);
-                let servers = merge_jsonc_mcp_files(files.clone(), "mcp", &mut diagnostics);
-                append_mcp_candidates(
-                    &mut candidates,
-                    &mut diagnostics,
-                    "user",
-                    &config_dir,
-                    servers,
-                );
-            }
-            ImportSourceId::Zed => {
-                let path = config_dir.join("settings.json");
-                let servers = zed_mcp(
-                    [config_dir.join("global_settings.json"), path.clone()],
-                    &mut diagnostics,
-                );
-                append_mcp_candidates(&mut candidates, &mut diagnostics, "user", &path, servers);
+        if project_root.is_none() {
+            match source {
+                ImportSourceId::Claude => {
+                    let servers = claude_mcp(&home, &home, &mut diagnostics);
+                    append_mcp_candidates(
+                        &mut candidates,
+                        &mut diagnostics,
+                        "user",
+                        &home,
+                        servers,
+                    );
+                }
+                ImportSourceId::Cursor => {
+                    let servers = cursor_mcp(&config_dir, &mut diagnostics);
+                    append_mcp_candidates(
+                        &mut candidates,
+                        &mut diagnostics,
+                        "user",
+                        &config_dir.join("mcp.json"),
+                        servers,
+                    );
+                }
+                ImportSourceId::Codex => {
+                    let path = config_dir.join("config.toml");
+                    let servers = codex_mcp(&path, &mut diagnostics);
+                    append_mcp_candidates(
+                        &mut candidates,
+                        &mut diagnostics,
+                        "user",
+                        &path,
+                        servers,
+                    );
+                }
+                ImportSourceId::Opencode => {
+                    let files = opencode_config_files(&config_dir, false);
+                    let servers = merge_jsonc_mcp_files(files.clone(), "mcp", &mut diagnostics);
+                    append_mcp_candidates(
+                        &mut candidates,
+                        &mut diagnostics,
+                        "user",
+                        &config_dir,
+                        servers,
+                    );
+                }
+                ImportSourceId::Zed => {
+                    let path = config_dir.join("settings.json");
+                    let servers = zed_mcp(
+                        [config_dir.join("global_settings.json"), path.clone()],
+                        &mut diagnostics,
+                    );
+                    append_mcp_candidates(
+                        &mut candidates,
+                        &mut diagnostics,
+                        "user",
+                        &path,
+                        servers,
+                    );
+                }
             }
         }
         if let Some(project) = project_root.as_ref() {
@@ -1235,9 +1146,41 @@ fn scan_source(
         ))
     });
     candidates.dedup_by(|left, right| {
-        left.scope == right.scope && left.kind == right.kind && left.target_id == right.target_id
+        left.scope == right.scope
+            && left.kind == right.kind
+            && left.source_path == right.source_path
+            && left.source_item_id == right.source_item_id
     });
-    apply_statuses(source, project_root.as_deref(), &mut candidates);
+    for candidate in &mut candidates {
+        candidate.project_root = project_root
+            .as_ref()
+            .map(|path| path.to_string_lossy().into_owned());
+        if let CandidatePayload::Mcp { config } = &mut candidate.payload {
+            let base = project_root.as_deref().unwrap_or_else(|| {
+                if candidate.source_path.is_dir() {
+                    &candidate.source_path
+                } else {
+                    candidate
+                        .source_path
+                        .parent()
+                        .unwrap_or(&candidate.source_path)
+                }
+            });
+            if config.get("command").is_some() {
+                let cwd = config
+                    .get("cwd")
+                    .and_then(Value::as_str)
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| base.to_path_buf());
+                config["cwd"] = json!(if cwd.is_absolute() {
+                    cwd
+                } else {
+                    normalize_path(&base.join(cwd))
+                });
+                candidate.fingerprint = source_mcp_fingerprint(config);
+            }
+        }
+    }
     let fingerprint_value = Value::Array(
         candidates
             .iter()
@@ -1246,7 +1189,6 @@ fn scan_source(
     );
     Ok(DetectionSnapshot {
         source,
-        project_root,
         source_fingerprint: hash_value(&fingerprint_value),
         candidates,
         diagnostics,
@@ -1256,7 +1198,7 @@ fn scan_source(
 fn candidate_value(candidate: &ImportCandidate) -> Value {
     json!({
         "kind": candidate.kind, "scope": candidate.scope, "sourcePath": candidate.source_path,
-        "sourceItemId": candidate.source_item_id, "targetId": candidate.target_id,
+        "sourceItemId": candidate.source_item_id, "targetId": candidate.target_id, "projectRoot": candidate.project_root, "destination": "global",
         "status": candidate.status, "message": candidate.message, "enabled": candidate.enabled
     })
 }
@@ -1267,7 +1209,7 @@ fn detection_value(id: &str, snapshot: &DetectionSnapshot) -> Value {
         *counts.entry(candidate.status.clone()).or_default() += 1;
     }
     json!({
-        "detectionId": id, "sourceId": snapshot.source.id(), "projectRoot": snapshot.project_root,
+        "detectionId": id, "sourceId": snapshot.source.id(),
         "counts": counts, "candidates": snapshot.candidates.iter().map(candidate_value).collect::<Vec<_>>(),
         "diagnostics": snapshot.diagnostics
     })
@@ -1279,13 +1221,12 @@ pub(crate) fn import_detect(payload: Value) -> AgentRuntimeResult<Value> {
             .ok_or_else(|| AgentRuntimeError::Core("sourceId is required".to_string()))?,
     )?;
     let preferences = read_preferences();
-    let project_root = canonical_project_root(&payload, &preferences)?;
     let preference = preferences
         .sources
         .get(source.id())
         .cloned()
         .unwrap_or_default();
-    let snapshot = scan_source(source, project_root, preference)?;
+    let snapshot = global::scan_all(source, preference)?;
     let id = Uuid::new_v4().to_string();
     let value = detection_value(&id, &snapshot);
     detection_cache()
@@ -1293,47 +1234,6 @@ pub(crate) fn import_detect(payload: Value) -> AgentRuntimeResult<Value> {
         .map_err(|_| AgentRuntimeError::Core("import detection cache unavailable".to_string()))?
         .insert(id, snapshot);
     Ok(value)
-}
-
-fn sync_candidate(
-    candidate: &ImportCandidate,
-    project_root: Option<&Path>,
-) -> AgentRuntimeResult<(Value, Option<String>)> {
-    let storage = target_storage_root(&candidate.kind, &candidate.scope, project_root)?;
-    match &candidate.payload {
-        CandidatePayload::Skill { root } => {
-            skill_catalog::install_imported_skill_at(&storage, root).and_then(|value| {
-                if candidate.scope == "user" {
-                    let mut runtime = state().lock().map_err(|_| {
-                        AgentRuntimeError::Core("agent runtime state lock failed".to_string())
-                    })?;
-                    runtime.active_skills.insert(candidate.target_id.clone());
-                    runtime.save_state()?;
-                }
-                Ok((value, None))
-            })
-        }
-        CandidatePayload::Mcp { config } => {
-            let secured = secure_imported_mcp_config(config, candidate)?;
-            let upserted = mcp_catalog::upsert_mcp_servers_at(&storage, secured)?;
-            if candidate.enabled {
-                let connected = mcp_catalog::mcp_server_connect_at(
-                    &storage,
-                    json!({ "serverId": candidate.target_id }),
-                );
-                let connected = connected?;
-                let failure = connected
-                    .get("servers")
-                    .and_then(Value::as_array)
-                    .and_then(|servers| servers.first())
-                    .filter(|server| server.get("state").and_then(Value::as_str) == Some("failed"))
-                    .and_then(|server| server.get("lastError").and_then(Value::as_str))
-                    .map(str::to_string);
-                return Ok((upserted, failure));
-            }
-            Ok((upserted, None))
-        }
-    }
 }
 
 fn secret_env_name(value: &str) -> Option<String> {
@@ -1496,7 +1396,7 @@ pub(crate) fn import_sync(payload: Value) -> AgentRuntimeResult<Value> {
         .get(snapshot.source.id())
         .cloned()
         .unwrap_or_default();
-    let fresh = scan_source(snapshot.source, snapshot.project_root.clone(), preference)?;
+    let fresh = global::scan_all(snapshot.source, preference)?;
     if fresh.source_fingerprint != snapshot.source_fingerprint {
         return Err(AgentRuntimeError::Core(
             "source changed since detection; detect again".to_string(),
@@ -1505,24 +1405,29 @@ pub(crate) fn import_sync(payload: Value) -> AgentRuntimeResult<Value> {
     let mut provenance = read_provenance();
     let mut results = Vec::new();
     for candidate in fresh.candidates {
+        if candidate.status == "synced" {
+            global::initialize_project_policy(&candidate)?;
+        }
         if !matches!(candidate.status.as_str(), "pending" | "update") {
             results.push(json!({ "kind": candidate.kind, "scope": candidate.scope, "targetId": candidate.target_id, "status": candidate.status }));
             continue;
         }
-        match sync_candidate(&candidate, fresh.project_root.as_deref()) {
+        match global::install(&candidate) {
             Ok((_, connection_error)) => {
-                let target_fingerprint = current_target_fingerprint(&candidate, fresh.project_root.as_deref()).unwrap_or_else(|| candidate.fingerprint.clone());
-                provenance.entries.retain(|entry| !(entry.source_id == fresh.source.id() && entry.kind == candidate.kind && entry.scope == candidate.scope && entry.source_item_id == candidate.source_item_id));
+                let target_fingerprint = current_target_fingerprint(&candidate).unwrap_or_else(|| candidate.fingerprint.clone());
+                provenance.entries.retain(|entry| !(entry.source_id == fresh.source.id() && entry.kind == candidate.kind && entry.scope == candidate.scope && entry.source_item_id == candidate.source_item_id && entry.source_path == candidate.source_path.to_string_lossy() && entry.project_root == candidate.project_root));
                 provenance.entries.push(ProvenanceEntry {
                     source_id: fresh.source.id().to_string(), kind: candidate.kind.clone(), scope: candidate.scope.clone(),
-                    source_path: candidate.source_path.to_string_lossy().to_string(), source_item_id: candidate.source_item_id.clone(),
+                    source_path: candidate.source_path.to_string_lossy().to_string(), project_root: candidate.project_root.clone(), source_item_id: candidate.source_item_id.clone(),
                     target_id: candidate.target_id.clone(), source_fingerprint: candidate.fingerprint.clone(), target_fingerprint,
                     synced_at: now(),
                 });
+                write_provenance(&provenance)?;
+                global::initialize_project_policy(&candidate)?;
                 let status = if connection_error.is_some() {
                     "failed"
-                } else if candidate.kind == "mcp" && candidate.enabled {
-                    "connected"
+                } else if candidate.kind == "mcp" {
+                    "imported"
                 } else if candidate.status == "update" {
                     "updated"
                 } else {
@@ -1534,6 +1439,7 @@ pub(crate) fn import_sync(payload: Value) -> AgentRuntimeResult<Value> {
         }
     }
     write_provenance(&provenance)?;
+    projects::notify_changed();
     if let Ok(mut cache) = detection_cache().lock() {
         cache.remove(&detection_id);
     }

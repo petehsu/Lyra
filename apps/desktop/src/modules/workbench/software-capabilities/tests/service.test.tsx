@@ -182,13 +182,7 @@ describe("software capability registry", () => {
   });
 
   test("keeps list lightweight and uses inspect/read/invoke for full capability details", async () => {
-    const openPageInNewTab = vi.fn(() => "browser-tab-opened");
-    const { result } = createRegistry({
-      tabsModel: {
-        openPageInNewTab,
-        navigateResolvedInput: vi.fn(() => "search-tab-1")
-      }
-    });
+    const { result } = createRegistry();
 
     const listed = await query(result, {
       requestId: "list",
@@ -198,20 +192,21 @@ describe("software capability registry", () => {
     expect(listed).toMatchObject({ ok: true, requestId: "list" });
     if (listed.ok !== true) throw new Error("list failed");
     const listedResult = listed.result as { readonly software: readonly LyraSoftwareManifest[] };
+    expect(listedResult.software.some((item) => item.id === "image-viewer")).toBe(true);
     const browser = listedResult.software.find((item) => item.id === "browser-search");
-    const openUrlSummary = browser?.actions.find((action) => action.id === "browser-search.openUrl");
-    expect(openUrlSummary).toMatchObject({
-      id: "browser-search.openUrl",
+    const searchSummary = browser?.actions.find((action) => action.id === "browser-search.search");
+    expect(searchSummary).toMatchObject({
+      id: "browser-search.search",
       risk: "navigate"
     });
-    expect(openUrlSummary).not.toHaveProperty("inputSchema");
+    expect(searchSummary).not.toHaveProperty("inputSchema");
 
     const inspected = await query(result, {
       requestId: "inspect",
       method: "software.inspectCapability",
       payload: {
         softwareId: "browser-search",
-        actionId: "browser-search.openUrl"
+        actionId: "browser-search.search"
       }
     });
     expect(inspected).toMatchObject({ ok: true, requestId: "inspect" });
@@ -219,9 +214,9 @@ describe("software capability registry", () => {
       throw new Error("inspect failed");
     }
     expect(inspected.result.action).toMatchObject({
-      id: "browser-search.openUrl",
+      id: "browser-search.search",
       inputSchema: {
-        required: ["url"]
+        required: ["query"]
       }
     });
     expect(inspected.result.readableState).toMatchObject({
@@ -259,25 +254,31 @@ describe("software capability registry", () => {
       method: "software.invokeCapability",
       payload: {
         softwareId: "browser-search",
-        actionId: "browser-search.openUrl",
+        actionId: "browser-search.search",
         input: {}
       }
     });
     expect(rejected).toMatchObject({
       ok: false,
       error: {
-        message: expect.stringContaining("url is required")
+        message: expect.stringContaining("query is required")
       }
     });
 
-    const invoked = await query(result, {
+    const openWebSearchTabs = vi.fn(() => ["search-tab-opened"]);
+    const { result: searchResult } = createRegistry({
+      tabsModel: {
+        openWebSearchTabs
+      }
+    });
+    const invoked = await query(searchResult, {
       requestId: "invoke",
       method: "software.invokeCapability",
       payload: {
         softwareId: "browser-search",
-        actionId: "browser-search.openUrl",
+        actionId: "browser-search.search",
         input: {
-          url: "https://example.com/docs"
+          query: "lyra docs"
         }
       }
     });
@@ -285,16 +286,79 @@ describe("software capability registry", () => {
       ok: true,
       result: {
         softwareId: "browser-search",
-        actionId: "browser-search.openUrl",
+        actionId: "browser-search.search",
         output: {
           opened: true,
-          tabId: "browser-tab-opened",
-          pageKind: "page",
-          url: "https://example.com/docs"
+          tabId: "search-tab-opened",
+          query: "lyra docs"
         }
       }
     });
-    expect(openPageInNewTab).toHaveBeenCalledWith("https://example.com/docs", undefined);
+    expect(openWebSearchTabs).toHaveBeenCalled();
+  });
+
+  test("opens an image file in an image viewer tab", async () => {
+    const openAppTab = vi.fn(() => "image-tab-1");
+    const openImage = vi.fn(async () => undefined);
+    const createInstance = vi.fn((path: string) => ({
+      appId: "image-viewer",
+      appInstanceId: "image-1",
+      title: "photo.png",
+      iconKey: "image-viewer-default",
+      filePath: path,
+      isDirty: false
+    }));
+    const { result } = createRegistry({
+      tabsModel: {
+        tabs: [],
+        openAppTab
+      },
+      imageViewerModel: {
+        createInstance,
+        findInstanceByPath: vi.fn(() => null),
+        openImage
+      }
+    });
+
+    const opened = await query(result, {
+      requestId: "open-image",
+      method: "software.invokeCapability",
+      payload: {
+        softwareId: "image-viewer",
+        actionId: "image-viewer.open",
+        input: { path: "/tmp/photo.png" }
+      }
+    });
+    expect(opened).toMatchObject({
+      ok: true,
+      result: {
+        output: {
+          opened: true,
+          appInstanceId: "image-1",
+          tabId: "image-tab-1",
+          path: "/tmp/photo.png"
+        }
+      }
+    });
+    expect(createInstance).toHaveBeenCalledWith("/tmp/photo.png");
+    expect(openAppTab).toHaveBeenCalled();
+    expect(openImage).toHaveBeenCalledWith("image-1", "/tmp/photo.png");
+
+    const rejected = await query(result, {
+      requestId: "open-notes",
+      method: "software.invokeCapability",
+      payload: {
+        softwareId: "image-viewer",
+        actionId: "image-viewer.open",
+        input: { path: "/tmp/notes.txt" }
+      }
+    });
+    expect(rejected).toMatchObject({
+      ok: false,
+      error: {
+        message: expect.stringContaining("Not an image")
+      }
+    });
   });
 
   test("reads terminal output through the bridge and requires risk policy for terminal input", async () => {
@@ -333,6 +397,14 @@ describe("software capability registry", () => {
             sessionId: "session-1",
             title: "Terminal",
             cwd: "/tmp",
+            shell: "zsh",
+            sourceAgentSessionId: "agent-1"
+          },
+          {
+            id: "pane-user",
+            sessionId: "session-user",
+            title: "User",
+            cwd: "/home",
             shell: "zsh"
           }
         ])
@@ -365,6 +437,35 @@ describe("software capability registry", () => {
     });
     expect(read).toHaveBeenCalledWith({
       sessionId: "session-1",
+      cursor: "0",
+      maxBytes: 2048,
+      waitMs: 0
+    });
+
+    const otherPane = await query(result, {
+      requestId: "terminal-buffer-other",
+      method: "software.invokeCapability",
+      payload: {
+        softwareId: "terminal",
+        actionId: "terminal.readVisibleBuffer",
+        input: {
+          sessionId: "session-user",
+          maxBytes: 2048,
+          waitMs: 0
+        }
+      }
+    });
+    expect(otherPane).toMatchObject({
+      ok: true,
+      result: {
+        output: {
+          activeSessionId: "session-user",
+          activePaneId: "pane-user"
+        }
+      }
+    });
+    expect(read).toHaveBeenLastCalledWith({
+      sessionId: "session-user",
       cursor: "0",
       maxBytes: 2048,
       waitMs: 0
@@ -417,7 +518,27 @@ describe("software capability registry", () => {
     expect(write).toHaveBeenCalledWith({
       sessionId: "session-1",
       text: "pwd\n",
-      source: "user"
+      source: "agent"
+    });
+
+    const userPane = await query(result, {
+      requestId: "terminal-user-pane",
+      method: "software.invokeCapability",
+      payload: {
+        softwareId: "terminal",
+        actionId: "terminal.sendControlledInput",
+        input: {
+          sessionId: "session-user",
+          text: "pwd\n",
+          riskPolicyAccepted: true
+        }
+      }
+    });
+    expect(userPane).toMatchObject({
+      ok: false,
+      error: {
+        message: expect.stringContaining("belongs to the user")
+      }
     });
   });
 
@@ -525,73 +646,6 @@ describe("software capability registry", () => {
               }
             })
           ]
-        }
-      }
-    });
-  });
-
-  test("prepares image viewer vision fallback with source open target", async () => {
-    const { result } = createRegistry({
-      tabsModel: {
-        activeTabId: "image-tab-1",
-        tabs: [{
-          id: "image-tab-1",
-          pageKind: "app",
-          appId: "image-viewer",
-          appInstanceId: "image-viewer-1",
-          title: "diagram.png"
-        }]
-      },
-      imageViewerModel: {
-        getState: vi.fn(() => ({
-          instanceId: "image-viewer-1",
-          filePath: "/Users/tester/Pictures/diagram.png",
-          status: "ready",
-          openResult: {
-            path: "/Users/tester/Pictures/diagram.png",
-            mimeType: "image/png",
-            format: "png",
-            width: 640,
-            height: 480
-          },
-          view: {
-            zoom: 1.5,
-            offsetX: 12,
-            offsetY: -8,
-            rotation: 0,
-            background: "checkerboard"
-          },
-          siblingIndex: 0,
-          siblingPaths: ["/Users/tester/Pictures/diagram.png"]
-        })),
-        setViewport: vi.fn()
-      }
-    });
-
-    const fallback = await query(result, {
-      requestId: "vision",
-      method: "software.invokeCapability",
-      payload: {
-        softwareId: "image-viewer",
-        actionId: "image-viewer.prepareVisionFallback"
-      }
-    });
-
-    expect(fallback).toMatchObject({
-      ok: true,
-      result: {
-        output: {
-          available: true,
-          ocrAvailable: false,
-          fallback: "model-vision",
-          imageArtifact: {
-            path: "/Users/tester/Pictures/diagram.png",
-            openTarget: {
-              kind: "file",
-              path: "/Users/tester/Pictures/diagram.png"
-            }
-          },
-          nextRecommendedAction: "attach_image_to_model_vision_input"
         }
       }
     });
@@ -814,7 +868,6 @@ describe("software capability registry", () => {
     const loginManager = listedResult.software.find((item) => item.id === "login-manager");
     expect(loginManager?.actions.map((action) => action.id)).toEqual([
       "login-manager.readState",
-      "login-manager.open",
       "login-manager.logoutSite",
       "login-manager.updateAuthMethod",
       "login-manager.fillCredential"
@@ -824,8 +877,11 @@ describe("software capability registry", () => {
       requestId: "open-login-manager",
       method: "software.invokeCapability",
       payload: {
-        softwareId: "login-manager",
-        actionId: "login-manager.open"
+        softwareId: "settings",
+        actionId: "settings.openSection",
+        input: {
+          section: "loginManager"
+        }
       }
     });
     expect(opened).toMatchObject({
@@ -833,10 +889,7 @@ describe("software capability registry", () => {
       result: {
         output: {
           opened: true,
-          openTarget: {
-            kind: "software",
-            id: "login-manager"
-          }
+          section: "loginManager"
         }
       }
     });
@@ -1037,4 +1090,19 @@ describe("software capability registry", () => {
       reason: "agent-request"
     });
   });
+});
+
+test("publishes catalogs on directory changes, not on ordinary hook rerenders", async () => {
+  const publish = vi.fn(async () => undefined);
+  const registerHandler = vi.fn(() => vi.fn());
+  const { result, rerender, unmount } = createRegistry({
+    desktopApi: { softwareCapabilities: { publish, registerHandler } } as unknown as LyraDesktopApi
+  });
+  await act(async () => undefined);
+  expect(publish).toHaveBeenLastCalledWith(result.current.software);
+  const count = publish.mock.calls.length;
+  rerender();
+  expect(publish).toHaveBeenCalledTimes(count);
+  unmount();
+  expect(publish).toHaveBeenLastCalledWith([]);
 });

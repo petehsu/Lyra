@@ -250,6 +250,59 @@ describe("agent message process fold", () => {
     expect(thinking.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  test("shows session compression after the summary while it is running, then folds it when done", () => {
+    setLocale("zh-CN");
+    const compression = (status: "running" | "done"): ChatMessage["blocks"][number] => ({
+      type: "tools",
+      id: "tools-compress",
+      group: {
+        id: "group-compress",
+        status,
+        label: status === "running" ? "压缩会话" : "会话已压缩（12000 → 4000）",
+        ...(status === "running" ? { currentCallId: "call-compress" } : {}),
+        calls: [{
+          id: "call-compress",
+          kind: "search",
+          title: status === "running" ? "压缩会话" : "会话已压缩（12000 → 4000）",
+          status: status === "running" ? "running" : "success",
+          toolName: "context_compress"
+        }]
+      }
+    });
+    const { rerender } = renderMessage({
+      ...completedAgentMessage,
+      id: "agent-compressing",
+      blocks: [...completedAgentMessage.blocks, compression("running")]
+    });
+
+    expect(screen.getByText("已完成：新增总折叠。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "压缩会话" })).toBeInTheDocument();
+    expect(screen.queryByText("我先检查项目结构。")).not.toBeInTheDocument();
+
+    const done = {
+      ...completedAgentMessage,
+      id: "agent-compressing",
+      blocks: [...completedAgentMessage.blocks, compression("done")]
+    };
+    const data = createDataProviderValue({
+      session,
+      messages: [done],
+      isTurnRunning: false
+    });
+    rerender(
+      <DataContextProvider value={data}>
+        <Message
+          message={done}
+          showActivityIndicator={false}
+          activityIndicatorMessage={null}
+        />
+      </DataContextProvider>
+    );
+    expect(screen.queryByRole("button", { name: "会话已压缩（12000 → 4000）" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "已工作 2秒" }));
+    expect(screen.getByRole("button", { name: "会话已压缩（12000 → 4000）" })).toBeInTheDocument();
+  });
+
   test("does not fold simple completed agent text", () => {
     setLocale("zh-CN");
     renderMessage({

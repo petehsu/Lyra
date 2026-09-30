@@ -24,12 +24,12 @@
 #![cfg(all(target_os = "linux", feature = "linux-atspi"))]
 
 use async_io::block_on;
+use atspi::Role;
+use atspi::State;
 use atspi::connection::AccessibilityConnection;
 use atspi::proxy::accessible::{AccessibleProxy, ObjectRefExt};
 use atspi::proxy::proxy_ext::ProxyExt;
 use atspi::zbus;
-use atspi::Role;
-use atspi::State;
 
 use crate::backend::ComputerBackend;
 use crate::model::{
@@ -261,6 +261,275 @@ fn parse_window_ref(window_ref: &str) -> Option<(usize, usize)> {
     Some((app_index.parse().ok()?, window_index.parse().ok()?))
 }
 
+/// Electron clears `SWAYSOCK` after startup. A single live socket is the
+/// signal that this session is Sway; any other desktop keeps the AT-SPI path.
+fn current_uid() -> Option<u32> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    for line in status.lines() {
+        let Some(rest) = line.strip_prefix("Uid:") else {
+            continue;
+        };
+        return rest.split_whitespace().next()?.parse().ok();
+    }
+    None
+}
+
+fn discover_sway_sockets() -> Vec<std::path::PathBuf> {
+    let Some(uid) = current_uid() else {
+        return Vec::new();
+    };
+    let runtime = std::env::var("XDG_RUNTIME_DIR")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from(format!("/run/user/{uid}")));
+    let prefix = format!("sway-ipc.{uid}.");
+    let Ok(entries) = std::fs::read_dir(runtime) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+                return false;
+            };
+            name.starts_with(&prefix) && name.ends_with(".sock")
+        })
+        .collect()
+}
+
+fn select_sway_socket<'a>(
+    env_socket: Option<&'a str>,
+    discovered: &'a [String],
+) -> Option<&'a str> {
+    if let Some(value) = env_socket.map(str::trim).filter(|value| !value.is_empty()) {
+        return Some(value);
+    }
+    if discovered.len() == 1 {
+        return Some(discovered[0].as_str());
+    }
+    None
+}
+
+fn sway_socket() -> Option<std::path::PathBuf> {
+    let env_socket = std::env::var("SWAYSOCK").ok();
+    if let Some(value) = env_socket
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        let path = std::path::PathBuf::from(value);
+        if path.exists() {
+            return Some(path);
+        }
+    }
+    let discovered = discover_sway_sockets()
+        .iter()
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    let selected = select_sway_socket(None, &discovered)?;
+    let path = std::path::PathBuf::from(selected);
+    path.exists().then_some(path)
+}
+
+fn sway_criteria_string(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        // sway title criteria is a regular expression, and the value is quoted.
+        if matches!(
+            ch,
+            '\\' | '"'
+                | '.'
+                | '*'
+                | '+'
+                | '?'
+                | '('
+                | ')'
+                | '['
+                | ']'
+                | '{'
+                | '}'
+                | '|'
+                | '^'
+                | '$'
+        ) {
+            escaped.push('\\');
+        }
+        escaped.push(ch);
+    }
+    escaped
+}
+
+fn sway_focus_command(title: &str) -> String {
+    format!("[title=\"^{}$\"] focus", sway_criteria_string(title))
+}
+
+fn sway_command(socket: &std::path::Path, args: &[&str]) -> Option<std::process::Output> {
+    std::process::Command::new("swaymsg")
+        .env("SWAYSOCK", socket)
+        .args(args)
+        .output()
+        .ok()
+}
+
+fn sway_ipc_succeeded(output: &std::process::Output) -> bool {
+    if !output.status.success() {
+        return false;
+    }
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&output.stdout) else {
+        return false;
+    };
+    let nodes = value.as_array().cloned().unwrap_or_else(|| vec![value]);
+    !nodes.is_empty()
+        && nodes.iter().all(|node| {
+            node.get("error").is_none()
+                && node.get("success").and_then(serde_json::Value::as_bool) != Some(false)
+        })
+}
+
+fn sway_focused_name(socket: &std::path::Path) -> Option<String> {
+    let output = sway_command(socket, &["-t", "get_tree"])?;
+    if !output.status.success() {
+        return None;
+    }
+    let value = serde_json::from_slice::<serde_json::Value>(&output.stdout).ok()?;
+    focused_container_name(&value)
+}
+
+fn focused_container_name(node: &serde_json::Value) -> Option<String> {
+    let kind = node
+        .get("type")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("");
+    if node.get("focused").and_then(serde_json::Value::as_bool) == Some(true)
+        && matches!(kind, "con" | "floating_con")
+    {
+        let name = node
+            .get("name")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("")
+            .trim();
+        if !name.is_empty() {
+            return Some(name.to_string());
+        }
+    }
+    for key in ["nodes", "floating_nodes"] {
+        if let Some(children) = node.get(key).and_then(serde_json::Value::as_array) {
+            for child in children {
+                if let Some(name) = focused_container_name(child) {
+                    return Some(name);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn align_foreground_with_sway(apps: &mut Vec<ComputerAppEntry>) {
+    let Some(socket) = sway_socket() else {
+        return;
+    };
+    let Some(title) = sway_focused_name(&socket) else {
+        return;
+    };
+    let mut matched = false;
+    for app in apps.iter_mut() {
+        let hit = app.windows.iter().any(|window| window.title == title);
+        app.is_foreground = hit;
+        for window in &mut app.windows {
+            window.is_focused = window.title == title;
+        }
+        if hit {
+            matched = true;
+        }
+    }
+    if matched {
+        return;
+    }
+    apps.push(ComputerAppEntry {
+        app_ref: format!("sway:{title}"),
+        name: title.clone(),
+        pid: None,
+        bundle_id: None,
+        is_foreground: true,
+        windows: vec![ComputerWindowEntry {
+            window_ref: None,
+            title,
+            is_focused: true,
+        }],
+    });
+}
+
+fn focus_verified(
+    socket: &std::path::Path,
+    message: &str,
+    title: &str,
+) -> Result<(), BackendError> {
+    let Some(output) = sway_command(socket, &[message]) else {
+        return Err(BackendError::new(
+            "focusFailed",
+            "swaymsg could not be started.",
+        ));
+    };
+    if !sway_ipc_succeeded(&output) {
+        return Err(BackendError::new(
+            "focusFailed",
+            format!("Sway did not focus {title:?}."),
+        ));
+    }
+    let focused = sway_focused_name(socket).unwrap_or_default();
+    if focused != title {
+        return Err(BackendError::new(
+            "focusFailed",
+            format!("Sway focused {focused:?} instead of {title:?}."),
+        ));
+    }
+    Ok(())
+}
+
+async fn focus_title_for_sway(
+    connection: &AccessibilityConnection,
+    request: &ComputerFocusRequest,
+) -> Option<String> {
+    if let Some(title) = request
+        .window_title
+        .as_deref()
+        .map(str::trim)
+        .filter(|title| !title.is_empty())
+    {
+        return Some(title.to_string());
+    }
+    let apps = list_application_entries(
+        connection,
+        &ListAppsRequest {
+            max_apps: 100,
+            include_background: true,
+        },
+    )
+    .await
+    .ok()?;
+    if let Some(window_ref) = request.window_ref.as_deref() {
+        for app in &apps {
+            for window in &app.windows {
+                if window.window_ref.as_deref() == Some(window_ref) && !window.title.is_empty() {
+                    return Some(window.title.clone());
+                }
+            }
+        }
+    }
+    if let Some(app_ref) = request.app_ref.as_deref() {
+        let app = apps.iter().find(|app| app.app_ref == app_ref)?;
+        if let Some(window) = app.windows.iter().find(|window| !window.title.is_empty()) {
+            return Some(window.title.clone());
+        }
+        if !app.name.is_empty() {
+            return Some(app.name.clone());
+        }
+    }
+    None
+}
+
 async fn grab_focus_proxy(proxy: &AccessibleProxy<'_>) -> Result<(), BackendError> {
     let component = proxy
         .proxies()
@@ -343,6 +612,7 @@ async fn list_application_entries(
             break;
         }
     }
+    align_foreground_with_sway(&mut apps);
     apps.sort_by(|left, right| {
         right
             .is_foreground
@@ -569,6 +839,20 @@ impl ComputerBackend for LinuxBackend {
     fn focus(&self, request: &ComputerFocusRequest) -> Result<(), BackendError> {
         block_on(async {
             let connection = connect().await?;
+            if let Some(socket) = sway_socket() {
+                // grab_focus can return true for an accessible that never
+                // becomes the compositor's focused window. On Sway that is a
+                // false success, so a failed swaymsg stays a failure.
+                let title = focus_title_for_sway(&connection, request)
+                    .await
+                    .ok_or_else(|| {
+                        BackendError::new(
+                            "windowNotFound",
+                            "No window title could be resolved for Sway focus.",
+                        )
+                    })?;
+                return focus_verified(&socket, &sway_focus_command(&title), &title);
+            }
             if request.bundle_id.is_some() || request.pid.is_some() {
                 return Err(BackendError::new(
                     "unsupported",
@@ -633,5 +917,73 @@ impl ComputerBackend for LinuxBackend {
             let app = application_at(&connection, app_index).await?;
             grab_focus_proxy(&app).await
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        focused_container_name, select_sway_socket, sway_focus_command, sway_ipc_succeeded,
+    };
+
+    #[test]
+    fn sway_title_criteria_escapes_quotes() {
+        assert_eq!(
+            sway_focus_command(r#"Lyra "docs" (1)"#),
+            r#"[title="^Lyra \"docs\" \(1\)$"] focus"#
+        );
+    }
+
+    #[test]
+    fn sway_socket_ignores_a_cleared_environment_when_one_socket_exists() {
+        assert_eq!(
+            select_sway_socket(None, &["/run/user/1000/sway-ipc.1000.1.sock".to_string()]),
+            Some("/run/user/1000/sway-ipc.1000.1.sock")
+        );
+        assert_eq!(select_sway_socket(Some("  "), &[]), None);
+        assert_eq!(
+            select_sway_socket(
+                None,
+                &[
+                    "/run/user/1000/sway-ipc.1000.1.sock".to_string(),
+                    "/run/user/1000/sway-ipc.1000.2.sock".to_string()
+                ]
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn sway_success_requires_the_focused_container() {
+        let tree = serde_json::json!({
+            "type": "root",
+            "nodes": [{
+                "type": "workspace",
+                "name": "2",
+                "focused": false,
+                "nodes": [{
+                    "type": "con",
+                    "name": "Cursor Agents",
+                    "focused": true
+                }]
+            }]
+        });
+        assert_eq!(
+            focused_container_name(&tree).as_deref(),
+            Some("Cursor Agents")
+        );
+        let success_status = std::os::unix::process::ExitStatusExt::from_raw(0);
+        let output = std::process::Output {
+            status: success_status,
+            stdout: br#"[{"success":true}]"#.to_vec(),
+            stderr: Vec::new(),
+        };
+        assert!(sway_ipc_succeeded(&output));
+        let missed = std::process::Output {
+            status: success_status,
+            stdout: br#"[{"success":false,"error":"No matching node."}]"#.to_vec(),
+            stderr: Vec::new(),
+        };
+        assert!(!sway_ipc_succeeded(&missed));
     }
 }

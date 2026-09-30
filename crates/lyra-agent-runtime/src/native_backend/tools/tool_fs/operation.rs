@@ -246,7 +246,7 @@ pub(super) fn operation_duration_ms(started_at: &str) -> u64 {
 }
 
 pub(super) fn scene_for_session(session_id: &str) -> ToolScene {
-    let (session_kind, project_bound, working_dir, active_kind, active_skills) = state()
+    let (session_kind, project_bound, working_dir, active_kind, project_root) = state()
         .lock()
         .ok()
         .map(|state| {
@@ -284,10 +284,15 @@ pub(super) fn scene_for_session(session_id: &str) -> ToolScene {
                     .filter(|value| !value.trim().is_empty())
                     .map(str::to_string),
                 (!active_kind.is_empty()).then_some(active_kind),
-                state.active_skills.iter().cloned().collect::<Vec<_>>(),
+                projects::snapshot_root(&snapshot).map(str::to_string),
             )
         })
-        .unwrap_or((None, false, None, None, Vec::new()));
+        .unwrap_or((None, false, None, None, None));
+    let active_skills = skill_catalog::effective_skills(project_root.as_deref())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|skill| skill.id)
+        .collect();
     let git_repo = working_dir.as_deref().is_some_and(|working_dir| {
         Command::new("git")
             .args(["rev-parse", "--is-inside-work-tree"])

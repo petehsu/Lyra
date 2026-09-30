@@ -8,7 +8,7 @@ use crate::{
     AgentRuntimeError, AgentRuntimeResult, ProviderTransportKind,
     native_backend::{
         provider::{ModelReply, ModelToolCall, ProviderResponseMeta},
-        turns::{StreamDeltaBatcher, turn_was_cancelled},
+        turns::{emit_reasoning_delta, emit_visible_delta, turn_was_cancelled},
     },
 };
 
@@ -40,7 +40,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
 ) -> AgentRuntimeResult<ModelReply> {
     let mut state = GeminiStreamState::default();
     let mut ui_message_id: Option<String> = None;
-    let mut delta_batcher = StreamDeltaBatcher::default();
+
     let buffer_assistant_text = false;
     let started_at = Instant::now();
 
@@ -66,14 +66,13 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
             &chunk,
             &mut state,
             &mut ui_message_id,
-            &mut delta_batcher,
             buffer_assistant_text,
             session_id,
             turn_id,
             tools,
         )?;
     }
-    delta_batcher.flush(&mut ui_message_id, session_id, turn_id)?;
+
     finish_streaming_reply(
         state,
         ui_message_id,
@@ -93,7 +92,7 @@ pub(crate) async fn parse_streaming_response_async(
 ) -> AgentRuntimeResult<ModelReply> {
     let mut state = GeminiStreamState::default();
     let mut ui_message_id: Option<String> = None;
-    let mut delta_batcher = StreamDeltaBatcher::default();
+
     let buffer_assistant_text = false;
     let started_at = Instant::now();
 
@@ -120,14 +119,13 @@ pub(crate) async fn parse_streaming_response_async(
             &chunk,
             &mut state,
             &mut ui_message_id,
-            &mut delta_batcher,
             buffer_assistant_text,
             session_id,
             turn_id,
             tools,
         )?;
     }
-    delta_batcher.flush(&mut ui_message_id, session_id, turn_id)?;
+
     finish_streaming_reply(
         state,
         ui_message_id,
@@ -141,7 +139,6 @@ fn map_stream_chunk(
     chunk: &Value,
     state: &mut GeminiStreamState,
     ui_message_id: &mut Option<String>,
-    delta_batcher: &mut StreamDeltaBatcher,
     buffer_assistant_text: bool,
     session_id: &str,
     turn_id: &str,
@@ -207,21 +204,13 @@ fn map_stream_chunk(
                 &text,
                 state,
                 ui_message_id,
-                delta_batcher,
                 buffer_assistant_text,
                 session_id,
                 turn_id,
             )?;
         }
         if let Some(reasoning) = reasoning_from_parts(&parts) {
-            append_reasoning_delta(
-                &reasoning,
-                state,
-                ui_message_id,
-                delta_batcher,
-                session_id,
-                turn_id,
-            )?;
+            append_reasoning_delta(&reasoning, state, ui_message_id, session_id, turn_id)?;
         }
         state
             .tool_calls
@@ -273,7 +262,6 @@ fn append_text_delta(
     text: &str,
     state: &mut GeminiStreamState,
     ui_message_id: &mut Option<String>,
-    delta_batcher: &mut StreamDeltaBatcher,
     buffer_assistant_text: bool,
     session_id: &str,
     turn_id: &str,
@@ -282,7 +270,7 @@ fn append_text_delta(
         return Ok(());
     }
     if !buffer_assistant_text {
-        delta_batcher.push_visible(text, ui_message_id, session_id, turn_id)?;
+        emit_visible_delta(text, ui_message_id, session_id, turn_id)?;
     }
     state.text.push_str(text);
     Ok(())
@@ -292,14 +280,13 @@ fn append_reasoning_delta(
     reasoning: &str,
     state: &mut GeminiStreamState,
     ui_message_id: &mut Option<String>,
-    delta_batcher: &mut StreamDeltaBatcher,
     session_id: &str,
     turn_id: &str,
 ) -> AgentRuntimeResult<()> {
     if reasoning.is_empty() {
         return Ok(());
     }
-    delta_batcher.push_reasoning(reasoning, ui_message_id, session_id, turn_id)?;
+    emit_reasoning_delta(reasoning, ui_message_id, session_id, turn_id)?;
     state.reasoning.push_str(reasoning);
     Ok(())
 }

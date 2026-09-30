@@ -502,6 +502,39 @@ export const useSettingsAiModel = ({
     }
   }, [desktopApi]);
 
+  useEffect(() => {
+    const agent = desktopApi?.agent;
+    if (!agent?.onEvent) return;
+    let disposed = false;
+    let generation = 0;
+    const unsubscribe = agent.onEvent((event) => {
+      if (event.kind !== "projectCapabilitiesChanged" || event.scope === "projects") return;
+      const current = ++generation;
+      void Promise.all([agent.listAgentSkills(), agent.listMcpServers()]).then(([skills, mcp]) => {
+        if (disposed || current !== generation) return;
+        setAgentSkillCatalog(skills);
+        setAgentMcpCatalog(mcp);
+      }).catch((error: unknown) => {
+        if (!disposed && current === generation) setErrorMessage(error instanceof Error ? error.message : String(error));
+      });
+    });
+    return () => { disposed = true; unsubscribe(); };
+  }, [desktopApi]);
+
+  const setAgentMcpEnabled = useCallback(async (request: { readonly serverId: string; readonly enabled: boolean }) => {
+    if (desktopApi?.agent === undefined) return;
+    setIsSaving(true);
+    try {
+      await desktopApi.agent.setMcpEnabled(request);
+      setAgentMcpCatalog(await desktopApi.agent.listMcpServers());
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+      const actual = await desktopApi.agent.listMcpServers().catch(() => null);
+      if (actual) setAgentMcpCatalog(actual);
+    } finally { setIsSaving(false); }
+  }, [desktopApi]);
+
   const connectAgentMcpServer = useCallback(async (request: AgentMcpServerRequest) => {
     if (desktopApi?.agent === undefined) return;
     setIsSaving(true);
@@ -651,6 +684,7 @@ export const useSettingsAiModel = ({
     refreshAgentMcp,
     upsertAgentMcpServer,
     removeAgentMcpServer,
+    setAgentMcpEnabled,
     connectAgentMcpServer,
     disconnectAgentMcpServer,
     switchAgentAccount,

@@ -95,3 +95,41 @@ async fn completed_requests_release_exactly_once_and_queued_cancellation_cleans_
     drop((first, second));
     assert_eq!(occupancy(&provider), (0, 0));
 }
+
+#[tokio::test]
+async fn background_work_yields_queue_priority_and_timeout_releases_occupancy() {
+    let provider = profile();
+    let cancellation = CancellationToken::new();
+    let first = acquire_provider_request_permit(&provider, "test", "session", &cancellation)
+        .await
+        .unwrap();
+    let second = acquire_provider_request_permit(&provider, "test", "session", &cancellation)
+        .await
+        .unwrap();
+    let mut background = Box::pin(acquire_prioritized_provider_permit(
+        &provider,
+        "test",
+        RequestPriority::Background,
+        &cancellation,
+    ));
+    assert!(futures::poll!(&mut background).is_pending());
+    let mut foreground = Box::pin(acquire_provider_request_permit(
+        &provider,
+        "test",
+        "session",
+        &cancellation,
+    ));
+    assert!(futures::poll!(&mut foreground).is_pending());
+    drop(first);
+    assert!(futures::poll!(&mut background).is_pending());
+    let foreground = foreground.await.unwrap();
+    drop((foreground, second, background));
+    assert_eq!(occupancy(&provider), (0, 0));
+    let timed = tokio::time::timeout(
+        Duration::from_millis(5),
+        scheduled_background_provider_request(&provider, "test", std::future::pending()),
+    )
+    .await;
+    assert!(timed.is_err());
+    assert_eq!(occupancy(&provider), (0, 0));
+}

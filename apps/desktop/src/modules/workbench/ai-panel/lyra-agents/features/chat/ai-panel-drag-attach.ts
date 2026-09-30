@@ -31,6 +31,7 @@ import {
 } from "./image-drop";
 import { imageAttachmentMetadataFromPath } from "./read-image-attachment";
 import { isImageViewerSupportedPath } from "../../../../image-viewer";
+import { citedImageViewerAttachment } from "./workspace-tab-citation";
 import {
   hasExternalPageDragPayload,
   readExternalPageDragPayload
@@ -170,6 +171,10 @@ export const resolveAiPanelDragAttachAction = async (
   if (workspacePayload !== null) {
     const tab = workspaceTabs.find((entry) => entry.id === workspacePayload.tabId);
     if (tab !== undefined) {
+      const image = citedImageViewerAttachment(tab);
+      if (image !== null) {
+        return { kind: "images", images: [image] };
+      }
       return { kind: "workspace-tab", tab };
     }
   }

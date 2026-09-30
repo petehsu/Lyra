@@ -1043,6 +1043,7 @@ export const createLumenToolHost = ({
         ...(useFrameworkRouter ? { useFrameworkRouter: true } : {}),
         ...(timeoutMs === undefined ? {} : { timeoutMs })
       });
+      if ((res as { status?: unknown }).status === "dialogPending") return res;
       if (typeof res.tabId !== "string" || !res.tabId) throw new Error("Navigation did not produce a browser tab identity");
       rememberAgentBrowserPreviewTarget({tabId:res.tabId,targetMode});
       sessionPages.remember(payload,{ok:true,tabId:res.tabId,url:res.address,title:res.title});
@@ -1079,6 +1080,7 @@ export const createLumenToolHost = ({
         ignoreCache,
         ...(timeoutMs === undefined ? {} : { timeoutMs })
       });
+      if ((res as { status?: unknown }).status === "dialogPending") return res;
       return withLumenTargetIds({
         ok: true,
         kind: "lyraLumenReload",

@@ -166,4 +166,37 @@ describe("computer-tool-host", () => {
     });
     expect(Array.isArray(result.evidenceRefs)).toBe(true);
   });
+
+  test("computer.see reports the capture error it was given", async () => {
+    const { handlers } = createComputerToolHost({
+      visualFallback: {
+        storageRoot: process.cwd(),
+        captureScreen: async () => {
+          throw new Error("The screenshot portal did not answer.");
+        }
+      }
+    });
+    const result = await invoke(handlers, "lyraComputer.see", { scope: "screen" });
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        kind: "captureFailed",
+        message: "The screenshot portal did not answer."
+      }
+    });
+  });
+
+  test("computer.see does not invent a screen-recording denial", async () => {
+    const { handlers } = createComputerToolHost({
+      visualFallback: {
+        storageRoot: process.cwd(),
+        captureScreen: async () => null
+      }
+    });
+    const result = await invoke(handlers, "lyraComputer.see", { scope: "screen" });
+    expect(result).toMatchObject({
+      ok: false,
+      error: { kind: "captureFailed", message: "Could not capture the screen." }
+    });
+  });
 });

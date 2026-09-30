@@ -8,7 +8,7 @@ use crate::{
     AgentRuntimeError, AgentRuntimeResult, ProviderTransportKind,
     native_backend::{
         provider::{ModelReply, ProviderResponseMeta, TurnStopSignal},
-        turns::{StreamDeltaBatcher, turn_was_cancelled},
+        turns::{emit_reasoning_delta, emit_visible_delta, turn_was_cancelled},
     },
 };
 
@@ -40,7 +40,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
 ) -> AgentRuntimeResult<ModelReply> {
     let mut state = OllamaStreamState::default();
     let mut ui_message_id: Option<String> = None;
-    let mut delta_batcher = StreamDeltaBatcher::default();
+
     let buffer_assistant_text = false;
     let started_at = Instant::now();
 
@@ -76,7 +76,6 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
             &value,
             &mut state,
             &mut ui_message_id,
-            &mut delta_batcher,
             buffer_assistant_text,
             session_id,
             turn_id,
@@ -86,7 +85,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
             break;
         }
     }
-    delta_batcher.flush(&mut ui_message_id, session_id, turn_id)?;
+
     finish_streaming_reply(
         state,
         ui_message_id,
@@ -107,7 +106,7 @@ pub(crate) async fn parse_streaming_response_async(
 ) -> AgentRuntimeResult<ModelReply> {
     let mut state = OllamaStreamState::default();
     let mut ui_message_id: Option<String> = None;
-    let mut delta_batcher = StreamDeltaBatcher::default();
+
     let buffer_assistant_text = false;
     let started_at = Instant::now();
 
@@ -144,7 +143,6 @@ pub(crate) async fn parse_streaming_response_async(
             &value,
             &mut state,
             &mut ui_message_id,
-            &mut delta_batcher,
             buffer_assistant_text,
             session_id,
             turn_id,
@@ -154,7 +152,7 @@ pub(crate) async fn parse_streaming_response_async(
             break;
         }
     }
-    delta_batcher.flush(&mut ui_message_id, session_id, turn_id)?;
+
     finish_streaming_reply(
         state,
         ui_message_id,
@@ -262,7 +260,6 @@ fn map_stream_chunk(
     value: &Value,
     state: &mut OllamaStreamState,
     ui_message_id: &mut Option<String>,
-    delta_batcher: &mut StreamDeltaBatcher,
     buffer_assistant_text: bool,
     session_id: &str,
     turn_id: &str,
@@ -284,14 +281,14 @@ fn map_stream_chunk(
         && !text.is_empty()
     {
         if !buffer_assistant_text {
-            delta_batcher.push_visible(text, ui_message_id, session_id, turn_id)?;
+            emit_visible_delta(text, ui_message_id, session_id, turn_id)?;
         }
         state.content.push_str(text);
     }
     if let Some(reasoning) = message.get("thinking").and_then(Value::as_str)
         && !reasoning.is_empty()
     {
-        delta_batcher.push_reasoning(reasoning, ui_message_id, session_id, turn_id)?;
+        emit_reasoning_delta(reasoning, ui_message_id, session_id, turn_id)?;
         state.reasoning.push_str(reasoning);
     }
     if message
@@ -320,7 +317,7 @@ fn map_stream_chunk(
             let accumulator = state.tool_calls.entry(index).or_default();
             merge_tool_call_chunk(accumulator, chunk);
         }
-        delta_batcher.flush(ui_message_id, session_id, turn_id)?;
+
         crate::native_backend::tools::maybe_emit_streaming_diff_previews_from_accumulators(
             session_id,
             turn_id,

@@ -23,7 +23,7 @@ import {
 // cookies; upgrade path is session.fetch if a provider ever requires auth
 // cookies to serve its favicon.
 
-const PROVIDER_ICON_CACHE_VERSION = 1 as const;
+const PROVIDER_ICON_CACHE_VERSION = 2 as const;
 const PROVIDER_ICON_DIR_NAME = "provider-icons";
 const PROVIDER_ICON_INDEX_FILE = "index.v1.json";
 const PROVIDER_ICON_MAX_BYTES = 1024 * 1024;
@@ -133,6 +133,22 @@ const writeIndex = (storageRoot: string, index: ProviderIconIndex): void => {
     JSON.stringify(index, null, 2),
     "utf8"
   );
+};
+
+/** `mcp.deepwiki.com` -> `deepwiki.com`. A two-label host is already the site. */
+const parentSiteOrigin = (origin: string): string | null => {
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch (_error) {
+    return null;
+  }
+  const labels = url.hostname.split(".").filter((label) => label.length > 0);
+  if (labels.length < 3) {
+    return null;
+  }
+  url.hostname = labels.slice(1).join(".");
+  return url.origin;
 };
 
 const originFromBaseUrl = (baseUrl: string): string | null => {
@@ -514,47 +530,72 @@ export const createProviderIconCache = ({
   let index = readIndex(storageRoot);
   const inFlight = new Map<string, Promise<{ readonly iconUrl: string | null }>>();
 
+  const declaredIconUrl = async (
+    candidate: string,
+    publicOnly: boolean
+  ): Promise<string | null> => {
+    const page = publicOnly ? await fetchPublicHtml(candidate) : await fetchHtml(candidate);
+    return page === null ? null : parseIconLinksFromHtml(page.html, page.baseUrl);
+  };
+
+  const rememberIcon = async (
+    origin: string,
+    sourceUrl: string,
+    publicOnly: boolean
+  ): Promise<string | null> => {
+    const previewUrl = await persistIcon(storageRoot, origin, sourceUrl, publicOnly);
+    if (previewUrl === null) {
+      return null;
+    }
+    const fileName = faviconFileNameFor(origin);
+    const mimeType = previewUrl.split("contentType=")[1] ?? "image/png";
+    index = upsertRecord(index, {
+      origin,
+      sourceUrl,
+      fileName,
+      mimeType: decodeURIComponent(mimeType),
+      updatedAt: nowIso()
+    });
+    writeIndex(storageRoot, index);
+    return previewUrl;
+  };
+
   const resolveUncached = async (
     origin: string,
     publicOnly: boolean
   ): Promise<{ readonly iconUrl: string | null }> => {
     try {
-      const page = publicOnly ? await fetchPublicHtml(origin) : await fetchHtml(origin);
-      const sourceUrl =
-        (page !== null ? parseIconLinksFromHtml(page.html, page.baseUrl) : null)
-        ?? fallbackFaviconUrl(origin);
-      if (sourceUrl === null) {
-        index = upsertFailure(index, {
-          origin,
-          expiresAt: new Date(Date.now() + negativeTtlMs).toISOString(),
-          ...(publicOnly ? { scope: "public-only" as const } : {})
-        });
-        writeIndex(storageRoot, index);
-        return { iconUrl: null };
+      const candidates = [origin];
+      const parent = parentSiteOrigin(origin);
+      if (parent !== null) {
+        candidates.push(parent);
       }
-
-      const previewUrl = await persistIcon(storageRoot, origin, sourceUrl, publicOnly);
-      if (previewUrl === null) {
-        index = upsertFailure(index, {
-          origin,
-          expiresAt: new Date(Date.now() + negativeTtlMs).toISOString(),
-          ...(publicOnly ? { scope: "public-only" as const } : {})
-        });
-        writeIndex(storageRoot, index);
-        return { iconUrl: null };
+      for (const [indexInCandidates, candidate] of candidates.entries()) {
+        const favicon = fallbackFaviconUrl(candidate);
+        if (indexInCandidates > 0 && favicon !== null) {
+          const fromParentFile = await rememberIcon(origin, favicon, publicOnly);
+          if (fromParentFile !== null) {
+            return { iconUrl: fromParentFile };
+          }
+        }
+        const declared = await declaredIconUrl(candidate, publicOnly);
+        for (const sourceUrl of indexInCandidates === 0 ? [declared, favicon] : [declared]) {
+          if (sourceUrl === null || sourceUrl === favicon && indexInCandidates > 0) {
+            continue;
+          }
+          const previewUrl = await rememberIcon(origin, sourceUrl, publicOnly);
+          if (previewUrl !== null) {
+            return { iconUrl: previewUrl };
+          }
+        }
       }
-
-      const fileName = faviconFileNameFor(origin);
-      const mimeType = previewUrl.split("contentType=")[1] ?? "image/png";
-      index = upsertRecord(index, {
+      index = upsertFailure(index, {
         origin,
-        sourceUrl,
-        fileName,
-        mimeType: decodeURIComponent(mimeType),
-        updatedAt: nowIso()
+        expiresAt: new Date(Date.now() + negativeTtlMs).toISOString(),
+        ...(publicOnly ? { scope: "public-only" as const } : {})
       });
       writeIndex(storageRoot, index);
-      return { iconUrl: previewUrl };
+      return { iconUrl: null };
     } catch (_error) {
       index = upsertFailure(index, {
         origin,

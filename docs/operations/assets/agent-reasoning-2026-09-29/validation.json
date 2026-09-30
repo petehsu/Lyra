@@ -1,0 +1,30 @@
+{
+  "focusedTests": {
+    "files": 5,
+    "passed": 36,
+    "failed": 0
+  },
+  "regressionBefore": {
+    "passed": 1,
+    "failed": 3
+  },
+  "regressionAfter": {
+    "passed": 6,
+    "failed": 0
+  },
+  "changedFileTypes": {
+    "files": [
+      "src/modules/workbench/ai-panel/lyra-agents/features/chat/message-activity-blocks.ts",
+      "src/modules/workbench/ai-panel/lyra-agents/features/chat/tests/message-reasoning-stream.test.tsx"
+    ],
+    "errors": []
+  },
+  "browserBefore": "before.json",
+  "browserAfter": "after.json",
+  "gitDiffCheck": true,
+  "notes": [
+    "Browser uses production components and build with synthetic data, not the full live Electron application.",
+    "No change to model, provider route or thinking preferences; no user turn was cancelled by this investigation.",
+    "Earlier development-server harness timed out during page load; final before/after use the same production build workflow."
+  ]
+}

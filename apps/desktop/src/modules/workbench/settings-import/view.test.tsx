@@ -6,15 +6,15 @@ import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import { SettingsImportView, type SettingsImportLabels } from "./view";
 
 const labels: SettingsImportLabels = {
-  title: "Import Settings", description: "Sync settings", project: "Project directory",
-  chooseProject: "Choose directory", clearProject: "Clear", detect: "Detect", sync: "Sync",
+  title: "Import Settings", description: "Sync settings",
+  detect: "Detect", sync: "Sync",
   synced: "Synced", needsAttention: "Needs attention", noContent: "Nothing to sync",
   skills: "Skills", mcp: "MCP", back: "Import Settings", loading: "Working", unavailable: "Unavailable"
 };
 
 const createApi = () => {
   const detectImport = vi.fn(async () => ({
-    detectionId: "detection-1", sourceId: "claude" as const, projectRoot: null,
+    detectionId: "detection-1", sourceId: "claude" as const,
     counts: { pending: 2 }, diagnostics: [], candidates: [
       { kind: "skill" as const, scope: "user" as const, sourcePath: "/home/.claude/skills/demo", sourceItemId: "demo", targetId: "demo", status: "pending" as const, enabled: true },
       { kind: "mcp" as const, scope: "user" as const, sourcePath: "/home/.mcp.json", sourceItemId: "server", targetId: "server", status: "pending" as const, enabled: true }
@@ -28,8 +28,8 @@ const createApi = () => {
       { id: "opencode" as const, label: "OpenCode", configPath: "/home/.config/opencode" },
       { id: "zed" as const, label: "Zed", configPath: "/home/.config/zed" }
     ] })),
-    getImportPreferences: vi.fn(async () => ({ projectRoot: null, sources: { claude: { skills: true, mcp: true }, cursor: { skills: true, mcp: true }, codex: { skills: true, mcp: true }, opencode: { skills: true, mcp: true }, zed: { skills: true, mcp: true } } })),
-    setImportPreferences: vi.fn(async () => ({ projectRoot: null, sources: { claude: { skills: true, mcp: true }, cursor: { skills: true, mcp: true }, codex: { skills: true, mcp: true }, opencode: { skills: true, mcp: true }, zed: { skills: true, mcp: true } } })),
+    getImportPreferences: vi.fn(async () => ({ sources: { claude: { skills: true, mcp: true }, cursor: { skills: true, mcp: true }, codex: { skills: true, mcp: true }, opencode: { skills: true, mcp: true }, zed: { skills: true, mcp: true } } })),
+    setImportPreferences: vi.fn(async () => ({ sources: { claude: { skills: true, mcp: true }, cursor: { skills: true, mcp: true }, codex: { skills: true, mcp: true }, opencode: { skills: true, mcp: true }, zed: { skills: true, mcp: true } } })),
     detectImport,
     syncImport: vi.fn(async () => ({ sourceId: "claude" as const, results: [], diagnostics: [] }))
   } as unknown as AgentApi;
@@ -53,7 +53,7 @@ describe("SettingsImportView", () => {
     expect(document.querySelector(".lyra-settings-import"))
       .toHaveClass("lyra-settings-import");
     fireEvent.click(detect!);
-    await waitFor(() => expect(detectImport).toHaveBeenCalledWith({ sourceId: "claude", projectRoot: null }));
+    await waitFor(() => expect(detectImport).toHaveBeenCalledWith({ sourceId: "claude" }));
     expect(await screen.findByRole("button", { name: "Sync" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Claude"));

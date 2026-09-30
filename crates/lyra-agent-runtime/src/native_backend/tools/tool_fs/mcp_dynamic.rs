@@ -41,11 +41,11 @@ pub(crate) fn mcp_capability_path(server_id: &str, tool_name: &str) -> String {
 /// Servers whose state is not `connected` still contribute manifests (so
 /// search finds them) with a note in the summary pointing at
 /// `server_connect`/`server_reload`.
-pub(super) fn mcp_capability_manifests() -> (Vec<ToolManifest>, Vec<Value>) {
-    let registry = crate::native_backend::mcp_catalog::registry_snapshot();
+pub(super) fn mcp_capability_manifests(root: Option<&str>) -> (Vec<ToolManifest>, Vec<Value>) {
+    let registry = crate::native_backend::mcp_catalog::effective_registry(root).unwrap_or_default();
     let mut manifests = Vec::new();
     let mut disconnected_servers = 0_usize;
-    for server in &registry.servers {
+    for server in registry.servers.iter().filter(|server| server.enabled) {
         let connected = server.state == "connected" && server.enabled;
         if !connected {
             disconnected_servers += 1;
@@ -217,7 +217,7 @@ mod tests {
     fn capability_manifests_generated_for_registry_servers() {
         // The real registry may be empty in tests — assert the function is
         // robust either way and produces the right shape when it has data.
-        let (manifests, _diagnostics) = mcp_capability_manifests();
+        let (manifests, _diagnostics) = mcp_capability_manifests(None);
         for manifest in &manifests {
             assert!(manifest.path.starts_with("/tools/mcp/capability/"));
             assert_eq!(manifest.domain, "mcp");

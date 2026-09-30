@@ -1,0 +1,35 @@
+{
+  "results": [
+    "Unsent composer project appears immediately; project can enable a globally disabled MCP without affecting another project.",
+    "Keyboard tab navigation and Skill override persist through the real backend.",
+    "Restart retains overrides; reset follows global defaults; disabled stale MCP call is rejected.",
+    "Missing directory remains listed as unavailable."
+  ],
+  "errors": [],
+  "validation": {
+    "frontend": {
+      "passed": 68
+    },
+    "backend": {
+      "projects": 3,
+      "import": 10,
+      "mcp": 7,
+      "skills": 11,
+      "toolSearch": 18,
+      "toolFilesystem": 7,
+      "statePersistence": 4
+    },
+    "types": {
+      "baselineErrors": 95,
+      "currentErrors": 95,
+      "newDiagnostics": 0
+    },
+    "runtimeClippy": "passed",
+    "existingFailures": {
+      "typeDiagnostics": 95,
+      "structure": 5,
+      "workspaceClippy": 4,
+      "staleProviderSchemaAssertion": 1
+    }
+  }
+}

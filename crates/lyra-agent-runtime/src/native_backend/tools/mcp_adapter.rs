@@ -24,10 +24,8 @@ pub(crate) async fn execute_mcp_tool_adapter(
         ),
         "toolStarted",
     );
-    let mut scoped_arguments = arguments.clone();
-    if let Ok(project_root) = session_workspace_root(session_id) {
-        scoped_arguments["projectRoot"] = Value::String(project_root.to_string_lossy().to_string());
-    }
+    let project_root = projects::session_root(session_id);
+    let scoped_arguments = arguments.clone();
     // execute_mcp_state_change runs blocking I/O (reqwest::blocking for HTTP
     // transports, std process I/O for stdio, sync SQLite for the registry).
     // Calling it directly on the async worker thread either panics (blocking
@@ -37,8 +35,11 @@ pub(crate) async fn execute_mcp_tool_adapter(
     // elevated-helper pattern in shell.rs.
     let tool_name_owned = tool_name.to_string();
     let raw_result = match tokio::task::spawn_blocking(move || {
-        execute_mcp_state_change(&tool_name_owned, &scoped_arguments)
-            .map_err(AgentRuntimeError::Core)
+        mcp_catalog::execute_for_project(
+            &tool_name_owned,
+            &scoped_arguments,
+            project_root?.as_deref(),
+        )
     })
     .await
     {
@@ -122,8 +123,9 @@ pub(crate) async fn execute_mcp_capability_tool_adapter(
         object.insert("serverId".to_string(), json!(server_id));
         object.insert("toolName".to_string(), json!(tool_name));
     }
+    let project_root = projects::session_root(session_id);
     let raw_result = match tokio::task::spawn_blocking(move || {
-        crate::native_backend::mcp_catalog::mcp_tool_execute(payload)
+        mcp_catalog::execute_for_project("mcp_tool_execute", &payload, project_root?.as_deref())
     })
     .await
     {

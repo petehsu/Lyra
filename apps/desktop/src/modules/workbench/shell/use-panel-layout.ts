@@ -15,6 +15,7 @@ import {
   type PanelLayoutCssVars
 } from "./panel-layout-shell-vars";
 import { notifyLayoutResizeEnd, notifyLayoutResizeStart } from "./layout-resize-end";
+import { createRafCoalescer } from "./raf-coalesce";
 import {
   clamp,
   resolveCoupledPanelSizes,
@@ -162,6 +163,7 @@ export const usePanelLayoutModel = (
     useState<TerminalPanelSide>(readInitialTerminalPanelSide);
 
   const dragDraftRef = useRef<PanelSizeState | null>(null);
+  const endDragRef = useRef<(() => void) | null>(null);
   const appSidebarWidthDraftRef = useRef<number | null>(null);
   const appSidebarWidthRef = useRef(appSidebarWidth);
   const visibilityRef = useRef({
@@ -198,6 +200,7 @@ export const usePanelLayoutModel = (
     onMove: (event: MouseEvent) => void,
     onEnd?: () => void
   ): void => {
+    endDragRef.current?.();
     const previousCursor = document.body.style.cursor;
     const previousUserSelect = document.body.style.userSelect;
     document.body.style.cursor = cursor;
@@ -208,18 +211,38 @@ export const usePanelLayoutModel = (
 
     const pointerShieldTargets = Array.from(
       document.querySelectorAll("iframe, webview")
-    );
+    ).filter((target) => !target.classList.contains(POINTER_EVENTS_DISABLED_CLASS));
     for (const target of pointerShieldTargets) {
       target.classList.add(POINTER_EVENTS_DISABLED_CLASS);
     }
 
-    const handleMouseMove = (event: MouseEvent): void => {
+    let latestMove: MouseEvent | null = null;
+    const flushMove = (): void => {
+      if (latestMove === null) return;
+      const event = latestMove;
+      latestMove = null;
       onMove(event);
     };
+    const coalescer = createRafCoalescer(flushMove);
+    const handleMouseMove = (event: MouseEvent): void => {
+      latestMove = event;
+      coalescer.schedule();
+    };
 
-    const handleMouseUp = (): void => {
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") finish();
+    };
+
+    const finish = (): void => {
+      if (endDragRef.current !== finish) return;
+      endDragRef.current = null;
       window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("mouseup", finish);
+      window.removeEventListener("blur", finish);
+      window.removeEventListener("keydown", handleKeyDown);
+      coalescer.cancel();
+      // A quick move/release may happen before the queued animation frame.
+      flushMove();
 
       const finalDraft = dragDraftRef.current;
       dragDraftRef.current = null;
@@ -238,18 +261,23 @@ export const usePanelLayoutModel = (
       }
       onEnd?.();
 
-      notifyLayoutResizeEnd();
-
       for (const target of pointerShieldTargets) {
         target.classList.remove(POINTER_EVENTS_DISABLED_CLASS);
       }
+      notifyLayoutResizeEnd();
     };
 
+    endDragRef.current = finish;
     window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener("mouseup", finish);
+    window.addEventListener("blur", finish);
+    window.addEventListener("keydown", handleKeyDown);
   }, []);
 
+  useEffect(() => () => endDragRef.current?.(), []);
+
   const onLeftResizeMouseDown = useCallback((event: ReactMouseEvent<HTMLDivElement>): void => {
+    if (event.button > 0) return;
     event.preventDefault();
     const startX = event.clientX;
     const startLeft = leftWidth;
@@ -272,6 +300,7 @@ export const usePanelLayoutModel = (
   }, [aiPanelSide, applyLiveShellLayout, beginDrag, bottomHeight, leftWidth]);
 
   const onBottomResizeMouseDown = useCallback((event: ReactMouseEvent<HTMLDivElement>): void => {
+    if (event.button > 0) return;
     event.preventDefault();
     const startY = event.clientY;
     const startBottom = bottomHeight;
@@ -381,22 +410,19 @@ export const usePanelLayoutModel = (
   }, [beginDrag, shellRootRef]);
 
   useEffect(() => {
-    const onResize = (): void => {
+    const coalescer = createRafCoalescer(() => {
       const bounds = resolvePanelSizeBounds();
-      setPanelSizes((current) =>
-        resolveCoupledPanelSizes(
-          {
-            leftWidth: current.leftWidth,
-            bottomHeight: current.bottomHeight
-          },
-          bounds
-        )
-      );
-    };
+      setPanelSizes((current) => {
+        const next = resolveCoupledPanelSizes(current, bounds);
+        return next.leftWidth === current.leftWidth && next.bottomHeight === current.bottomHeight
+          ? current : next;
+      });
+    });
 
-    window.addEventListener("resize", onResize);
+    window.addEventListener("resize", coalescer.schedule);
     return () => {
-      window.removeEventListener("resize", onResize);
+      window.removeEventListener("resize", coalescer.schedule);
+      coalescer.cancel();
     };
   }, []);
 

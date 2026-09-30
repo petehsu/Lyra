@@ -1045,7 +1045,15 @@
 
 .lyra-agents-chat-message-slot {
   min-width: 0;
-  /* JS owns the viewport window; content-visibility would fight its spacers. */
+}
+
+/* Like ZCode's readonly turns, retain searchable/selectable history in the
+   document while the browser skips offscreen layout. Remember measured height
+   instead of continuously reflowing old messages when a splitter moves. Keep
+   the latest message in ordinary flow, including its growing streaming tail. */
+.lyra-agents-chat-message-slot:not(:last-child) {
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto calc(var(--lyra-unit-300) * 2);
 }
 
 /* -------- Messages -------- */
@@ -4538,9 +4546,26 @@
   font-size: inherit;
 }
 
+.lyra-markdown-table-block {
+  min-width: 0;
+  max-width: 100%;
+  margin-block: var(--lyra-unit-12);
+}
+
+.lyra-markdown-table-actions {
+  display: flex;
+  justify-content: flex-end;
+  color: var(--lyra-text-secondary);
+}
+
+.lyra-markdown-table-actions:empty {
+  display: none;
+}
+
 .lyra-agents-md-table-wrap {
   overflow-x: auto;
-  margin: var(--lyra-unit-8) 0;
+  border: var(--lyra-stroke-thin) solid var(--lyra-app-border);
+  border-radius: var(--lyra-radius-8);
 }
 
 .lyra-agents-md-table {
@@ -4551,19 +4576,24 @@
 
 .lyra-agents-md-table th,
 .lyra-agents-md-table td {
-  border: var(--lyra-unit-1) solid color-mix(in srgb, var(--lyra-app-border) 46%, transparent);
+  border: 0;
+  border-bottom: var(--lyra-stroke-thin) solid var(--lyra-app-border);
   padding: var(--lyra-unit-6) var(--lyra-unit-10);
-  text-align: left;
 }
 
+.lyra-agents-md-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.lyra-agents-md-table thead,
 .lyra-agents-md-table th {
-  background: var(--lyra-effect-glass-subtle);
+  background: var(--lyra-app-muted-bg);
   font-weight: 600;
   color: var(--lyra-text-primary);
 }
 
 .lyra-agents-md-table td {
-  color: var(--lyra-text-secondary);
+  color: var(--lyra-text-primary);
 }
 
 .lyra-agents-md-link {
@@ -4903,7 +4933,8 @@
   gap: var(--lyra-unit-2);
 }
 
-.lyra-markdown-code-actions .lyra-ui-button {
+.lyra-markdown-code-actions .lyra-ui-button,
+.lyra-markdown-table-actions .lyra-ui-button {
   width: var(--lyra-unit-28);
   height: var(--lyra-unit-28);
   color: inherit;

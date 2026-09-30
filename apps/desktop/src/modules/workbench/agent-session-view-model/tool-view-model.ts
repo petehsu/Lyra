@@ -78,6 +78,7 @@ export const toolKind = (tool: AgentToolActivity): ToolCall["kind"] => {
     return "read";
   }
   if (domain === "code" || toolPath.startsWith("/tools/code/")) return "search";
+  if (toolName === "toolsearch") return "search";
   return "thought";
 };
 
@@ -330,6 +331,7 @@ export const projectedToolActivityStatus = (
     && context?.turnStatus !== undefined
     && context.turnStatus !== "running"
     && !isLiveBackgroundSubagentTool(tool, context)
+    && normalizedToolName(tool) !== "context_compress"
   ) {
     return "cancelled";
   }
@@ -461,6 +463,12 @@ export const toolGroupLabel = (
   calls: readonly ToolCall[],
   fallback: string
 ): string => {
+  if (
+    calls.length === 1
+    && (calls[0]?.toolName === "toolsearch" || calls[0]?.toolName === "context_compress")
+  ) {
+    return calls[0].title;
+  }
   if (calls.length === 0) return fallback;
   const counts = {
     reads: 0,
@@ -518,8 +526,36 @@ export const toolGroupLabel = (
   return parts.length > 0 ? parts.join(", ") : fallback;
 };
 
+const contextCompressionTitle = (tool: AgentToolActivity): string | null => {
+  if (normalizedToolName(tool) !== "context_compress") return null;
+  if (tool.status === "failed") return t("tool.contextCompressFailed");
+  const output = asRecord(tool.output);
+  const before = numberField(output, "tokenBefore");
+  const after = numberField(output, "tokenAfter");
+  if (before !== undefined && after !== undefined) {
+    return formatMessage("tool.contextCompressed", { before, after });
+  }
+  return t("tool.contextCompress");
+};
+
+const toolSearchTitle = (tool: AgentToolActivity): string | null => {
+  if (normalizedToolName(tool) !== "toolsearch") return null;
+  const query = stringField(toolInputRecord(tool), "query")
+    ?? stringField(toolArgsRecord(tool), "query");
+  const cleaned = query
+    ?.replace(/^select:\s*/iu, "")
+    .replaceAll(",", ", ")
+    .replaceAll(/\s+/gu, " ")
+    .trim();
+  return cleaned !== undefined && cleaned.length > 0 ? cleaned : "Tool search";
+};
+
 export const genericToolTitle = (tool: AgentToolActivity): string => {
   const toolName = normalizedToolName(tool);
+  const compressed = contextCompressionTitle(tool);
+  if (compressed !== null) return compressed;
+  const searched = toolSearchTitle(tool);
+  if (searched !== null) return searched;
   if (isAgentSpawnActivity(tool)) {
     return agentSpawnTitle(tool) ?? "Agent";
   }
@@ -730,17 +766,13 @@ export const toToolCall = (
   };
 };
 
-const isSilentToolSearch = (tool: AgentToolActivity): boolean =>
-  normalizedToolName(tool) === "toolsearch";
-
 export const toToolGroup = (
   tools: readonly AgentToolActivity[],
   id = "lyra-agent-tools",
   context?: ToolProjectionContext
 ): ToolGroup | null => {
-  const visible = tools.filter((tool) => !isSilentToolSearch(tool));
-  if (visible.length === 0) return null;
-  const calls = visible.map((tool) => toToolCall(tool, context));
+  if (tools.length === 0) return null;
+  const calls = tools.map((tool) => toToolCall(tool, context));
   const running = calls.find((call) => call.status === "running");
   const suspended = calls.find((call) => call.status === "suspended");
   const active = running ?? suspended;
@@ -749,7 +781,7 @@ export const toToolGroup = (
     status: running !== undefined ? "running" : suspended !== undefined ? "suspended" : "done",
     label: toolGroupLabel(calls, t("tool.agentActivity")),
     hint: active === undefined
-      ? formatMessage("tool.events", { count: visible.length })
+      ? formatMessage("tool.events", { count: tools.length })
       : running !== undefined ? t("tool.running") : t("tool.waitingForUserAction"),
     ...(active === undefined ? {} : { currentCallId: active.id }),
     calls

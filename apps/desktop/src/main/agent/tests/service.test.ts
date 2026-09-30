@@ -2562,9 +2562,10 @@ describe("Agent IPC bridge", () => {
     bridge.dispose();
   });
 
-  test("software host handlers query the renderer capability bridge", async () => {
+  test("software catalog reads use the renderer-published snapshot", async () => {
     const registered = new Map<string, (payload: unknown) => Promise<unknown>>();
     const send = vi.fn();
+    const webContents = { isDestroyed: () => false, send };
     const bridge = createAgentIpcBridge({
       runtimeClient: {
         request: vi.fn(),
@@ -2578,32 +2579,17 @@ describe("Agent IPC bridge", () => {
       terminalBridge: createTerminalBridgeMock() as never,
       getWindow: () => ({
         isDestroyed: () => false,
-        webContents: {
-          isDestroyed: () => false,
-          send
-        }
+        webContents
       }) as never,
       getBrowserBridge: () => null,
       getWorkbenchObservationService: () => null,
       workbenchState: createWorkbenchStateMock()
     });
 
-    const pending = registered.get("software.listCapabilities")?.({ includeSchemas: true });
-    expect(send).toHaveBeenCalledWith(
-      LYRA_CHANNELS.softwareCapabilitiesQuery,
-      expect.objectContaining({
-        method: "software.listCapabilities",
-        payload: { includeSchemas: true }
-      })
-    );
-    const query = send.mock.calls[0]?.[1] as { readonly requestId: string };
-    await electronMock.handlers.get(LYRA_CHANNELS.softwareCapabilitiesQueryResult)?.({}, {
-      requestId: query.requestId,
-      ok: true,
-      result: { software: [] }
-    });
-
-    await expect(pending).resolves.toEqual({ software: [] });
+    await electronMock.handlers.get(LYRA_CHANNELS.softwareCapabilitiesSnapshot)?.({ sender: webContents }, []);
+    await expect(registered.get("software.listCapabilities")?.({ includeSchemas: true }))
+      .resolves.toEqual({ software: [], hostCapabilityAvailable: true });
+    expect(send).not.toHaveBeenCalled();
     bridge.dispose();
   });
 });

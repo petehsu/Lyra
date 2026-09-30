@@ -1,19 +1,22 @@
 import { Check, CodeXml, Copy, WrapText } from "@lyra/icons";
-import { cloneElement, isValidElement, useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
+import { cloneElement, createContext, isValidElement, useContext, useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
 
 import { AppButton } from "@renderer/ui/components";
 import { t } from "@workbench/i18n";
 import { writeClipboardText } from "../../../../../../shared/clipboard";
+import { MarkdownCitationButton } from "./markdown-citation";
 
 type CodeElementProps = ComponentProps<"code"> & { "data-block"?: string };
+export const MarkdownStreamingContext = createContext(false);
 
 /** Decorate the parsed fence, leaving highlighting, streaming and diagrams to Streamdown. */
 export function LyraMarkdownPre({ children }: ComponentProps<"pre">) {
+  const streaming = useContext(MarkdownStreamingContext);
   if (!isValidElement<CodeElementProps>(children)) return children;
   const block = cloneElement(children, { "data-block": "true" });
   const language = /(?:^|\s)language-(\S+)/u.exec(children.props.className ?? "")?.[1] ?? "";
   const code = children.props.children;
-  if (language === "mermaid" || typeof code !== "string") return block;
+  if (typeof code !== "string" || (language === "mermaid" && !streaming)) return block;
   return <MarkdownCodeBlock code={code} language={language}>{block}</MarkdownCodeBlock>;
 }
 
@@ -22,6 +25,22 @@ function MarkdownCodeBlock({ code, language, children }: {
   readonly language: string;
   readonly children: ReactNode;
 }) {
+  const streaming = useContext(MarkdownStreamingContext);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [selectionActive, setSelectionActive] = useState(false);
+  // Do not replace selected plain source with highlighted spans at completion.
+  // Once the selection clears, highlighting may proceed without losing it.
+  useEffect(() => {
+    if (!streaming && !selectionActive) return;
+    const sync = () => {
+      const selection = window.getSelection();
+      setSelectionActive(selection !== null && !selection.isCollapsed
+        && Boolean(rootRef.current?.contains(selection.anchorNode)
+          || rootRef.current?.contains(selection.focusNode)));
+    };
+    document.addEventListener("selectionchange", sync);
+    return () => document.removeEventListener("selectionchange", sync);
+  }, [selectionActive, streaming]);
   const [wrapped, setWrapped] = useState(false);
   const [feedback, setFeedback] = useState<{ code: string; copied: boolean } | null>(null);
   const copyAttempt = useRef(0);
@@ -44,7 +63,7 @@ function MarkdownCodeBlock({ code, language, children }: {
   };
 
   return (
-    <div className="lyra-markdown-code-block" data-wrap={wrapped} dir="ltr">
+    <div ref={rootRef} className="lyra-markdown-code-block" data-wrap={wrapped} dir="ltr">
       <div className="lyra-markdown-code-header">
         <span className="lyra-markdown-code-language">
           <CodeXml size={14} aria-hidden="true" />
@@ -61,12 +80,22 @@ function MarkdownCodeBlock({ code, language, children }: {
           <AppButton variant="ghost" size="icon" aria-label={copyLabel} title={copyLabel} onClick={() => void copy()}>
             {result?.copied ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
           </AppButton>
+          <MarkdownCitationButton getTarget={() => rootRef.current?.querySelector("pre code") ?? null} getQuote={() => code} />
           <span className="lyra-markdown-code-feedback" role="status">
             {result === null ? "" : copyLabel}
           </span>
         </div>
       </div>
-      {children}
+      {/* ZCode defers syntax highlighting until output completes. Keep the
+          toolbar and exact copy source stable; avoid thousands of token spans
+          and whole-fence highlighting on every incoming delta. */}
+      {streaming || selectionActive ? (
+        <div data-streamdown="code-block" data-language={language}>
+          <div data-streamdown="code-block-body" data-code-streaming="true">
+            <pre><code>{code.replace(/\n+$/u, "") || "\n"}</code></pre>
+          </div>
+        </div>
+      ) : children}
     </div>
   );
 }

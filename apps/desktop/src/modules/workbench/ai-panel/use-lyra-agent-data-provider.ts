@@ -584,6 +584,13 @@ export const useLyraAgentDataProvider = (
     state.session?.workingDirIsHome
   ]);
 
+  useEffect(() => {
+    if (!activeDraftWorkingDir || !desktopApi?.agent?.registerProject) return;
+    void desktopApi.agent.registerProject({ workingDir: activeDraftWorkingDir }).catch((error: unknown) => {
+      dispatch({ type: "error", message: error instanceof Error ? error.message : String(error) });
+    });
+  }, [activeDraftWorkingDir, desktopApi]);
+
   const resolvedSessionId = state.session?.id ?? activeSessionId ?? null;
 
   const createSessionRequest = useCallback((): AgentSessionCreateRequest => {
@@ -1187,8 +1194,9 @@ export const useLyraAgentDataProvider = (
         ? null
         : await onRequestProjectBind(activeDraftWorkingDir ?? undefined);
     if (selectedPath === null || selectedPath.trim().length === 0) return;
+    const registered = await desktopApi.agent.registerProject({ workingDir: selectedPath });
     if (state.session === null) {
-      onUpdateDraftWorkingDir?.(selectedPath);
+      onUpdateDraftWorkingDir?.(registered.project.path);
       return;
     }
     const snapshot = await desktopApi.agent.bindProject({

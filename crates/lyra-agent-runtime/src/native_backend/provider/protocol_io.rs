@@ -1198,8 +1198,7 @@ pub(crate) async fn call_model_once_non_streaming_checked_async(
 }
 
 /// Async non-streaming request — mirrors the sync `call_model_once_non_streaming_with_choice`
-/// but uses async `reqwest` directly. Bedrock falls back to `spawn_blocking`
-/// until an async Bedrock builder exists.
+/// using async `reqwest` so cancellation also releases the HTTP request.
 pub(crate) async fn call_model_once_non_streaming_with_choice_async(
     provider: &NativeProviderProfile,
     model: &str,
@@ -1209,29 +1208,21 @@ pub(crate) async fn call_model_once_non_streaming_with_choice_async(
     session_id: &str,
     request_id: &str,
 ) -> AgentRuntimeResult<ModelReply> {
-    // ponytail: Bedrock has no async builder yet; bridge via spawn_blocking.
-    // Upgrade path: port aws_bedrock_converse to async reqwest, then remove this branch.
     if route_uses_aws_bedrock_converse(provider)? {
-        let provider = provider.clone();
-        let model = model.to_string();
-        let messages = messages.to_vec();
-        let tools = tools.to_vec();
-        let tool_choice = tool_choice.clone();
-        let session_id = session_id.to_string();
-        let request_id = request_id.to_string();
-        return tokio::task::spawn_blocking(move || {
-            call_model_once_non_streaming_with_choice(
-                &provider,
-                &model,
-                &messages,
-                &tools,
-                &tool_choice,
-                &session_id,
-                &request_id,
-            )
-        })
+        let response = build_aws_bedrock_converse_request_async(
+            provider,
+            model,
+            messages,
+            tools,
+            tool_choice,
+        )?
+        .send()
         .await
-        .map_err(|_| AgentRuntimeError::Core("non-streaming bedrock task panicked".to_string()))?;
+        .map_err(reqwest_transport_error)?;
+        let body = read_provider_json_body_async(provider, response.status(), response).await?;
+        let mut reply = aws_bedrock_converse::parse_response_body(&body, tools)?;
+        normalize_model_reply_protocol(&mut reply, tools)?;
+        return Ok(reply);
     }
     if route_uses_openai_responses(provider, model)? {
         let response = apply_opencode_identity_async(

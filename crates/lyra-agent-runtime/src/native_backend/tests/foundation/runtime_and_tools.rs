@@ -53,7 +53,6 @@ fn native_state_persists_only_live_pending_requests() {
         sessions: HashMap::from([(session_id.clone(), session)]),
         active_session_id: Some(session_id.clone()),
         config: NativeConfig::default(),
-        active_skills: HashSet::new(),
         pending_permissions: HashMap::from([
             (
                 "permission-live".to_string(),
@@ -1337,7 +1336,11 @@ fn model_request_injects_lyra_identity_and_tools() {
     let session_id = created["id"].as_str().expect("session id");
     {
         let mut state = state().lock().expect("state lock");
-        state.active_skills.clear();
+        write_json(
+            &skill_storage_root().join("enabled.v1.json"),
+            &HashSet::<String>::new(),
+        )
+        .unwrap();
         let session = state.sessions.get_mut(session_id).expect("session");
         session.snapshot["messages"]
             .as_array_mut()
@@ -1437,7 +1440,11 @@ fn model_request_keeps_tool_fs_visible_while_presearch_adds_hints() {
         )
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
-    state().lock().expect("state lock").active_skills.clear();
+    write_json(
+        &skill_storage_root().join("enabled.v1.json"),
+        &HashSet::<String>::new(),
+    )
+    .unwrap();
     {
         let mut state = state().lock().expect("state lock");
         let session = state.sessions.get_mut(&session_id).expect("session");
@@ -1491,7 +1498,7 @@ fn model_request_keeps_tool_fs_visible_while_presearch_adds_hints() {
 #[test]
 fn runtime_context_does_not_expose_tools_to_non_tool_calling_models() {
     let context = build_runtime_context(
-        None,
+        &json!({}),
         &[],
         &ModelCapabilityProfile {
             supports_image_input: false,

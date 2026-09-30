@@ -37,6 +37,7 @@ export type BrowserSettingsCategoryId =
   | "models"
   | "skills"
   | "mcp"
+  | "projects"
   | "importSettings"
   | "experimental";
 

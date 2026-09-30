@@ -3,7 +3,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { readWorkbenchStateSync, resetWorkbenchStateStorageForTests } from "../../state-storage";
-import { usePanelLayoutModel } from "../use-panel-layout";
+import { getIsLayoutResizing, usePanelLayoutModel } from "../use-panel-layout";
 
 describe("usePanelLayoutModel", () => {
   beforeEach(() => {
@@ -115,5 +115,44 @@ describe("usePanelLayoutModel", () => {
     expect(result.current.appSidebarWidth).toBe(260);
     expect(persisted.appSidebarWidth).toBe(260);
     root.remove();
+  });
+
+  test.each(["blur", "Escape", "unmount"])("cleans up an interrupted drag on %s", (reason) => {
+    const frame = document.createElement("iframe");
+    document.body.append(frame);
+    const { result, unmount } = renderHook(() => usePanelLayoutModel());
+    const cursor = document.body.style.cursor;
+    const selection = document.body.style.userSelect;
+    act(() => result.current.onLeftResizeMouseDown({
+      clientX: 100, button: 0, preventDefault: vi.fn()
+    } as unknown as ReactMouseEvent<HTMLDivElement>));
+    expect(getIsLayoutResizing()).toBe(true);
+    expect(frame).toHaveClass("lyra-pointer-events-disabled");
+    act(() => {
+      window.dispatchEvent(new MouseEvent("mousemove", { clientX: 150 }));
+      if (reason === "unmount") unmount();
+      else window.dispatchEvent(reason === "Escape"
+        ? new KeyboardEvent("keydown", { key: "Escape" }) : new Event("blur"));
+    });
+    expect(getIsLayoutResizing()).toBe(false);
+    expect(document.body).not.toHaveClass("lyra-layout-resizing");
+    expect(document.body.style.cursor).toBe(cursor);
+    expect(document.body.style.userSelect).toBe(selection);
+    expect(frame).not.toHaveClass("lyra-pointer-events-disabled");
+    const saved = readWorkbenchStateSync("layout");
+    act(() => {
+      window.dispatchEvent(new MouseEvent("mousemove", { clientX: 350 }));
+      window.dispatchEvent(new MouseEvent("mouseup"));
+    });
+    expect(readWorkbenchStateSync("layout")).toBe(saved);
+    frame.remove();
+  });
+
+  test("ignores secondary-button drags", () => {
+    const { result } = renderHook(() => usePanelLayoutModel());
+    act(() => result.current.onLeftResizeMouseDown({
+      clientX: 100, button: 2, preventDefault: vi.fn()
+    } as unknown as ReactMouseEvent<HTMLDivElement>));
+    expect(getIsLayoutResizing()).toBe(false);
   });
 });

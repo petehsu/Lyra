@@ -150,7 +150,7 @@ describe("StreamingText", () => {
     expect(codeBlock?.textContent).toContain("const x = 1");
   });
 
-  it("keeps plain typewriter output while streaming when rich mode is disabled", () => {
+  it("shows the complete received plain text without a typewriter backlog", () => {
     const data = createDataProviderValue({
       session,
       messages: [],
@@ -159,13 +159,14 @@ describe("StreamingText", () => {
 
     const { container } = render(
       <DataContextProvider value={data}>
-        <StreamingText content={"# Title\n\nBody"} streaming messageId="test-msg-4" blockId="text-4" />
+        <StreamingText content={"# Title\n\nBody".repeat(100)} streaming messageId="test-msg-4" blockId="text-4" />
       </DataContextProvider>
     );
 
     expect(container.querySelector(".lyra-agents-rich-text")).toBeNull();
     expect(container.querySelector(".lyra-agents-streaming-text")).not.toBeNull();
     expect(container.querySelector(".lyra-agents-plain-text")).not.toBeNull();
+    expect(container.textContent).toBe("# Title\n\nBody".repeat(100));
     expect(screen.queryByText("Rendering…")).toBeNull();
   });
 

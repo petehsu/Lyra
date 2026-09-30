@@ -24,6 +24,7 @@ type BrowserAgentPageControllerDeps = Pick<
   | "createVisualFrame"
   | "entries"
   | "navigateInEntry"
+  | "prepareAgentPage"
   | "publishBrowserAgentActivity"
   | "publishEvent"
   | "readBrowserAgentShadow"
@@ -40,6 +41,7 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
     createVisualFrame,
     entries,
     navigateInEntry,
+    prepareAgentPage,
     publishBrowserAgentActivity,
     publishEvent,
     readBrowserAgentShadow,
@@ -198,6 +200,10 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
       tabId,
       embedded: true
     });
+    const prepared = prepareAgentPage?.(tabId, address) ?? null;
+    if (prepared !== null && prepared.isDestroyed === false && !prepared.webContents.isDestroyed()) {
+      return prepared;
+    }
     // ponytail: poll until renderer parks the page into topology. 3s ceiling;
     // upgrade is making request-open-tab return a tabId promise directly.
     const deadline = Date.now() + 3_000;
@@ -604,6 +610,7 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
 
   return {
     captureAgentPage,
+    ensureLiveWorkbenchPageEntry,
     readAgentPreviewPage,
     navigateAgentPage,
     reloadAgentPage,

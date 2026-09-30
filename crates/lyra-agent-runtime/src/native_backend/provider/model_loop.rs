@@ -9,6 +9,7 @@ mod tool_result_group;
 mod visual_history;
 pub(crate) use progress_guard::*;
 pub(crate) use progress_guard_synthesis::*;
+pub(crate) use recovery::provider_protocol_step;
 use recovery::*;
 use tool_catalog_revision::*;
 use tool_result_group::seal_tool_result_groups;
@@ -110,22 +111,31 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
             "provider_request_started",
         );
         seal_tool_result_groups(&mut messages);
-        let attempt_result = call_model_once_for_loop_async(
+        let early_tools = streaming_tools::StreamingTools::new(
             session_id,
             turn_id,
-            &request.provider,
-            &request.model,
-            &messages,
-            &request.tools,
-            &request.tool_choice,
-            &request.capabilities,
+            &request,
             cancellation,
-            commit_assistant_text,
-        )
-        .await;
+            &progress_guard.tool_loop_detector,
+        );
+        let attempt_result = early_tools
+            .scope(call_model_once_for_loop_async(
+                session_id,
+                turn_id,
+                &request.provider,
+                &request.model,
+                &messages,
+                &request.tools,
+                &request.tool_choice,
+                &request.capabilities,
+                cancellation,
+                commit_assistant_text,
+            ))
+            .await;
         clear_attempt_local_overlay(&mut messages, &mut attempt_local_overlay_start);
         let reply = match attempt_result {
             Ok(reply) => {
+                early_tools.validate_reply(&reply)?;
                 super::session_runtime::record_progress(turn_id);
                 observations.observe(&reply);
                 checkpoint_model_loop_observations(session_id, turn_id, &observations, &messages);
@@ -1046,6 +1056,10 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
             // runtime under one absolute deadline. Blocking tool bodies stay on
             // the blocking pool, while timeout/cancellation orchestration remains
             // async and cannot multiply the deadline by the number of tools.
+            let mut early_results = tool_calls
+                .iter()
+                .map(|call| early_tools.take(call))
+                .collect::<AgentRuntimeResult<Vec<_>>>()?;
             let mut outputs: Vec<Value> = if tool_calls.len() > 1
                 && stop_after_plan_finalize.is_none()
             {
@@ -1060,6 +1074,7 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                     .enumerate()
                     .map(|(idx, call)| {
                     let browser_turn = browser_order.reserve(tool_protocol::is_browser_tool_name(&call.name));
+                    let early = early_results[idx].take();
                     let call = call.clone();
                     let loop_block = loop_blocks[idx].clone();
                     let session_id = thread_session_id.clone();
@@ -1069,7 +1084,8 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
                     let request_tools = request_tools.clone();
                     Box::pin(async move {
                         let _browser_turn = browser_turn.enter().await;
-                        let result = if let Some(block_msg) = loop_block {
+                        let result = if let Some(early) = early { early.result().await
+                        } else if let Some(block_msg) = loop_block {
                             json!({
                                 "content": block_msg,
                                 "error": {
@@ -1182,7 +1198,9 @@ pub(crate) async fn run_model_loop_with_ui_commit_async(
             } else {
                 let mut sequential_outputs = Vec::with_capacity(tool_calls.len());
                 for (idx, call) in tool_calls.iter().enumerate() {
-                    let output = if let Some(block_msg) = &loop_blocks[idx] {
+                    let output = if let Some(early) = early_results[idx].take() {
+                        early.result().await
+                    } else if let Some(block_msg) = &loop_blocks[idx] {
                         json!({
                             "content": block_msg,
                             "error": {

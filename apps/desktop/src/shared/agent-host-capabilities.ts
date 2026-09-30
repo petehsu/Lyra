@@ -69,6 +69,7 @@ export const AGENT_HOST_CAPABILITY_METHODS = [
   "agent.readLocalSignals",
   "agent.readPersonaConsent",
   "agent.readSpatiotemporalContext",
+  "agent.readTurnContext",
   "mcp.oauth.openAuthorizationUrl",
   "sensitiveValues.storeForAgentUse",
   "sensitiveValues.resolveForAgentUse"

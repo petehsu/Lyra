@@ -90,9 +90,6 @@ export const createBrowserSettingsSurfaceProps = (
   importSettingsLabels: {
     title: "Import Settings",
     description: "Sync external settings.",
-    project: "Project directory",
-    chooseProject: "Choose directory",
-    clearProject: "Clear",
     detect: "Detect",
     sync: "Sync",
     synced: "Synced",

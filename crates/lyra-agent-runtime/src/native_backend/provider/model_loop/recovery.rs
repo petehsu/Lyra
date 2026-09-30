@@ -292,7 +292,7 @@ mod attempt_recovery_tests {
     }
 }
 
-pub(super) fn provider_protocol_step(
+pub(crate) fn provider_protocol_step(
     request: &ModelRequest,
     turn_id: &str,
     reply: &ModelReply,

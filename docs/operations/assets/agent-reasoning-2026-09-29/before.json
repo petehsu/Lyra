@@ -1,0 +1,13 @@
+{
+  "phase": "before",
+  "passed": false,
+  "environment": "Production ChatView build in Chromium; synthetic snapshot and deltas",
+  "updates": [
+    {
+      "expected": "已读取快照。新的思考正在到达。",
+      "actual": "已读取快照。",
+      "observedAfterMs": 2018
+    }
+  ],
+  "error": "AssertionError [ERR_ASSERTION]: expanded reasoning must continue after loading a running snapshot\n+ actual - expected\n\n+ '已读取快照。'\n- '已读取快照。新的思考正在到达。'\n         ^\n"
+}

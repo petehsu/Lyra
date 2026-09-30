@@ -917,109 +917,6 @@ fn workbench_capture_visual_evidence_materializes_provider_image() {
 }
 
 #[test]
-fn image_viewer_vision_fallback_materializes_local_image_as_provider_image() {
-    let temp = tempfile::tempdir().expect("tempdir");
-    let source_image = temp.path().join("viewer-source.png");
-    fs::write(
-        &source_image,
-        b"\x89PNG\r\n\x1a\nlyra-image-viewer-evidence",
-    )
-    .expect("write source image");
-
-    let backend = LyraAgentBackend;
-    let created = backend
-        .call_agent_method(
-            "agent.session.create",
-            json!({ "title": "Image Viewer Vision Fallback Test" }),
-        )
-        .expect("create session");
-    let session_id = created["id"].as_str().expect("session id").to_string();
-    let turn_id = start_test_runtime_turn(&session_id);
-    let source_image_text = source_image.display().to_string();
-    let dispatcher: Arc<HostCapabilityDispatcher> = Arc::new(move |method, payload| {
-        let input: Value = serde_json::from_str(&payload).expect("payload json");
-        assert_eq!(method, "software.invokeCapability");
-        assert_eq!(input["softwareId"], "image-viewer");
-        assert_eq!(input["capabilityId"], "image-viewer.prepareVisionFallback");
-        Ok(serde_json::to_string(&json!({
-            "softwareId": "image-viewer",
-            "actionId": "image-viewer.prepareVisionFallback",
-            "output": {
-                "available": true,
-                "fallback": "model-vision",
-                "imageArtifact": {
-                    "id": "image-viewer-active",
-                    "kind": "image",
-                    "mediaType": "image/png",
-                    "path": source_image_text,
-                    "width": 320,
-                    "height": 240
-                },
-                "nextRecommendedAction": "attach_image_to_model_vision_input"
-            }
-        }))
-        .expect("json"))
-    });
-    let run_session_id = session_id.clone();
-    let run_turn_id = turn_id.clone();
-    let handle = thread::spawn(move || {
-        execute_model_tool_sync(
-            &run_session_id,
-            &run_turn_id,
-            &Some(dispatcher),
-            &CancellationToken::new(),
-            tool_fs_run_call(
-                "tool-image-viewer-vision-fallback",
-                "/tools/software/invoke_capability",
-                json!({
-                    "softwareId": "image-viewer",
-                    "capabilityId": "image-viewer.prepareVisionFallback",
-                    "input": {}
-                }),
-            ),
-        )
-    });
-    let permission_id = wait_for_pending_permission(&session_id);
-    backend
-        .call_agent_method(
-            "agent.permission.respond",
-            json!({ "sessionId": session_id, "permissionId": permission_id, "allowed": true }),
-        )
-        .expect("allow software invocation permission");
-    let output = handle.join().expect("join software run");
-
-    assert_eq!(output["status"], "completed");
-    assert_eq!(
-        output.pointer("/raw/imageEvidenceArtifactRef/kind"),
-        Some(&json!("image_evidence"))
-    );
-    let provider_path = output
-        .pointer("/raw/providerImage/path")
-        .and_then(Value::as_str)
-        .expect("provider image path");
-    assert_ne!(provider_path, source_image.display().to_string());
-    assert!(
-        std::path::Path::new(provider_path)
-            .components()
-            .any(|component| component.as_os_str() == "artifacts"),
-        "provider image should live under the artifacts directory: {provider_path}"
-    );
-    assert_eq!(
-        output.pointer("/raw/providerImage/mediaType"),
-        Some(&json!("image/png"))
-    );
-    assert_eq!(
-        output.pointer("/raw/imageArtifact/path"),
-        output.pointer("/raw/providerImage/path")
-    );
-    assert_eq!(
-        output.pointer("/raw/imageArtifact/source/path"),
-        Some(&json!(source_image.display().to_string()))
-    );
-    assert!(std::path::Path::new(provider_path).exists());
-}
-
-#[test]
 fn browser_large_page_text_is_materialized_as_web_page_artifact_ref() {
     let backend = LyraAgentBackend;
     let created = backend
@@ -1960,12 +1857,27 @@ fn browser_type_submit_uses_the_final_effect_for_native_permission_checks() {
         .unwrap(),
         Some(BrowserActionEffect::Communicate)
     );
+    assert_eq!(
+        validate_browser_action_effect("lyra_lumen", "type", &json!({"effect":"communicate"}))
+            .unwrap(),
+        Some(BrowserActionEffect::EditDraft)
+    );
+    assert_eq!(
+        validate_browser_action_effect(
+            "lyra_lumen",
+            "type",
+            &json!({"effect":"communicate","thenClick":""})
+        )
+        .unwrap(),
+        Some(BrowserActionEffect::EditDraft)
+    );
     for args in [
-        json!({"effect":"communicate"}),
-        json!({"effect":"communicate","thenClick":""}),
         json!({"effect":"observe","thenClick":"lumen:send"}),
         json!({"effect":"click","thenClick":"lumen:send"}),
     ] {
-        assert!(validate_browser_action_effect("lyra_lumen", "type", &args).is_err());
+        assert_eq!(
+            validate_browser_action_effect("lyra_lumen", "type", &args).unwrap(),
+            Some(BrowserActionEffect::Communicate)
+        );
     }
 }

@@ -281,13 +281,6 @@ pub(crate) fn record_tool_activity(
             "tool": tool,
         }),
     );
-    if event_kind == "toolFinished" {
-        if let Ok(state) = state().lock() {
-            if let Some(trigger) = memory_trigger_from_tool(&tool, session_id, turn_id) {
-                emit_memory_trigger(&state.root, trigger);
-            }
-        }
-    }
 }
 
 fn append_tool_block_to_message(
@@ -440,6 +433,97 @@ pub(crate) fn tool_started_at_for_call(session_id: &str, tool_call_id: &str) -> 
         }
     }
     now()
+}
+
+pub(crate) fn record_context_compression_tool(
+    session_id: &str,
+    turn_id: &str,
+    status: &str,
+    token_before: Option<usize>,
+    token_after: Option<usize>,
+) {
+    let tool_id = format!("context-compress-{turn_id}");
+    let tool_status = match status {
+        "running" => "running",
+        "failed" => "failed",
+        _ => "completed",
+    };
+    let output = match (token_before, token_after) {
+        (Some(before), Some(after)) => json!({
+            "content": format!("{before} → {after} tokens"),
+            "tokenBefore": before,
+            "tokenAfter": after,
+        }),
+        _ if tool_status == "failed" => json!({ "content": "Context compression failed." }),
+        _ => json!({}),
+    };
+    let now_stamp = now();
+    let mut tool = json!({
+        "id": tool_id,
+        "name": "context_compress",
+        "label": "",
+        "status": tool_status,
+        "input": { "turnId": turn_id },
+        "output": output,
+        "startedAt": now_stamp,
+    });
+    if tool_status != "running" {
+        tool["finishedAt"] = json!(now_stamp);
+    }
+    let (callback, committed, message_id) = match state().lock() {
+        Ok(mut state) => {
+            let callback = event_callback();
+            let Some(session) = state.sessions.get_mut(session_id) else {
+                return;
+            };
+            let message_id = last_assistant_message_id(session);
+            upsert_tool(&mut session.snapshot, tool.clone());
+            let committed = message_id
+                .as_deref()
+                .and_then(|id| append_tool_block_to_message(session, id, &tool_id));
+            touch_session(session);
+            let _ = state.save_state();
+            (callback, committed, message_id)
+        }
+        Err(_) => return,
+    };
+    if let Some(message) = committed {
+        emit_with_callback(
+            &callback,
+            json!({
+                "kind": "messageCommitted",
+                "sessionId": session_id,
+                "message": message,
+            }),
+        );
+    }
+    let event_kind = if tool_status == "running" {
+        "toolStarted"
+    } else {
+        "toolFinished"
+    };
+    let mut event = json!({
+        "kind": event_kind,
+        "sessionId": session_id,
+        "turnId": turn_id,
+        "tool": tool,
+    });
+    if let Some(message_id) = message_id.filter(|id| !id.is_empty()) {
+        event["messageId"] = Value::String(message_id);
+    }
+    emit_with_callback(&callback, event);
+}
+
+fn last_assistant_message_id(session: &NativeSession) -> Option<String> {
+    session
+        .snapshot
+        .get("messages")
+        .and_then(Value::as_array)?
+        .iter()
+        .rev()
+        .find(|message| message.get("role").and_then(Value::as_str) == Some("assistant"))
+        .and_then(|message| message.get("id").and_then(Value::as_str))
+        .map(str::to_string)
 }
 
 pub(crate) fn upsert_tool(snapshot: &mut Value, tool: Value) {

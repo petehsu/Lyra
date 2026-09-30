@@ -1,4 +1,6 @@
 use super::*;
+mod policy;
+pub(crate) use policy::{effective_skills, execute_for_project, global_active_skills};
 use sha2::{Digest, Sha256};
 use std::io::{Cursor, copy};
 use zip::ZipArchive;
@@ -175,18 +177,34 @@ pub(crate) fn skill_storage_root() -> PathBuf {
         .unwrap_or_else(|| root.join("skills"))
 }
 
+fn mutation_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
 fn registry_path(storage_root: &Path) -> PathBuf {
     storage_root.join(REGISTRY_FILE_NAME)
 }
 
-fn read_registry_from(storage_root: &Path) -> SkillRegistryDocument {
-    read_json::<SkillRegistryDocument>(&registry_path(storage_root)).unwrap_or_default()
+pub(crate) fn read_registry_from(storage_root: &Path) -> SkillRegistryDocument {
+    // Reading a catalog must not rename or remove the user's configuration.
+    // Mutations validate existing JSON before writing.
+    fs::read(registry_path(storage_root))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<SkillRegistryDocument>(&bytes).ok())
+        .unwrap_or_default()
 }
 
 fn write_registry_to(
     storage_root: &Path,
     registry: &SkillRegistryDocument,
 ) -> AgentRuntimeResult<()> {
+    let path = registry_path(storage_root);
+    if path.exists() {
+        let bytes = fs::read(&path).map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        serde_json::from_slice::<SkillRegistryDocument>(&bytes)
+            .map_err(|error| AgentRuntimeError::Core(format!("{}: {error}", path.display())))?;
+    }
     fs::create_dir_all(storage_root).map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
     write_json(&registry_path(storage_root), registry)
 }
@@ -437,7 +455,19 @@ pub(crate) fn install_package_from_root(
     source_root: &Path,
     source: SkillSource,
 ) -> AgentRuntimeResult<InstalledSkill> {
-    let source_manifest = parse_skill_package(source_root)?;
+    install_package_from_root_as(storage_root, source_root, source, None)
+}
+
+pub(crate) fn install_package_from_root_as(
+    storage_root: &Path,
+    source_root: &Path,
+    source: SkillSource,
+    managed_id: Option<&str>,
+) -> AgentRuntimeResult<InstalledSkill> {
+    let mut source_manifest = parse_skill_package(source_root)?;
+    if let Some(id) = managed_id {
+        source_manifest.id = id.to_string();
+    }
     let installed_root = storage_root
         .join("installed")
         .join(storage_name(&source_manifest.id));
@@ -477,6 +507,9 @@ pub(crate) fn install_package_from_root(
             "staged skill package does not match its source".to_string(),
         ));
     }
+    let _guard = mutation_lock()
+        .lock()
+        .map_err(|_| AgentRuntimeError::Core("skill registry lock failed".into()))?;
     let manifest = source_manifest;
     let timestamp = now();
     let mut registry = read_registry_from(storage_root);
@@ -523,6 +556,9 @@ pub(crate) fn install_package_from_root(
             let _ = fs::rename(&backup_root, &installed_root);
         }
         return Err(error);
+    }
+    if storage_root == skill_storage_root() {
+        projects::notify_changed();
     }
     if had_existing {
         let _ = fs::remove_dir_all(&backup_root);
@@ -820,32 +856,10 @@ pub(crate) fn native_skill_state(skill_id: &str, active_skills: &HashSet<String>
     installed_skill_value(skill_id, active_skills, true)
 }
 
-fn project_registry(project_root: Option<&str>) -> SkillRegistryDocument {
-    project_root
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(Path::new)
-        .map(|root| read_registry_from(&root.join(".lyra/agent/skills")))
+pub(crate) fn active_skill_prompt_for_project(project_root: Option<&str>) -> String {
+    effective_skills(project_root)
         .unwrap_or_default()
-}
-
-pub(crate) fn active_skill_prompt_for_project(
-    active_skills: &HashSet<String>,
-    project_root: Option<&str>,
-) -> String {
-    let project = project_registry(project_root);
-    let project_ids = project
-        .installed
-        .iter()
-        .map(|skill| skill.id.clone())
-        .collect::<HashSet<_>>();
-    let global = read_registry()
-        .installed
         .into_iter()
-        .filter(|skill| !project_ids.contains(&skill.id))
-        .filter(|skill| active_skills.contains(&skill.id));
-    global
-        .chain(project.installed)
         .map(|skill| {
             format!(
                 "Skill {} ({}):\n{}",
@@ -858,23 +872,8 @@ pub(crate) fn active_skill_prompt_for_project(
         .join("\n\n")
 }
 
-pub(crate) fn active_skill_context_for_project(
-    active_skills: &HashSet<String>,
-    project_root: Option<&str>,
-) -> Value {
-    let project = project_registry(project_root);
-    let project_ids = project
-        .installed
-        .iter()
-        .map(|skill| skill.id.clone())
-        .collect::<HashSet<_>>();
-    let global = read_registry()
-        .installed
-        .into_iter()
-        .filter(|skill| !project_ids.contains(&skill.id))
-        .filter(|skill| active_skills.contains(&skill.id));
-    Value::Array(global
-        .chain(project.installed)
+pub(crate) fn active_skill_context_for_project(project_root: Option<&str>) -> Value {
+    Value::Array(effective_skills(project_root).unwrap_or_default().into_iter()
         .map(|skill| json!({
             "id": skill.id, "name": skill.manifest.name, "version": skill.manifest.version,
             "active": true, "source": skill.source, "permissions": skill.manifest.permissions,
@@ -893,21 +892,10 @@ fn store_value(registry: &SkillRegistryDocument) -> Value {
 }
 
 pub(crate) fn skill_list() -> AgentRuntimeResult<Value> {
-    let active_skills = state()
-        .lock()
-        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?
-        .active_skills
-        .clone();
+    let active_skills = global_active_skills()?;
     let storage_root = skill_storage_root();
     let mut registry = read_registry_from(&storage_root);
     registry.store_index_url = default_store_index_url();
-    if registry.store_index.is_none() {
-        if let Ok((index, warning)) = fetch_store_index("", 0) {
-            registry.store_index = Some(index);
-            registry.store_last_error = warning;
-            let _ = write_registry_to(&storage_root, &registry);
-        }
-    }
     Ok(json!({
         "skills": registry
             .installed
@@ -921,11 +909,7 @@ pub(crate) fn skill_list() -> AgentRuntimeResult<Value> {
 pub(crate) fn skill_inspect(payload: Value) -> AgentRuntimeResult<Value> {
     let skill_id = string_opt(&payload, "skillId")
         .ok_or_else(|| AgentRuntimeError::Core("skillId is required".to_string()))?;
-    let active_skills = state()
-        .lock()
-        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?
-        .active_skills
-        .clone();
+    let active_skills = global_active_skills()?;
     let skill = native_skill_state(&skill_id, &active_skills).ok_or_else(|| {
         AgentRuntimeError::Core(format!("Lyra skill is not installed: {skill_id}"))
     })?;
@@ -944,21 +928,11 @@ pub(crate) fn set_skill_active(payload: Value, active: bool) -> AgentRuntimeResu
             "Lyra skill is not installed: {skill_id}"
         )));
     }
-    let mut state = state()
-        .lock()
-        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-    if active {
-        state.active_skills.insert(skill_id.clone());
-    } else {
-        state.active_skills.remove(&skill_id);
-    }
-    state.save_state()?;
-    let skill = native_skill_state(&skill_id, &state.active_skills).ok_or_else(|| {
+    let active_skills = policy::set_global_default(&skill_id, active)?;
+    let skill = native_skill_state(&skill_id, &active_skills).ok_or_else(|| {
         AgentRuntimeError::Core(format!("Lyra skill is not installed: {skill_id}"))
     })?;
-    Ok(
-        json!({ "skill": skill, "activeSkills": state.active_skills.iter().cloned().collect::<Vec<_>>() }),
-    )
+    Ok(json!({ "skill": skill, "activeSkills": active_skills.iter().cloned().collect::<Vec<_>>() }))
 }
 
 pub(crate) fn skill_install_from_local(payload: Value) -> AgentRuntimeResult<Value> {
@@ -989,20 +963,8 @@ pub(crate) fn skill_install_from_local(payload: Value) -> AgentRuntimeResult<Val
     } else {
         install_skill_source(&skill_storage_root(), source.clone(), source)?
     };
-    Ok(json!({ "skill": skill_value(&skill, false, true) }))
-}
-
-pub(crate) fn install_imported_skill_at(
-    storage_root: &Path,
-    source_path: &Path,
-) -> AgentRuntimeResult<Value> {
-    let source_path = fs::canonicalize(source_path)
-        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
-    let source = SkillSource::Local {
-        path: source_path.to_string_lossy().to_string(),
-    };
-    let skill = install_package_from_root(storage_root, &source_path, source)?;
-    Ok(skill_value(&skill, true, true))
+    policy::set_global_default(&skill.id, true)?;
+    Ok(json!({ "skill": skill_value(&skill, true, true) }))
 }
 
 pub(crate) fn skill_install_from_git(payload: Value) -> AgentRuntimeResult<Value> {
@@ -1014,7 +976,8 @@ pub(crate) fn skill_install_from_git(payload: Value) -> AgentRuntimeResult<Value
         subdir: string_opt(&payload, "subdir"),
     };
     let skill = install_skill_source(&skill_storage_root(), source.clone(), source)?;
-    Ok(json!({ "skill": skill_value(&skill, false, true) }))
+    policy::set_global_default(&skill.id, true)?;
+    Ok(json!({ "skill": skill_value(&skill, true, true) }))
 }
 
 fn string_at<'a>(value: &'a Value, pointer: &str) -> Option<&'a str> {
@@ -1322,15 +1285,21 @@ fn fetch_store_index(
 
 pub(crate) fn skill_refresh_store(payload: Value) -> AgentRuntimeResult<Value> {
     let storage_root = skill_storage_root();
-    let mut registry = read_registry_from(&storage_root);
-    registry.store_index_url = default_store_index_url();
     let query = string_opt(&payload, "query").unwrap_or_default();
     let offset = payload.get("offset").and_then(Value::as_u64).unwrap_or(0) as usize;
     let append = payload
         .get("append")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    match fetch_store_index(&query, offset) {
+    let result = fetch_store_index(&query, offset);
+    // Re-read after network work so installing a skill while the store loads
+    // cannot be overwritten by an older catalog snapshot.
+    let _guard = mutation_lock()
+        .lock()
+        .map_err(|_| AgentRuntimeError::Core("skill registry lock failed".into()))?;
+    let mut registry = read_registry_from(&storage_root);
+    registry.store_index_url = default_store_index_url();
+    match result {
         Ok((mut index, warning)) => {
             if append {
                 if let Some(existing) = registry.store_index.as_ref() {
@@ -1367,10 +1336,8 @@ pub(crate) fn skill_install_from_store(payload: Value) -> AgentRuntimeResult<Val
     let mut registry = read_registry_from(&storage_root);
     registry.store_index_url = default_store_index_url();
     if registry.store_index.is_none() {
-        let (index, warning) = fetch_store_index("", 0)?;
-        registry.store_index = Some(index);
-        registry.store_last_error = warning;
-        write_registry_to(&storage_root, &registry)?;
+        skill_refresh_store(json!({}))?;
+        registry = read_registry_from(&storage_root);
     }
     let entry = registry
         .store_index
@@ -1386,11 +1353,7 @@ pub(crate) fn skill_install_from_store(payload: Value) -> AgentRuntimeResult<Val
         source: Some(Box::new(entry.source.clone())),
     };
     let skill = install_skill_source(&storage_root, entry.source, recorded_source)?;
-    let mut state = state()
-        .lock()
-        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-    state.active_skills.insert(skill.id.clone());
-    state.save_state()?;
+    policy::set_global_default(&skill.id, true)?;
     Ok(json!({ "skill": skill_value(&skill, true, true) }))
 }
 
@@ -1398,6 +1361,9 @@ pub(crate) fn skill_uninstall(payload: Value) -> AgentRuntimeResult<Value> {
     let skill_id = string_opt(&payload, "skillId")
         .ok_or_else(|| AgentRuntimeError::Core("skillId is required".to_string()))?;
     let storage_root = skill_storage_root();
+    let _guard = mutation_lock()
+        .lock()
+        .map_err(|_| AgentRuntimeError::Core("skill registry lock failed".into()))?;
     let mut registry = read_registry_from(&storage_root);
     let removed = registry
         .installed
@@ -1405,15 +1371,11 @@ pub(crate) fn skill_uninstall(payload: Value) -> AgentRuntimeResult<Value> {
         .find(|skill| skill.id == skill_id)
         .cloned();
     registry.installed.retain(|skill| skill.id != skill_id);
+    write_registry_to(&storage_root, &registry)?;
     if let Some(skill) = removed.as_ref() {
         let _ = fs::remove_dir_all(&skill.package_path);
     }
-    write_registry_to(&storage_root, &registry)?;
-    let mut state = state()
-        .lock()
-        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-    state.active_skills.remove(&skill_id);
-    state.save_state()?;
+    policy::set_global_default(&skill_id, false)?;
     Ok(json!({ "skillId": skill_id, "removed": removed.is_some() }))
 }
 
@@ -1427,6 +1389,48 @@ mod tests {
     fn write_skill(root: &Path, body: &str) {
         fs::create_dir_all(root).expect("create skill dir");
         fs::write(root.join(SKILL_MD_FILE_NAME), body).expect("write skill");
+    }
+
+    #[test]
+    fn concurrent_installs_keep_both_global_catalog_entries() {
+        let temp = tempdir().unwrap();
+        let storage = temp.path().join("storage");
+        let packages = [temp.path().join("first"), temp.path().join("second")];
+        for (index, path) in packages.iter().enumerate() {
+            write_skill(
+                path,
+                &format!(
+                    "---\nid: concurrent-{index}\nname: Concurrent {index}\n---\nInstructions"
+                ),
+            );
+        }
+        let barrier = std::sync::Barrier::new(2);
+        std::thread::scope(|scope| {
+            for path in &packages {
+                let storage = &storage;
+                let barrier = &barrier;
+                scope.spawn(move || {
+                    barrier.wait();
+                    install_package_from_root(
+                        storage,
+                        path,
+                        SkillSource::Local {
+                            path: path.to_string_lossy().into_owned(),
+                        },
+                    )
+                    .unwrap();
+                });
+            }
+        });
+        let ids = read_registry_from(&storage)
+            .installed
+            .into_iter()
+            .map(|skill| skill.id)
+            .collect::<HashSet<_>>();
+        assert_eq!(
+            ids,
+            HashSet::from(["concurrent-0".into(), "concurrent-1".into()])
+        );
     }
 
     #[test]

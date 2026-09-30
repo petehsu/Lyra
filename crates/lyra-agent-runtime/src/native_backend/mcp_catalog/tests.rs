@@ -1,6 +1,40 @@
 use super::*;
 
 #[test]
+fn credential_references_survive_redacted_configuration_edits() {
+    let temp = tempfile::tempdir().unwrap();
+    let reference = json!({"id":"credential-id","owner":"mcp-server"});
+    upsert_mcp_servers_at(
+        temp.path(),
+        json!({"id":"secure", "command":"node", "enabled":false, "secret_env":{"TOKEN":reference}}),
+    )
+    .unwrap();
+    let before = read_registry_from(temp.path());
+    let public = server_value(&before.servers[0]);
+    assert_eq!(public["transport"]["secretEnv"]["TOKEN"], "<configured>");
+    assert!(!public.to_string().contains("credential-id"));
+    upsert_mcp_servers_at(
+        temp.path(),
+        json!({"id":"secure", "command":"node", "env":{"TOKEN":"<configured>"}}),
+    )
+    .unwrap();
+    let after = read_registry_from(temp.path());
+    assert!(
+        !after.servers[0].enabled,
+        "editing configuration must preserve the separate default switch"
+    );
+    match &after.servers[0].transport {
+        McpTransportConfig::Stdio {
+            env, secret_env, ..
+        } => {
+            assert!(!env.contains_key("TOKEN"));
+            assert_eq!(secret_env.get("TOKEN"), Some(&reference));
+        }
+        _ => panic!("expected stdio"),
+    }
+}
+
+#[test]
 fn parses_mcp_servers_json_shape() {
     let value = json!({
         "mcpServers": {
@@ -110,6 +144,7 @@ fn upsert_preserves_redacted_env_placeholders() {
 #[test]
 fn resolves_remote_headers_for_the_sdk_transport() {
     let server = McpServerConfig {
+        source_label: None,
         id: "remote".to_string(),
         name: "Remote".to_string(),
         transport: McpTransportConfig::Http {
@@ -136,6 +171,29 @@ fn resolves_remote_headers_for_the_sdk_transport() {
             .and_then(|value| value.to_str().ok()),
         Some("yes")
     );
+}
+
+#[test]
+fn connect_saves_an_unknown_http_url_and_then_selects_it() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let payload = json!({
+        "name": "deepwiki",
+        "serverUrl": "https://mcp.deepwiki.com/mcp"
+    });
+    assert!(connect_needs_http_install(&payload, &[]));
+    install_http_server_at(temp.path(), &payload).expect("install");
+    let registry = read_registry_from(temp.path());
+    assert_eq!(registry.servers.len(), 1);
+    assert_eq!(registry.servers[0].id, "deepwiki");
+    assert!(!connect_needs_http_install(&payload, &registry.servers));
+    assert_eq!(
+        super::server_ids_for_operation(
+            &json!({"serverId": "missing", "serverUrl": "https://mcp.deepwiki.com/mcp"}),
+            &registry.servers
+        ),
+        vec!["deepwiki".to_string()]
+    );
+    assert!(!connect_needs_http_install(&json!({}), &registry.servers));
 }
 
 #[test]

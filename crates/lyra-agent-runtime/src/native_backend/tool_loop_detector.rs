@@ -3,7 +3,7 @@ use serde_json::Value;
 const SOFT_THRESHOLD: usize = 3;
 const HARD_THRESHOLD: usize = 5;
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct ToolLoopDetector {
     last_failed_signature: Option<String>,
     consecutive_failures: usize,

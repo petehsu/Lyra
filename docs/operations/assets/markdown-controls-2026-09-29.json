@@ -1,0 +1,109 @@
+{
+  "environment": "Production components and styles; synthetic session; empty workspace",
+  "passed": true,
+  "assertions": [
+    "200 loaded messages: bottom follow survives divider resize",
+    "history reading anchor returns to the same pixel after resize",
+    "offscreen history reveals and selects complete text",
+    "incoming text does not steal history scroll position",
+    "stream completion preserves wrap control, full code and exact copy source",
+    "interrupted drag cleans up interaction state",
+    "native viewport resize settles and retains bottom follow",
+    "code, table and controls follow light/dark theme; table has a single frame",
+    "code/table quote enters the existing composer and its chip returns to the source message",
+    "wide tables scroll inside their frame without expanding the chat"
+  ],
+  "trials": [],
+  "browser": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.7871.250 Electron/43.6.0 Safari/537.36",
+  "beforeNativeResize": {
+    "top": 32440,
+    "gap": 0,
+    "anchor": "none"
+  },
+  "afterNativeResize": {
+    "top": 32440,
+    "gap": 0,
+    "anchor": "none"
+  },
+  "nativeResizeSamples": [
+    {
+      "time": 18718.89999999851,
+      "width": 1320,
+      "height": 900
+    },
+    {
+      "time": 18760.199999999255,
+      "width": 1180,
+      "height": 900
+    },
+    {
+      "time": 18798.5,
+      "width": 1380,
+      "height": 900
+    },
+    {
+      "time": 18812.799999998882,
+      "width": 1440,
+      "height": 900
+    }
+  ],
+  "viewport": {
+    "width": 1440,
+    "height": 900,
+    "devicePixelRatio": 1
+  },
+  "richTextThemes": {
+    "light": {
+      "codeBackground": "rgb(245, 245, 245)",
+      "tokenColor": "rgb(215, 58, 73)",
+      "headerBackground": "rgb(245, 245, 245)",
+      "tableText": "rgb(23, 23, 23)",
+      "borderColor": "oklab(0.144787 0.00000661612 0.00000289828 / 0.1)",
+      "borderLayers": [
+        "lyra-agents-md-table-wrap"
+      ],
+      "alignment": "right"
+    },
+    "dark": {
+      "codeBackground": "rgb(34, 34, 34)",
+      "tokenColor": "rgb(198, 120, 221)",
+      "headerBackground": "rgb(20, 20, 20)",
+      "tableText": "rgb(232, 232, 232)",
+      "borderColor": "oklab(0.985098 0.0000447631 0.0000197291 / 0.08)",
+      "borderLayers": [
+        "lyra-agents-md-table-wrap"
+      ],
+      "alignment": "right"
+    }
+  },
+  "errors": [],
+  "scope": "Markdown theme, single-frame tables and block citations; existing GUI regression checks",
+  "unitTests": {
+    "files": 8,
+    "passed": 84,
+    "added": 5
+  },
+  "typecheck": {
+    "currentErrors": 94,
+    "baselineErrors": 95,
+    "newDiagnostics": 0
+  },
+  "structureCheck": "5 pre-existing violations in Rust backend and main-process storage modules; no changed file reported",
+  "chromeValidation": {
+    "browser": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/155.0.0.0 Safari/537.36",
+    "passed": true,
+    "assertions": [
+      "200 loaded messages: bottom follow survives divider resize",
+      "history reading anchor returns to the same pixel after resize",
+      "offscreen history reveals and selects complete text",
+      "incoming text does not steal history scroll position",
+      "stream completion preserves wrap control, full code and exact copy source",
+      "interrupted drag cleans up interaction state",
+      "native viewport resize settles and retains bottom follow",
+      "code, table and controls follow light/dark theme; table has a single frame",
+      "code/table quote enters the existing composer and its chip returns to the source message",
+      "wide tables scroll inside their frame without expanding the chat"
+    ],
+    "errors": []
+  }
+}

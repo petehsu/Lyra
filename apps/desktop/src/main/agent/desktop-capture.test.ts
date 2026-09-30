@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest";
 
-import { pickDesktopCaptureSource } from "./desktop-capture";
+import {
+  filePathFromPortalUri,
+  interpretPortalScreenshot,
+  pickDesktopCaptureSource
+} from "./desktop-capture";
 
 describe("pickDesktopCaptureSource", () => {
   test("focused-window ignores entire-screen sources and matches the Lyra title", () => {
@@ -38,5 +42,31 @@ describe("pickDesktopCaptureSource", () => {
       "Lyra"
     );
     expect(picked).toEqual({ id: "screen:0:0", name: "Entire Screen" });
+  });
+});
+
+describe("interpretPortalScreenshot", () => {
+  test("reads a file uri from a successful portal response", () => {
+    expect(interpretPortalScreenshot({
+      response: 0,
+      results: { uri: "file:///tmp/out.png" }
+    })).toEqual({ uri: "file:///tmp/out.png" });
+    expect(filePathFromPortalUri("file:///tmp/out.png")).toBe("/tmp/out.png");
+  });
+
+  test("reports cancel, refusal, and timeout from the portal", () => {
+    expect(interpretPortalScreenshot({ response: 1 })).toEqual({
+      message: "The screenshot was cancelled."
+    });
+    expect(interpretPortalScreenshot({ response: 2 })).toEqual({
+      message: "The screenshot portal refused the capture (2)."
+    });
+    expect(interpretPortalScreenshot({ response: "timeout" })).toEqual({
+      message: "The screenshot portal did not answer."
+    });
+    const unavailable = interpretPortalScreenshot({
+      error: "Screenshot portal client is unavailable: No module named gi"
+    });
+    expect("message" in unavailable ? unavailable.message : "").toContain("unavailable");
   });
 });

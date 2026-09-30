@@ -449,6 +449,13 @@ const createDesktopApi = () => {
   const refreshAgentSkillStore = vi.fn(async () => ({ store: agentSkillCatalog.store }));
   const updateAgentSkillStoreConfig = vi.fn(async () => ({ store: agentSkillCatalog.store }));
   const listMcpServers = vi.fn(async () => agentMcpCatalog);
+  const agentListeners = new Set<(event: { kind: string; scope?: string }) => void>();
+  const onEvent = (listener: (event: { kind: string; scope?: string }) => void) => {
+    agentListeners.add(listener);
+    return () => {
+      agentListeners.delete(listener);
+    };
+  };
   const upsertMcpServer = vi.fn(async () => ({ servers: [], allServers: [] }));
   const removeMcpServer = vi.fn(async () => ({ serverId: "mcp", removed: true, servers: [] }));
   const connectMcpServer = vi.fn(async () => ({ servers: [] }));
@@ -478,6 +485,7 @@ const createDesktopApi = () => {
         refreshAgentSkillStore,
         updateAgentSkillStoreConfig,
         listMcpServers,
+        onEvent,
         upsertMcpServer,
         removeMcpServer,
         connectMcpServer,
@@ -506,6 +514,9 @@ const createDesktopApi = () => {
     refreshAgentSkillStore,
     updateAgentSkillStoreConfig,
     listMcpServers,
+    emitAgentEvent: (event: { kind: string; scope?: string }) => {
+      for (const listener of agentListeners) listener(event);
+    },
     upsertMcpServer,
     removeMcpServer,
     connectMcpServer,
@@ -551,6 +562,31 @@ describe("useSettingsAiModel", () => {
     expect(result.current.profiles).toEqual([]);
     expect(result.current.quickSetupRoutes).toEqual([]);
     expect(result.current.agentConfig).toBeNull();
+  });
+
+  test("a catalog change reloads the MCP list once", async () => {
+    const { api, listMcpServers, emitAgentEvent } = createDesktopApi();
+    listMcpServers
+      .mockResolvedValueOnce(agentMcpCatalog)
+      .mockResolvedValueOnce({
+        servers: [{
+          id: "deepwiki",
+          name: "deepwiki",
+          enabled: true,
+          state: "connected",
+          transport: { kind: "http", url: "https://mcp.deepwiki.com/mcp", headers: {} },
+          createdAt: "2026-09-30T00:00:00Z",
+          updatedAt: "2026-09-30T00:00:00Z",
+        }],
+        storageRoot: "/tmp/lyra/mcp",
+      });
+    const { result } = renderModel(api);
+    await waitFor(() => expect(result.current.agentMcpCatalog?.servers).toEqual([]));
+    await act(async () => {
+      emitAgentEvent({ kind: "projectCapabilitiesChanged", scope: "catalog" });
+    });
+    await waitFor(() => expect(result.current.agentMcpCatalog?.servers).toHaveLength(1));
+    expect(listMcpServers).toHaveBeenCalledTimes(2);
   });
 
   test("loads Lyra Agent config and Rust-owned provider and model catalogs", async () => {

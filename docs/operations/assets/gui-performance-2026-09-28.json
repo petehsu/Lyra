@@ -1,0 +1,498 @@
+{
+  "date": "2026-09-28",
+  "commit": "571e81d4838756ea0ba3c3e1ee549ebf17285653",
+  "scope": "Isolated production React components and styles with synthetic data; not whole-app Electron acceptance",
+  "pointerPositionsPerTrial": 60,
+  "historicalMessageCharacters": 1771,
+  "exploratoryFixtureExcluded": true,
+  "main": {
+    "fixture": "production components, synthetic data, empty workspace; Chrome headless, not full Electron app",
+    "viewport": "1440x900",
+    "browser": "155.0.8059.5",
+    "results": [
+      {
+        "count": 0,
+        "kind": "paragraphs",
+        "repeat": 0,
+        "nodes": {
+          "all": 58,
+          "messages": 0,
+          "scrollHeight": 866,
+          "chatHeight": 866
+        },
+        "elapsedMs": 2039,
+        "frames": 122,
+        "p95": 16.8,
+        "max": 16.8,
+        "over33": 0,
+        "ticks": 0,
+        "phases": {
+          "TaskDuration": 0.92762,
+          "ScriptDuration": 0.081748,
+          "LayoutDuration": 0.286727,
+          "RecalcStyleDuration": 0.273057,
+          "LayoutCount": 65,
+          "RecalcStyleCount": 183
+        },
+        "longTaskCount": 0
+      },
+      {
+        "count": 0,
+        "kind": "paragraphs",
+        "repeat": 1,
+        "nodes": {
+          "all": 58,
+          "messages": 0,
+          "scrollHeight": 866,
+          "chatHeight": 866
+        },
+        "elapsedMs": 1994,
+        "frames": 118,
+        "p95": 16.7,
+        "max": 16.8,
+        "over33": 0,
+        "ticks": 0,
+        "phases": {
+          "TaskDuration": 0.758221,
+          "ScriptDuration": 0.071144,
+          "LayoutDuration": 0.18164800000000003,
+          "RecalcStyleDuration": 0.25097200000000003,
+          "LayoutCount": 64,
+          "RecalcStyleCount": 180
+        },
+        "longTaskCount": 0
+      },
+      {
+        "count": 50,
+        "kind": "paragraphs",
+        "repeat": 0,
+        "nodes": {
+          "all": 2354,
+          "messages": 50,
+          "scrollHeight": 85495,
+          "chatHeight": 866
+        },
+        "elapsedMs": 5634,
+        "frames": 193,
+        "p95": 50.1,
+        "max": 133.3,
+        "over33": 51,
+        "ticks": 0,
+        "phases": {
+          "TaskDuration": 4.578912,
+          "ScriptDuration": 0.19401000000000002,
+          "LayoutDuration": 1.354563,
+          "RecalcStyleDuration": 2.0921190000000003,
+          "LayoutCount": 67,
+          "RecalcStyleCount": 324
+        },
+        "longTaskCount": 45
+      },
+      {
+        "count": 50,
+        "kind": "paragraphs",
+        "repeat": 1,
+        "nodes": {
+          "all": 2354,
+          "messages": 50,
+          "scrollHeight": 85495,
+          "chatHeight": 866
+        },
+        "elapsedMs": 5378,
+        "frames": 196,
+        "p95": 50,
+        "max": 133.4,
+        "over33": 47,
+        "ticks": 0,
+        "phases": {
+          "TaskDuration": 4.314831,
+          "ScriptDuration": 0.13023800000000008,
+          "LayoutDuration": 1.233301,
+          "RecalcStyleDuration": 2.0467059999999995,
+          "LayoutCount": 64,
+          "RecalcStyleCount": 321
+        },
+        "longTaskCount": 30
+      },
+      {
+        "count": 200,
+        "kind": "paragraphs",
+        "repeat": 0,
+        "nodes": {
+          "all": 9254,
+          "messages": 200,
+          "scrollHeight": 341287,
+          "chatHeight": 866
+        },
+        "elapsedMs": 16755,
+        "frames": 177,
+        "p95": 250,
+        "max": 466.7,
+        "over33": 87,
+        "ticks": 0,
+        "phases": {
+          "TaskDuration": 15.999178000000002,
+          "ScriptDuration": 0.3580239999999999,
+          "LayoutDuration": 5.142354999999999,
+          "RecalcStyleDuration": 7.598808,
+          "LayoutCount": 67,
+          "RecalcStyleCount": 924
+        },
+        "longTaskCount": 87
+      },
+      {
+        "count": 200,
+        "kind": "paragraphs",
+        "repeat": 1,
+        "nodes": {
+          "all": 9254,
+          "messages": 200,
+          "scrollHeight": 341287,
+          "chatHeight": 866
+        },
+        "elapsedMs": 16431,
+        "frames": 176,
+        "p95": 233.3,
+        "max": 533.3,
+        "over33": 88,
+        "ticks": 0,
+        "phases": {
+          "TaskDuration": 15.693505000000002,
+          "ScriptDuration": 0.4006249999999998,
+          "LayoutDuration": 4.92534,
+          "RecalcStyleDuration": 7.4979499999999994,
+          "LayoutCount": 67,
+          "RecalcStyleCount": 924
+        },
+        "longTaskCount": 87
+      },
+      {
+        "count": 200,
+        "kind": "paragraphs",
+        "hideHistory": true,
+        "repeat": 0,
+        "nodes": {
+          "all": 9255,
+          "messages": 200,
+          "scrollHeight": 1954,
+          "chatHeight": 866
+        },
+        "elapsedMs": 2267,
+        "frames": 131,
+        "p95": 16.8,
+        "max": 66.8,
+        "over33": 1,
+        "ticks": 0,
+        "phases": {
+          "TaskDuration": 1.171163,
+          "ScriptDuration": 0.3019590000000001,
+          "LayoutDuration": 0.07996600000000065,
+          "RecalcStyleDuration": 0.46369299999999924,
+          "LayoutCount": 64,
+          "RecalcStyleCount": 124
+        },
+        "longTaskCount": 1
+      },
+      {
+        "count": 200,
+        "kind": "paragraphs",
+        "hideHistory": true,
+        "repeat": 1,
+        "nodes": {
+          "all": 9255,
+          "messages": 200,
+          "scrollHeight": 1954,
+          "chatHeight": 866
+        },
+        "elapsedMs": 2246,
+        "frames": 129,
+        "p95": 16.7,
+        "max": 50,
+        "over33": 1,
+        "ticks": 0,
+        "phases": {
+          "TaskDuration": 0.8996779999999944,
+          "ScriptDuration": 0.30742199999999986,
+          "LayoutDuration": 0.05722300000000047,
+          "RecalcStyleDuration": 0.28025300000000186,
+          "LayoutCount": 67,
+          "RecalcStyleCount": 127
+        },
+        "longTaskCount": 0
+      },
+      {
+        "count": 1,
+        "kind": "single",
+        "streaming": true,
+        "repeat": 0,
+        "nodes": {
+          "all": 62,
+          "messages": 1,
+          "scrollHeight": 4536,
+          "chatHeight": 866
+        },
+        "elapsedMs": 2917,
+        "frames": 156,
+        "p95": 16.8,
+        "max": 116.8,
+        "over33": 2,
+        "ticks": 143,
+        "phases": {
+          "TaskDuration": 2.1910200000000017,
+          "ScriptDuration": 0.8356529999999998,
+          "LayoutDuration": 0.5917930000000009,
+          "RecalcStyleDuration": 0.2678319999999985,
+          "LayoutCount": 147,
+          "RecalcStyleCount": 216
+        },
+        "longTaskCount": 0
+      },
+      {
+        "count": 1,
+        "kind": "single",
+        "streaming": true,
+        "repeat": 1,
+        "nodes": {
+          "all": 62,
+          "messages": 1,
+          "scrollHeight": 4536,
+          "chatHeight": 866
+        },
+        "elapsedMs": 2680,
+        "frames": 144,
+        "p95": 16.8,
+        "max": 116.6,
+        "over33": 2,
+        "ticks": 144,
+        "phases": {
+          "TaskDuration": 1.9994719999999973,
+          "ScriptDuration": 0.7553729999999996,
+          "LayoutDuration": 0.5961230000000004,
+          "RecalcStyleDuration": 0.173843999999999,
+          "LayoutCount": 144,
+          "RecalcStyleCount": 209
+        },
+        "longTaskCount": 0
+      },
+      {
+        "count": 1,
+        "kind": "code",
+        "repeat": 0,
+        "nodes": {
+          "all": 2426,
+          "messages": 1,
+          "scrollHeight": 4052,
+          "chatHeight": 866
+        },
+        "elapsedMs": 4656,
+        "frames": 172,
+        "p95": 50,
+        "max": 83.4,
+        "over33": 24,
+        "ticks": 0,
+        "phases": {
+          "TaskDuration": 3.78528,
+          "ScriptDuration": 0.08471600000000024,
+          "LayoutDuration": 0.2559920000000009,
+          "RecalcStyleDuration": 2.3586489999999998,
+          "LayoutCount": 64,
+          "RecalcStyleCount": 126
+        },
+        "longTaskCount": 8
+      },
+      {
+        "count": 1,
+        "kind": "code",
+        "repeat": 1,
+        "nodes": {
+          "all": 2426,
+          "messages": 1,
+          "scrollHeight": 4052,
+          "chatHeight": 866
+        },
+        "elapsedMs": 4747,
+        "frames": 168,
+        "p95": 50.1,
+        "max": 83.3,
+        "over33": 31,
+        "ticks": 0,
+        "phases": {
+          "TaskDuration": 3.826939000000003,
+          "ScriptDuration": 0.07859000000000016,
+          "LayoutDuration": 0.2520559999999996,
+          "RecalcStyleDuration": 2.456277,
+          "LayoutCount": 64,
+          "RecalcStyleCount": 126
+        },
+        "longTaskCount": 15
+      },
+      {
+        "count": 1,
+        "kind": "code",
+        "streaming": true,
+        "repeat": 0,
+        "nodes": {
+          "all": 2427,
+          "messages": 1,
+          "scrollHeight": 4110,
+          "chatHeight": 866
+        },
+        "elapsedMs": 14820,
+        "frames": 222,
+        "p95": 200.1,
+        "max": 250.1,
+        "over33": 98,
+        "ticks": 109,
+        "phases": {
+          "TaskDuration": 14.508536000000007,
+          "ScriptDuration": 1.107749,
+          "LayoutDuration": 0.37633399999999995,
+          "RecalcStyleDuration": 2.9421870000000006,
+          "LayoutCount": 170,
+          "RecalcStyleCount": 351
+        },
+        "longTaskCount": 105
+      },
+      {
+        "count": 1,
+        "kind": "code",
+        "streaming": true,
+        "repeat": 1,
+        "nodes": {
+          "all": 2427,
+          "messages": 1,
+          "scrollHeight": 4110,
+          "chatHeight": 866
+        },
+        "elapsedMs": 10734,
+        "frames": 210,
+        "p95": 199.9,
+        "max": 283.3,
+        "over33": 73,
+        "ticks": 125,
+        "phases": {
+          "TaskDuration": 10.252229,
+          "ScriptDuration": 1.0531569999999997,
+          "LayoutDuration": 0.3727199999999993,
+          "RecalcStyleDuration": 2.9771129999999992,
+          "LayoutCount": 160,
+          "RecalcStyleCount": 357
+        },
+        "longTaskCount": 78
+      }
+    ]
+  },
+  "writeBoundaryControl": {
+    "fixture": "production components, synthetic data, empty workspace; Chrome headless, not full Electron app",
+    "viewport": "1440x900",
+    "browser": "155.0.8059.5",
+    "results": [
+      {
+        "count": 50,
+        "kind": "paragraphs",
+        "repeat": 0,
+        "nodes": {
+          "all": 2354,
+          "messages": 50,
+          "scrollHeight": 97308,
+          "chatHeight": 866
+        },
+        "elapsedMs": 5638,
+        "frames": 206,
+        "p95": 50.1,
+        "max": 133.3,
+        "over33": 51,
+        "ticks": 0,
+        "phases": {
+          "TaskDuration": 4.512885000000001,
+          "ScriptDuration": 0.15975799999999996,
+          "LayoutDuration": 1.34402,
+          "RecalcStyleDuration": 2.102092,
+          "LayoutCount": 65,
+          "RecalcStyleCount": 323
+        },
+        "longTaskCount": 46
+      },
+      {
+        "count": 50,
+        "kind": "paragraphs",
+        "repeat": 1,
+        "nodes": {
+          "all": 2354,
+          "messages": 50,
+          "scrollHeight": 97308,
+          "chatHeight": 866
+        },
+        "elapsedMs": 5414,
+        "frames": 203,
+        "p95": 50,
+        "max": 116.7,
+        "over33": 36,
+        "ticks": 0,
+        "phases": {
+          "TaskDuration": 4.314357,
+          "ScriptDuration": 0.13144599999999995,
+          "LayoutDuration": 1.226122,
+          "RecalcStyleDuration": 2.0510420000000003,
+          "LayoutCount": 64,
+          "RecalcStyleCount": 321
+        },
+        "longTaskCount": 31
+      },
+      {
+        "count": 50,
+        "kind": "paragraphs",
+        "localWrites": true,
+        "repeat": 0,
+        "nodes": {
+          "all": 2354,
+          "messages": 50,
+          "scrollHeight": 85495,
+          "chatHeight": 866
+        },
+        "elapsedMs": 4792,
+        "frames": 204,
+        "p95": 50,
+        "max": 133.4,
+        "over33": 25,
+        "ticks": 0,
+        "phases": {
+          "TaskDuration": 3.684570000000001,
+          "ScriptDuration": 0.13595800000000002,
+          "LayoutDuration": 1.2469360000000003,
+          "RecalcStyleDuration": 1.3593859999999998,
+          "LayoutCount": 64,
+          "RecalcStyleCount": 322
+        },
+        "longTaskCount": 13
+      },
+      {
+        "count": 50,
+        "kind": "paragraphs",
+        "localWrites": true,
+        "repeat": 1,
+        "nodes": {
+          "all": 2354,
+          "messages": 50,
+          "scrollHeight": 85495,
+          "chatHeight": 866
+        },
+        "elapsedMs": 4651,
+        "frames": 185,
+        "p95": 50,
+        "max": 116.7,
+        "over33": 25,
+        "ticks": 0,
+        "phases": {
+          "TaskDuration": 3.734554000000001,
+          "ScriptDuration": 0.17064900000000005,
+          "LayoutDuration": 1.2726890000000002,
+          "RecalcStyleDuration": 1.3339399999999992,
+          "LayoutCount": 67,
+          "RecalcStyleCount": 324
+        },
+        "longTaskCount": 13
+      }
+    ]
+  }
+}

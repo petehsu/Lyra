@@ -197,6 +197,9 @@ export const createSoftwareStateReaders = ({
         title: pane.title,
         cwd: pane.cwd,
         shell: pane.shell,
+        ...(pane.sourceAgentSessionId === undefined
+          ? {}
+          : { sourceAgentSessionId: pane.sourceAgentSessionId }),
         active: pane.id === activeTab.activePaneId
       })),
       activeOutput: "",

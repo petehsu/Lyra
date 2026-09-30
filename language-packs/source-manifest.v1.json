@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "appVersion": "0.1.0-preview.15",
-  "keysetHash": "b809a4c5f0bed17a73dfda2e45b5d2dd5ce1af1fbfa62c263dbf9ec1971c16a5",
-  "contentHash": "212503a7f5d29999f5fb39a387666091546e5972fe4f020a222c89de97d5ea29",
+  "keysetHash": "759d011650ff983e93cc2356ea675c6558a4b781af546ac2fbf05a63752b256b",
+  "contentHash": "3f6959c9bcd8dc81d2c5010b97be7c2b3731099d83be4794aa7ae0103230109e",
   "entries": [
     {
       "key": "agentGit.binaryDiff",
@@ -4341,14 +4341,6 @@
       "source": "Import Settings"
     },
     {
-      "key": "settings.importSettingsChooseProject",
-      "source": "Choose directory"
-    },
-    {
-      "key": "settings.importSettingsClearProject",
-      "source": "Clear"
-    },
-    {
       "key": "settings.importSettingsDescription",
       "source": "Sync skills and MCP servers from Claude, Cursor, Codex, OpenCode, and Zed."
     },
@@ -4367,10 +4359,6 @@
     {
       "key": "settings.importSettingsNoContent",
       "source": "Nothing to sync"
-    },
-    {
-      "key": "settings.importSettingsProject",
-      "source": "Project directory"
     },
     {
       "key": "settings.importSettingsSync",
@@ -4625,6 +4613,58 @@
       "source": "Keep Awake"
     },
     {
+      "key": "settings.projectsBack",
+      "source": "All projects"
+    },
+    {
+      "key": "settings.projectsCategoryLabel",
+      "source": "Projects"
+    },
+    {
+      "key": "settings.projectsEmpty",
+      "source": "Projects selected in a conversation appear here."
+    },
+    {
+      "key": "settings.projectsError",
+      "source": "Could not load or save project settings"
+    },
+    {
+      "key": "settings.projectsFollowGlobal",
+      "source": "Following global default"
+    },
+    {
+      "key": "settings.projectsGlobalOff",
+      "source": "Global default: off"
+    },
+    {
+      "key": "settings.projectsGlobalOn",
+      "source": "Global default: on"
+    },
+    {
+      "key": "settings.projectsLoading",
+      "source": "Loading…"
+    },
+    {
+      "key": "settings.projectsNoCapabilities",
+      "source": "No installed capabilities match. Manage installations in global MCP and Skill settings."
+    },
+    {
+      "key": "settings.projectsOverride",
+      "source": "Project override"
+    },
+    {
+      "key": "settings.projectsReset",
+      "source": "Restore global default"
+    },
+    {
+      "key": "settings.projectsSearch",
+      "source": "Search installed capabilities"
+    },
+    {
+      "key": "settings.projectsUnavailable",
+      "source": "Directory unavailable"
+    },
+    {
       "key": "settings.searchCategoryLabel",
       "source": "Search"
     },
@@ -4837,14 +4877,6 @@
       "source": "Workspace"
     },
     {
-      "key": "softwareStore.action.browserSearchOpenUrlDescription",
-      "source": "Open a URL in a new Lyra browser tab."
-    },
-    {
-      "key": "softwareStore.action.browserSearchOpenUrlTitle",
-      "source": "Open URL"
-    },
-    {
       "key": "softwareStore.action.browserSearchReadCurrentPageDescription",
       "source": "Read the current Lyra browser page runtime state."
     },
@@ -4917,44 +4949,12 @@
       "source": "Reveal Path"
     },
     {
-      "key": "softwareStore.action.fileManagerSelectEntryDescription",
-      "source": "Select a visible File Manager entry by id."
+      "key": "softwareStore.action.imageViewerOpenDescription",
+      "source": "Open an image file in a Lyra Image Viewer tab."
     },
     {
-      "key": "softwareStore.action.fileManagerSelectEntryTitle",
-      "source": "Select Entry"
-    },
-    {
-      "key": "softwareStore.action.imageViewerOpenSourceDescription",
-      "source": "Reveal the image source path in File Manager."
-    },
-    {
-      "key": "softwareStore.action.imageViewerOpenSourceTitle",
-      "source": "Open Source"
-    },
-    {
-      "key": "softwareStore.action.imageViewerPrepareVisionFallbackDescription",
-      "source": "Prepare current Image Viewer source, metadata, viewport, and open target for OCR or model vision fallback."
-    },
-    {
-      "key": "softwareStore.action.imageViewerPrepareVisionFallbackTitle",
-      "source": "Prepare Vision Fallback"
-    },
-    {
-      "key": "softwareStore.action.imageViewerReadMetadataDescription",
-      "source": "Read native image metadata, viewport, and source path from Image Viewer."
-    },
-    {
-      "key": "softwareStore.action.imageViewerReadMetadataTitle",
-      "source": "Read Image Metadata"
-    },
-    {
-      "key": "softwareStore.action.imageViewerZoomPanDescription",
-      "source": "Set Image Viewer zoom, pan, rotation, or background."
-    },
-    {
-      "key": "softwareStore.action.imageViewerZoomPanTitle",
-      "source": "Zoom And Pan"
+      "key": "softwareStore.action.imageViewerOpenTitle",
+      "source": "Open Image"
     },
     {
       "key": "softwareStore.action.loginManagerFillCredentialDescription",
@@ -4971,14 +4971,6 @@
     {
       "key": "softwareStore.action.loginManagerLogoutSiteTitle",
       "source": "Log Out Site"
-    },
-    {
-      "key": "softwareStore.action.loginManagerOpenDescription",
-      "source": "Open the Lyra Login Manager settings section."
-    },
-    {
-      "key": "softwareStore.action.loginManagerOpenTitle",
-      "source": "Open Login Manager"
     },
     {
       "key": "softwareStore.action.loginManagerReadStateDescription",

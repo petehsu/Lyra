@@ -35,7 +35,6 @@ describe("software capability manifests", () => {
     const loginManager = software.find((entry) => entry.id === "login-manager");
 
     expect(browser?.actions.map((action) => action.id)).toEqual([
-      "browser-search.openUrl",
       "browser-search.search",
       "browser-search.readState",
       "browser-search.readCurrentPage",
@@ -43,11 +42,10 @@ describe("software capability manifests", () => {
       "browser-search.readDownloads"
     ]);
     expect(browser?.actions[0]?.inputSchema).toMatchObject({
-      required: ["url"]
+      required: ["query"]
     });
     expect(loginManager?.actions.map((action) => action.id)).toEqual([
       "login-manager.readState",
-      "login-manager.open",
       "login-manager.logoutSite",
       "login-manager.updateAuthMethod",
       "login-manager.fillCredential"
@@ -59,15 +57,15 @@ describe("software capability manifests", () => {
   test("removes schemas from lightweight capability lists", () => {
     const software = createBuiltinSoftware(labels);
     const lightweight = softwareWithoutSchemas(software);
-    const openUrl = lightweight
+    const search = lightweight
       .find((entry) => entry.id === "browser-search")
-      ?.actions.find((action) => action.id === "browser-search.openUrl");
+      ?.actions.find((action) => action.id === "browser-search.search");
 
-    expect(openUrl).toMatchObject({
-      id: "browser-search.openUrl",
+    expect(search).toMatchObject({
+      id: "browser-search.search",
       risk: "navigate"
     });
-    expect(openUrl).not.toHaveProperty("inputSchema");
+    expect(search).not.toHaveProperty("inputSchema");
   });
 
   test("classifies write, external, and destructive capabilities as high risk", () => {

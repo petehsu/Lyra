@@ -50,6 +50,7 @@ import { useWorkbenchActiveAppContext } from "./use-workbench-active-app-context
 import { useWorkbenchAppRestoration } from "./use-workbench-app-restoration";
 import { useWorkbenchBrowserRuntime, type EmbeddedBrowserPageDescriptor } from "./use-workbench-browser-runtime";
 import {
+  destroyAgentBrowserPreviewWatch,
   promoteAgentBrowserPreviewTab,
   registerAgentBrowserPreviewWorkspace
 } from "../ai-panel/lyra-agents/hooks/agent-browser-preview-workspace";
@@ -470,6 +471,14 @@ resolvedThemeId,
     locale,
     resolvedThemeId
   });
+  const closeEmbeddedBrowserTab = useCallback((tabId: string): boolean => {
+    const parked = parkedAgentBrowserPagesRef.current.some((entry) => entry.tabId === tabId);
+    if (!parked) {
+      return false;
+    }
+    destroyAgentBrowserPreviewWatch([tabId]);
+    return true;
+  }, []);
   useWorkbenchObservationBridge({
     desktopApi,
     tabsModel,
@@ -478,7 +487,8 @@ resolvedThemeId,
     imageViewerModel,
     terminalModel,
     embeddedBrowserPages: parkedAgentBrowserPages,
-    activateEmbeddedBrowserTab: promoteAgentBrowserPreviewTab
+    activateEmbeddedBrowserTab: promoteAgentBrowserPreviewTab,
+    closeEmbeddedBrowserTab
   });
   useWorkbenchSystemNotificationPermissionGuard({
     desktopApi,

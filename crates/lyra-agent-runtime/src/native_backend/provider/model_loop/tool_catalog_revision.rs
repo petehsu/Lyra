@@ -58,7 +58,7 @@ mod tests {
             "exec_command",
             "read_file",
             "software_invoke",
-            "software__image-viewer__image-viewer_openSource",
+            "software__file-manager__file-manager_openPath",
             "mcp__docs__search",
             "skills_list",
         ] {

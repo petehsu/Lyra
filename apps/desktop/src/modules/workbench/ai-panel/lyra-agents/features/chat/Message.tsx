@@ -22,6 +22,7 @@ import { formatMessage, t } from "@workbench/i18n";
 import { toolGroupLabel } from "@workbench/agent-session-view-model/tool-view-model";
 import { AppButton } from "@renderer/ui/components";
 import { MessageCitationText } from "./MessageCitationText";
+import { MessageTextBlock } from "./message-text-block";
 import { withStreamingReasoning } from "./message-activity-blocks";
 
 /** Local activity is separate from the lifecycle of the whole turn. */
@@ -267,6 +268,24 @@ function unknownValueEqual(left: unknown, right: unknown): boolean {
   }
   return false;
 }
+
+const isContextCompressionBlock = (block: MessageBlock): boolean =>
+  block.type === "tools"
+  && block.group.calls.length > 0
+  && block.group.calls.every((call) => call.toolName === "context_compress");
+
+const splitContextCompressionTail = (
+  blocks: readonly MessageBlock[]
+): { readonly head: MessageBlock[]; readonly tail: MessageBlock[] } => {
+  let end = blocks.length;
+  while (end > 0 && isContextCompressionBlock(blocks[end - 1]!)) {
+    end -= 1;
+  }
+  return {
+    head: blocks.slice(0, end),
+    tail: blocks.slice(end)
+  };
+};
 
 const resolveFinalSummaryBlockId = (message: ChatMessage): string | null => {
   if (message.isApiError === true || isAgentMessageWorking(message)) return null;
@@ -1028,12 +1047,23 @@ const AgentMessage = memo(function AgentMessage({
   const activitySource = activityIndicatorMessage ?? message;
   const textBlocks = displayBlocks.filter((b) => b.type === "text");
   const lastTextId = textBlocks.at(-1)?.id ?? null;
+  const { head: compressionHead, tail: compressionTail } = splitContextCompressionTail(displayBlocks);
+  const runningCompression = compressionTail.filter(
+    (block) => block.type === "tools" && block.group.status === "running"
+  );
+  const finishedCompression = compressionTail.filter(
+    (block) => !(block.type === "tools" && block.group.status === "running")
+  );
+  const headLast = compressionHead.at(-1);
+  const summaryBlocks = headLast?.type === "text"
+    ? [...compressionHead.slice(0, -1), ...finishedCompression, headLast]
+    : [...compressionHead, ...finishedCompression];
   const finalSummaryBlockId = isActiveTurnRunning
     ? null
-    : resolveFinalSummaryBlockId(message);
+    : resolveFinalSummaryBlockId({ ...message, blocks: summaryBlocks });
   const preSummaryBlocks = finalSummaryBlockId === null
     ? []
-    : displayBlocks.filter((block) => block.id !== finalSummaryBlockId);
+    : summaryBlocks.filter((block) => block.id !== finalSummaryBlockId);
   const [preSummaryOpen, setPreSummaryOpen] = useState(false);
   const processDuration = formatProcessDuration(message.workDurationMs);
   const processFoldLabel = processDuration === null
@@ -1062,18 +1092,7 @@ const AgentMessage = memo(function AgentMessage({
       const isLastText = b.id === lastTextId;
       const shouldStream = streamingTextActive && isLastText;
       return (
-        <div
-          key={b.id}
-          className="lyra-agents-message-text-block"
-          data-message-block-id={b.id}
-        >
-          <StreamingText
-            content={b.body}
-            streaming={shouldStream}
-            messageId={b.sourceMessageId ?? message.id}
-            blockId={b.sourceBlockId ?? null}
-          />
-        </div>
+        <MessageTextBlock key={b.id} message={message} block={b} streaming={shouldStream} />
       );
     }
     if (b.type === "image") {
@@ -1186,6 +1205,9 @@ const AgentMessage = memo(function AgentMessage({
         }]);
       } else if (block.type === "tools") {
         flushMedia();
+        if (isContextCompressionBlock(block)) {
+          flushActivity();
+        }
         appendActivity(
           block.id,
           block.group,
@@ -1228,9 +1250,10 @@ const AgentMessage = memo(function AgentMessage({
               </div>
             </div>
           </div>
-          {displayBlocks
+          {summaryBlocks
             .filter((block) => block.id === finalSummaryBlockId)
             .map(renderAgentBlock)}
+          {groupBlocksForRender(runningCompression)}
         </>
       );
 

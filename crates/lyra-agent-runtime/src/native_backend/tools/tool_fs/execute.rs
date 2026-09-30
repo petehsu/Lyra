@@ -12,6 +12,7 @@ pub(crate) async fn execute_tool_fs_model_tool(
     match call.name.as_str() {
         TOOL_FS_SEARCH => {
             let registry = runtime_registry_for_tool_fs_call(
+                session_id,
                 TOOL_FS_SEARCH,
                 &call.arguments,
                 dispatcher.as_ref(),
@@ -51,6 +52,7 @@ pub(crate) async fn execute_tool_fs_model_tool(
         }
         TOOL_FS_LIST => {
             let registry = runtime_registry_for_tool_fs_call(
+                session_id,
                 TOOL_FS_LIST,
                 &call.arguments,
                 dispatcher.as_ref(),
@@ -97,6 +99,7 @@ pub(crate) async fn execute_tool_fs_model_tool(
         }
         TOOL_FS_READ_DOC => {
             let registry = runtime_registry_for_tool_fs_call(
+                session_id,
                 TOOL_FS_READ_DOC,
                 &call.arguments,
                 dispatcher.as_ref(),
@@ -121,6 +124,7 @@ pub(crate) async fn execute_tool_fs_model_tool(
         }
         TOOL_FS_INSPECT => {
             let registry = runtime_registry_for_tool_fs_call(
+                session_id,
                 TOOL_FS_INSPECT,
                 &call.arguments,
                 dispatcher.as_ref(),
@@ -371,8 +375,12 @@ pub(super) async fn execute_tool_fs_run(
     call: ModelToolCall,
     started_at: &str,
 ) -> Value {
-    let registry =
-        runtime_registry_for_tool_fs_call(TOOL_FS_RUN, &call.arguments, dispatcher.as_ref());
+    let registry = runtime_registry_for_tool_fs_call(
+        session_id,
+        TOOL_FS_RUN,
+        &call.arguments,
+        dispatcher.as_ref(),
+    );
     let mut operation_envelope =
         run_operation_envelope(session_id, turn_id, &call.arguments, cancellation);
     let mut trace = Vec::new();

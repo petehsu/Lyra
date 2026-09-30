@@ -1,0 +1,17 @@
+{
+  "phase": "after",
+  "passed": true,
+  "environment": "Production ChatView build in Chromium; synthetic snapshot and deltas",
+  "updates": [
+    {
+      "expected": "已读取快照。新的思考正在到达。",
+      "actual": "已读取快照。新的思考正在到达。",
+      "observedAfterMs": 196
+    },
+    {
+      "expected": "已读取快照。新的思考正在到达。继续更新。",
+      "actual": "已读取快照。新的思考正在到达。继续更新。",
+      "observedAfterMs": 75
+    }
+  ]
+}

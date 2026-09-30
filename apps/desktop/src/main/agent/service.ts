@@ -13,10 +13,15 @@ import { createFavoritesToolHost } from "./favorites-tool-host";
 import { createLumenToolHost } from "./lumen-tool-host";
 import { createRuntimeEventForwarder } from "./runtime-event-forwarder";
 import { createSoftwareCapabilityHost } from "./software-capability-host";
+import { createTurnContextHost } from "./turn-context-host";
 import { createTerminalToolHost } from "./terminal-tool-host";
 import { createHostPersonaContextHandlers } from "./host-persona-context";
 import { createWorkbenchObservationAdapter } from "./workbench-observation-adapter";
-import { pickDesktopCaptureSource, waylandSession } from "./desktop-capture";
+import {
+  captureWaylandPortalScreenshot,
+  pickDesktopCaptureSource,
+  waylandSession
+} from "./desktop-capture";
 import type { WorkbenchStateIpcBridge } from "../workbench-state/service";
 import { isLyraSensitiveValueRef, type LyraSensitiveValueRef } from "../../shared/sensitive-value";
 import type {
@@ -125,9 +130,13 @@ export const createAgentIpcBridge = ({
       : { resolveSensitiveValueForFill }),
     visualFallback: {
       storageRoot,
-      // Level-3 desktop capture via Electron desktopCapturer. Lives in the
-      // platform-bridge layer so the host stays a pure marshaller.
+      // Level-3 desktop capture. Wayland uses the Screenshot portal; X11 uses
+      // Electron desktopCapturer. Lives in the platform-bridge layer so the
+      // host stays a pure marshaller.
       captureScreen: async (scope) => {
+        if (waylandSession()) {
+          return await captureWaylandPortalScreenshot();
+        }
         const display = screen.getPrimaryDisplay();
         const { width, height } = display.size;
         const scale = display.scaleFactor || 1;
@@ -145,7 +154,7 @@ export const createAgentIpcBridge = ({
             : null;
         const types = scope === "screen" ? (["screen"] as const) : (["window"] as const);
         let sources: Awaited<ReturnType<typeof desktopCapturer.getSources>> = [];
-        if (waylandSession() === false) try {
+        try {
           sources = await desktopCapturer.getSources({
             types: [...types],
             thumbnailSize
@@ -153,7 +162,7 @@ export const createAgentIpcBridge = ({
         } catch {
           sources = [];
         }
-        if (waylandSession() === false && scope !== "screen" && sources.length === 0) {
+        if (scope !== "screen" && sources.length === 0) {
           try {
             sources = await desktopCapturer.getSources({
               types: ["screen"],
@@ -188,6 +197,10 @@ export const createAgentIpcBridge = ({
     ...softwareCapabilityHost.handlers,
     ...favoritesToolHost.handlers,
     ...createHostPersonaContextHandlers(workbenchState),
+    "agent.readTurnContext": createTurnContextHost({
+      getWindow, getWorkbenchObservationService, getBrowserBridge, workbenchState,
+      software: softwareCapabilityHost
+    }),
     "mcp.oauth.openAuthorizationUrl": async (payload: unknown) => {
       if (!isRecord(payload) || typeof payload.url !== "string") {
         throw new Error("MCP authorization URL is required");

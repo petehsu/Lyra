@@ -4,6 +4,7 @@ import type * as Monaco from "monaco-editor/esm/vs/editor/editor.api";
 import { createRafCoalescer } from "../shell/raf-coalesce";
 import { subscribeLayoutResizeEnd } from "../shell/layout-resize-end";
 import { getIsLayoutResizing } from "../shell/use-panel-layout";
+import { getIsWindowResizing } from "../shell/use-window-resize-class";
 import { loadMonaco } from "./monaco";
 import {
   AUTO_SAVE_DELAY_MS,
@@ -800,7 +801,7 @@ export const useFileEditorRuntime = ({
     };
 
     const measure = (): void => {
-      if (getIsLayoutResizing()) {
+      if (getIsLayoutResizing() || getIsWindowResizing()) {
         return;
       }
       layoutEditors();
@@ -814,7 +815,7 @@ export const useFileEditorRuntime = ({
         lastHostHeight = -1;
         lastDiffWidth = -1;
         lastDiffHeight = -1;
-        layoutEditors();
+        measure();
       });
       return unsubscribeResizeEnd;
     }
@@ -831,7 +832,7 @@ export const useFileEditorRuntime = ({
       lastHostHeight = -1;
       lastDiffWidth = -1;
       lastDiffHeight = -1;
-      layoutEditors();
+      measure();
     });
     return () => {
       observer.disconnect();

@@ -48,20 +48,6 @@ export const createBuiltinSoftware = (
       "browser-search",
       [
         createAction({
-          id: "browser-search.openUrl",
-          title: "Open URL",
-          description: "Open a URL in a new Lyra browser tab.",
-          risk: "navigate",
-          inputSchema: {
-            type: "object",
-            required: ["url"],
-            properties: {
-              url: { type: "string" },
-              title: { type: "string" }
-            }
-          }
-        }),
-        createAction({
           id: "browser-search.search",
           title: "Search",
           description: "Open Lyra search results for a query.",
@@ -151,19 +137,6 @@ export const createBuiltinSoftware = (
           risk: "read"
         }),
         createAction({
-          id: "file-manager.selectEntry",
-          title: "Select Entry",
-          description: "Select a visible File Manager entry by id.",
-          risk: "navigate",
-          inputSchema: {
-            type: "object",
-            required: ["entryId"],
-            properties: {
-              entryId: { type: "string" }
-            }
-          }
-        }),
-        createAction({
           id: "file-manager.revealPath",
           title: "Reveal Path",
           description: "Open a path's containing folder in File Manager and select the matching entry when visible.",
@@ -206,12 +179,6 @@ export const createBuiltinSoftware = (
           title: "Read Login Manager",
           description: "Read Lyra Browser site sessions and saved credential metadata. Password text is never returned.",
           risk: "read"
-        }),
-        createAction({
-          id: "login-manager.open",
-          title: "Open Login Manager",
-          description: "Open the Lyra Login Manager settings section.",
-          risk: "navigate"
         }),
         createAction({
           id: "login-manager.logoutSite",
@@ -371,50 +338,15 @@ export const createBuiltinSoftware = (
       "image-viewer",
       [
         createAction({
-          id: "image-viewer.readMetadata",
-          title: "Read Image Metadata",
-          description: "Read native image metadata, viewport, and source path from Image Viewer.",
-          risk: "read"
-        }),
-        createAction({
-          id: "image-viewer.zoomPan",
-          title: "Zoom And Pan",
-          description: "Set Image Viewer zoom, pan, rotation, or background.",
+          id: "image-viewer.open",
+          title: "Open Image",
+          description: "Open an image file in a Lyra Image Viewer tab.",
           risk: "navigate",
           inputSchema: {
             type: "object",
+            required: ["path"],
             properties: {
-              instanceId: { type: "string" },
-              zoom: { type: "number" },
-              offsetX: { type: "number" },
-              offsetY: { type: "number" },
-              rotation: { type: "number" },
-              background: { type: "string", enum: ["checkerboard", "dark", "light"] }
-            }
-          }
-        }),
-        createAction({
-          id: "image-viewer.openSource",
-          title: "Open Source",
-          description: "Reveal the image source path in File Manager.",
-          risk: "navigate",
-          inputSchema: {
-            type: "object",
-            properties: {
-              instanceId: { type: "string" },
               path: { type: "string" }
-            }
-          }
-        }),
-        createAction({
-          id: "image-viewer.prepareVisionFallback",
-          title: "Prepare Vision Fallback",
-          description: "Prepare current Image Viewer source, metadata, viewport, and open target for OCR or model vision fallback.",
-          risk: "read",
-          inputSchema: {
-            type: "object",
-            properties: {
-              instanceId: { type: "string" }
             }
           }
         })

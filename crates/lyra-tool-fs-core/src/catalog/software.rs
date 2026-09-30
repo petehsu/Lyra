@@ -26,13 +26,5 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "Read lightweight software state.",
             None,
         ),
-        super::s(
-            "/tools/software/invoke_capability",
-            "software",
-            "invoke_capability",
-            "Invoke software capability",
-            "Invoke a software adapter capability.",
-            None,
-        ),
     ]
 }

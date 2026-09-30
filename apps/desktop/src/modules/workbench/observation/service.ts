@@ -22,9 +22,26 @@ import type {
   WorkbenchObservationQueryResult
 } from "../../../shared/workbench-observation";
 import { disposeTerminalRendererForSession } from "../terminal-dock/pane-surface";
+import { isReportableShellCwd } from "../terminal-dock/service";
 import type { WorkbenchObservationDependencies } from "./types";
 import { listObservedTabs, readObservedLocalTab } from "./local-tab-readers";
 import { readObservedWorkspace } from "./workspace-readers";
+
+const embeddedBrowserTab = (
+  dependencies: WorkbenchObservationDependencies,
+  tabId: string
+): boolean =>
+  (dependencies.embeddedBrowserPages ?? []).some((page) => page.tabId === tabId);
+
+const ensureWorkbenchTab = (
+  dependencies: WorkbenchObservationDependencies,
+  tabId: string
+): boolean => {
+  if (dependencies.tabsModel.tabs.some((tab) => tab.id === tabId)) {
+    return true;
+  }
+  return dependencies.activateEmbeddedBrowserTab?.(tabId) === true;
+};
 
 const readWorkbenchLayoutSnapshot = (
   dependencies: WorkbenchObservationDependencies
@@ -195,6 +212,10 @@ const terminalDescriptorForPane = (
   if (pane === undefined) {
     return null;
   }
+  const reportedCwd = (value: string | undefined): string | undefined =>
+    value !== undefined && isReportableShellCwd(value) ? value : undefined;
+  const cwd = reportedCwd(pane.cwd);
+  const currentCwd = reportedCwd(pane.currentCwd);
   const workspaceTab = dependencies.tabsModel.tabs.find(
     (tab) => tab.pageKind === "terminal" && tab.terminalTabId === terminalTab.id
   );
@@ -207,8 +228,8 @@ const terminalDescriptorForPane = (
     isActive:
       terminalTab.id === dependencies.terminalModel.state.activeTabId
       && terminalTab.activePaneId === pane.id,
-    ...(pane.cwd === undefined ? {} : { cwd: pane.cwd }),
-    ...(pane.currentCwd === undefined ? {} : { currentCwd: pane.currentCwd }),
+    ...(cwd === undefined ? {} : { cwd }),
+    ...(currentCwd === undefined ? {} : { currentCwd }),
     ...(pane.shell === undefined ? {} : { shell: pane.shell }),
     ...(pane.sourceAgentSessionId === undefined
       ? {}
@@ -497,6 +518,19 @@ export const attachWorkbenchObservationBridge = (
         if (request.method === "workbench.tab.close_local") {
           const tabId = request.payload.tabId.trim();
           const tabExists = dependencies.tabsModel.tabs.some((tab) => tab.id === tabId);
+          if (!tabExists && embeddedBrowserTab(dependencies, tabId)) {
+            if (dependencies.closeEmbeddedBrowserTab?.(tabId) === true) {
+              return {
+                requestId,
+                ok: true,
+                result: {
+                  tabId,
+                  closed: true,
+                  activeTabId: dependencies.tabsModel.activeTabId ?? null
+                }
+              };
+            }
+          }
           if (!tabExists) {
             return toBridgeError(
               requestId,
@@ -512,7 +546,7 @@ export const attachWorkbenchObservationBridge = (
         }
         if (request.method === "workbench.tab.reorder_local") {
           const tabId = request.payload.tabId.trim();
-          const tabExists = dependencies.tabsModel.tabs.some((tab) => tab.id === tabId);
+          const tabExists = ensureWorkbenchTab(dependencies, tabId);
           if (!tabExists) {
             return toBridgeError(
               requestId,
@@ -529,8 +563,8 @@ export const attachWorkbenchObservationBridge = (
         if (request.method === "workbench.tab.split_local") {
           const sourceTabId = request.payload.sourceTabId.trim();
           const targetTabId = request.payload.targetTabId.trim();
-          const sourceExists = dependencies.tabsModel.tabs.some((tab) => tab.id === sourceTabId);
-          const targetExists = dependencies.tabsModel.tabs.some((tab) => tab.id === targetTabId);
+          const sourceExists = ensureWorkbenchTab(dependencies, sourceTabId);
+          const targetExists = ensureWorkbenchTab(dependencies, targetTabId);
           if (!sourceExists || !targetExists) {
             return toBridgeError(
               requestId,
@@ -546,7 +580,7 @@ export const attachWorkbenchObservationBridge = (
         }
         if (request.method === "workbench.tab.detach_split_local") {
           const tabId = request.payload.tabId.trim();
-          const tabExists = dependencies.tabsModel.tabs.some((tab) => tab.id === tabId);
+          const tabExists = ensureWorkbenchTab(dependencies, tabId);
           if (!tabExists) {
             return toBridgeError(
               requestId,

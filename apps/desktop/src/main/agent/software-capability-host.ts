@@ -2,6 +2,7 @@ import { ipcMain, type BrowserWindow } from "electron";
 
 import {
   LYRA_CHANNELS,
+  type LyraSoftwareManifest,
   type SoftwareCapabilitiesQueryRequest,
   type SoftwareCapabilitiesQueryResult
 } from "../../shared/desktop-bridge";
@@ -80,8 +81,6 @@ const createSoftwareCapabilityRendererClient = ({
       }
       pending.clear();
     },
-    listCapabilities: async (payload: object) =>
-      await sendQuery("software.listCapabilities", payload),
     inspectCapability: async (payload: object) =>
       await sendQuery("software.inspectCapability", payload),
     readState: async (payload: object) =>
@@ -115,13 +114,39 @@ export const createSoftwareCapabilityHost = ({
   readonly getWindow: () => BrowserWindow | null;
 }): {
   readonly handlers: AgentHostCapabilityHandlers;
+  readonly snapshot: () => { software: readonly LyraSoftwareManifest[]; hostCapabilityAvailable: boolean };
   readonly dispose: () => void;
 } => {
   const client = createSoftwareCapabilityRendererClient({ getWindow });
+  let software: readonly LyraSoftwareManifest[] = [];
+  let owner: Electron.WebContents | undefined;
+  ipcMain.handle(LYRA_CHANNELS.softwareCapabilitiesSnapshot, (event, value: unknown) => {
+    const window = getWindow();
+    if (!window || window.isDestroyed() || event.sender !== window.webContents) return;
+    if (!Array.isArray(value) || value.some((item) =>
+      !item || typeof item.id !== "string" || !Array.isArray(item.actions))) {
+      throw new Error("Invalid software capability snapshot");
+    }
+    owner = event.sender;
+    software = value as LyraSoftwareManifest[];
+  });
+  const snapshot = () => {
+    const window = getWindow();
+    const available = !!window && !window.isDestroyed() && owner === window.webContents;
+    return { software: available ? software : [], hostCapabilityAvailable: available };
+  };
   return {
+    snapshot,
     handlers: {
-      "software.listCapabilities": async (payload: unknown) =>
-        await client.listCapabilities(normalizePayload(payload)),
+      "software.listCapabilities": async (payload: unknown) => {
+        const current = snapshot();
+        return normalizePayload(payload).includeSchemas === true ? current : {
+          ...current,
+          software: current.software.map((entry) => ({ ...entry,
+            actions: entry.actions.map(({ inputSchema: _input, outputSchema: _output, ...action }) => action)
+          }))
+        };
+      },
       "software.inspectCapability": async (payload: unknown) =>
         await client.inspectCapability(normalizeSoftwarePayload(payload)),
       "software.readState": async (payload: unknown) =>
@@ -129,6 +154,9 @@ export const createSoftwareCapabilityHost = ({
       "software.invokeCapability": async (payload: unknown) =>
         await client.invokeCapability(normalizeSoftwarePayload(payload))
     },
-    dispose: client.dispose
+    dispose: () => {
+      ipcMain.removeHandler(LYRA_CHANNELS.softwareCapabilitiesSnapshot);
+      client.dispose();
+    }
   };
 };

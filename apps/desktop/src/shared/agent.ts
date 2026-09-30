@@ -1,3 +1,4 @@
+import type { AgentProject, AgentProjectSettings, AgentProjectOverrideRequest } from "./agent-projects";
 import type { LyraSensitiveValueRef } from "./sensitive-value";
 
 export type AgentRole = "user" | "assistant" | "system";
@@ -1000,6 +1001,7 @@ export type AgentProviderFault = {
 };
 
 export type AgentRuntimeEvent =
+  | { readonly kind: "projectCapabilitiesChanged"; readonly scope?: "projects" | "catalog" }
   | {
       readonly kind: "sessionSnapshot";
       readonly snapshot: AgentSessionSnapshot;
@@ -1773,6 +1775,7 @@ export type AgentMcpTransport =
       readonly command: string;
       readonly args: readonly string[];
       readonly env: Readonly<Record<string, string>>;
+      readonly secretEnv?: Readonly<Record<string, string>>;
       readonly envVars?: readonly string[];
       readonly cwd?: string | null;
     }
@@ -1780,6 +1783,7 @@ export type AgentMcpTransport =
       readonly kind: "http";
       readonly url: string;
       readonly headers: Readonly<Record<string, string>>;
+      readonly secretHeaders?: Readonly<Record<string, string>>;
       readonly envHttpHeaders?: Readonly<Record<string, string>>;
       readonly bearerTokenEnvVar?: string | null;
     }
@@ -1787,6 +1791,7 @@ export type AgentMcpTransport =
       readonly kind: "sse";
       readonly url: string;
       readonly headers: Readonly<Record<string, string>>;
+      readonly secretHeaders?: Readonly<Record<string, string>>;
       readonly envHttpHeaders?: Readonly<Record<string, string>>;
       readonly bearerTokenEnvVar?: string | null;
     };
@@ -1799,6 +1804,7 @@ export type AgentMcpToolInfo = {
 };
 
 export type AgentMcpServer = {
+  readonly sourceLabel?: string | null;
   readonly id: string;
   readonly name: string;
   readonly transport: AgentMcpTransport;
@@ -1838,7 +1844,6 @@ export type AgentMcpServerUpsertRequest = {
   readonly bearerTokenEnvVar?: string | null;
   readonly startupTimeoutMs?: number | null;
   readonly toolTimeoutMs?: number | null;
-  readonly projectRoot?: string | null;
   readonly enabled?: boolean;
   readonly server?: unknown;
   readonly servers?: readonly unknown[];
@@ -1854,7 +1859,6 @@ export type AgentMcpServerMutationResponse = {
 export type AgentMcpServerRequest = {
   readonly serverId: string;
   readonly timeoutMs?: number;
-  readonly projectRoot?: string | null;
 };
 
 export type AgentMcpServerRemoveResponse = {
@@ -1867,7 +1871,6 @@ export type AgentMcpToolDiscoverRequest = {
   readonly serverId?: string | null;
   readonly query?: string | null;
   readonly timeoutMs?: number;
-  readonly projectRoot?: string | null;
 };
 
 export type AgentMcpToolDiscoverResponse = {
@@ -1897,25 +1900,23 @@ export type AgentImportPreference = {
 };
 
 export type AgentImportPreferences = {
-  readonly projectRoot?: string | null;
   readonly sources: Readonly<Record<AgentImportSourceId, AgentImportPreference>>;
 };
 
 export type AgentImportPreferencesUpdateRequest = {
   readonly sourceId?: AgentImportSourceId;
-  readonly projectRoot?: string | null;
   readonly skills?: boolean;
   readonly mcp?: boolean;
 };
 
 export type AgentImportDetectRequest = {
   readonly sourceId: AgentImportSourceId;
-  readonly projectRoot?: string | null;
 };
 
 export type AgentImportCandidateStatus = "pending" | "update" | "synced" | "conflict";
 
 export type AgentImportCandidate = {
+  readonly projectRoot?: string | null;
   readonly kind: "skill" | "mcp";
   readonly scope: "user" | "project";
   readonly sourcePath: string;
@@ -1929,7 +1930,6 @@ export type AgentImportCandidate = {
 export type AgentImportDetection = {
   readonly detectionId: string;
   readonly sourceId: AgentImportSourceId;
-  readonly projectRoot?: string | null;
   readonly counts: Readonly<Record<string, number>>;
   readonly candidates: readonly AgentImportCandidate[];
   readonly diagnostics: readonly { readonly path?: string; readonly itemId?: string; readonly message: string }[];
@@ -2078,6 +2078,11 @@ export type AgentApi = {
   readonly updateAgentProviderOptions: (
     request: AgentProviderOptionsUpdateRequest
   ) => Promise<AgentModelCatalogSnapshot>;
+  readonly listProjects: () => Promise<{ readonly projects: readonly AgentProject[] }>;
+  readonly registerProject: (request: { readonly workingDir: string }) => Promise<{ readonly project: AgentProject }>;
+  readonly getProjectSettings: (request: { readonly projectId: string }) => Promise<AgentProjectSettings>;
+  readonly setProjectOverride: (request: AgentProjectOverrideRequest) => Promise<AgentProjectSettings>;
+  readonly setMcpEnabled: (request: { readonly serverId: string; readonly enabled: boolean }) => Promise<AgentMcpListResponse>;
   readonly listAgentSkills: () => Promise<AgentSkillsListResponse>;
   readonly inspectAgentSkill: (
     request: AgentSkillInspectRequest
@@ -2106,7 +2111,7 @@ export type AgentApi = {
   readonly updateAgentSkillStoreConfig: (
     request: AgentSkillRefreshStoreRequest
   ) => Promise<AgentSkillStoreResponse>;
-  readonly listMcpServers: (request?: { readonly projectRoot?: string | null }) => Promise<AgentMcpListResponse>;
+  readonly listMcpServers: () => Promise<AgentMcpListResponse>;
   readonly upsertMcpServer: (
     request: AgentMcpServerUpsertRequest
   ) => Promise<AgentMcpServerMutationResponse>;

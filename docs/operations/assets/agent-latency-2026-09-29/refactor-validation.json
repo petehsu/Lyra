@@ -1,0 +1,116 @@
+{
+  "capturedAt": "2026-09-29T09:31:44.444664+00:00",
+  "baselineCommit": "571e81d4838756ea0ba3c3e1ee549ebf17285653",
+  "rust": {
+    "command": "cargo test -p lyra-agent-runtime --lib -- --test-threads=1",
+    "baseline": {
+      "summary": "test result: FAILED. 1008 passed; 13 failed; 0 ignored; 0 measured; 0 filtered out; finished in 145.95s",
+      "failures": [
+        "native_backend::tests::foundation::host_and_browser::tool_fs_dynamic_software_capabilities_are_discoverable_and_runnable",
+        "native_backend::tests::foundation::native_and_git::code_shell::codex_direct_tool_chain_runs_core_code_tools",
+        "native_backend::tests::foundation::native_and_git::code_shell::native_shell_code_lsp_and_budget_guards_are_structured",
+        "native_backend::tests::foundation::permissions_and_flows::permission_request_denies_and_allows_native_file_write",
+        "native_backend::tests::foundation::runtime_and_tools::model_request_injects_lyra_identity_and_tools",
+        "native_backend::tests::foundation::runtime_and_tools::model_request_keeps_tool_fs_visible_while_presearch_adds_hints",
+        "native_backend::tests::foundation::runtime_and_tools::provider_visible_tool_schema_snapshot_is_curated_runtime_surface",
+        "native_backend::tests::foundation::runtime_and_tools::tool_filesystem_runtime_context_uses_dynamic_registry_without_expanding_provider_tools",
+        "native_backend::tests::provider_loop::catalog_and_images::catalog_outage_unknown_call_and_local_image_recover_in_one_turn",
+        "native_backend::tests::provider_loop::catalog_and_images::streaming_catalog_outage_unknown_call_and_image_recover_with_fragmented_names",
+        "native_backend::tests::provider_loop::direct_apply_patch_writes_large_generated_file",
+        "native_backend::tests::provider_loop::structured_tool_call_is_ignored_when_no_tools_are_advertised",
+        "native_backend::tools::tool_fs::mcp_dynamic::tests::capability_manifests_generated_for_registry_servers"
+      ]
+    },
+    "current": {
+      "summary": "test result: FAILED. 1023 passed; 10 failed; 0 ignored; 0 measured; 0 filtered out; finished in 93.56s",
+      "failures": [
+        "native_backend::tests::foundation::host_and_browser::tool_fs_dynamic_software_capabilities_are_discoverable_and_runnable",
+        "native_backend::tests::foundation::native_and_git::code_shell::codex_direct_tool_chain_runs_core_code_tools",
+        "native_backend::tests::foundation::native_and_git::code_shell::native_shell_code_lsp_and_budget_guards_are_structured",
+        "native_backend::tests::foundation::permissions_and_flows::permission_request_denies_and_allows_native_file_write",
+        "native_backend::tests::foundation::runtime_and_tools::model_request_injects_lyra_identity_and_tools",
+        "native_backend::tests::foundation::runtime_and_tools::model_request_keeps_tool_fs_visible_while_presearch_adds_hints",
+        "native_backend::tests::foundation::runtime_and_tools::provider_visible_tool_schema_snapshot_is_curated_runtime_surface",
+        "native_backend::tests::foundation::runtime_and_tools::tool_filesystem_runtime_context_uses_dynamic_registry_without_expanding_provider_tools",
+        "native_backend::tests::provider_loop::direct_apply_patch_writes_large_generated_file",
+        "native_backend::tests::provider_loop::structured_tool_call_is_ignored_when_no_tools_are_advertised"
+      ]
+    },
+    "addedFailures": []
+  },
+  "desktopFocused": {
+    "files": 6,
+    "passed": 45,
+    "failed": 0
+  },
+  "settingsTypeImportRegression": {
+    "files": 1,
+    "passed": 9,
+    "failed": 0
+  },
+  "desktopService": {
+    "baselineFailed": 5,
+    "currentFailed": 5,
+    "changedCatalogTestPassed": true
+  },
+  "types": {
+    "baselineErrors": 95,
+    "currentErrors": 92,
+    "comparison": "multiset of file, diagnostic code, message",
+    "added": [],
+    "removed": [
+      [
+        [
+          "apps/desktop/src/modules/workbench/browser-tabs/settings-render-model.ts",
+          2304,
+          "Cannot find name 'LyraDesktopApi'."
+        ],
+        2
+      ],
+      [
+        [
+          "apps/desktop/src/modules/workbench/syntax/highlighted-source.tsx",
+          2459,
+          "Module '\"@streamdown/code\"' declares 'BundledLanguage' locally, but it is not exported."
+        ],
+        1
+      ]
+    ]
+  },
+  "structure": {
+    "failures": 5,
+    "addedFailures": 0,
+    "log": "$ tsx tools/verify-boundaries.ts\n\n[Lyra Structure Guard] Violations found:\n\n- crates/lyra-agent-runtime/src/native_backend/state.rs is 2031 lines; split native backend modules by domain before they exceed 2000 baseline lines.\n- crates/lyra-agent-runtime/src/native_backend/tools/file.rs is 2595 lines; split native backend modules by domain before they exceed 2466 baseline lines.\n- crates/lyra-agent-runtime/src/native_backend/tools/web.rs is 3168 lines; split native backend modules by domain before they exceed 2053 baseline lines.\n- apps/desktop/src/main/index.ts:1129 Main-process modules must use the centralized storage roots resolver. Do not use app.getPath(\"userData\") or userDataPath plumbing.\n- apps/desktop/src/main/storage/roots.ts:212 Main-process modules must use the centralized storage roots resolver. Do not use app.getPath(\"userData\") or userDataPath plumbing.\n[ELIFECYCLE] Command failed with exit code 1.\n"
+  },
+  "format": {
+    "command": "cargo fmt --all -- --check",
+    "passed": true
+  },
+  "diffCheck": {
+    "command": "git diff --check",
+    "passed": true
+  },
+  "clippy": {
+    "command": "cargo clippy -p lyra-agent-runtime --all-targets --no-deps",
+    "passed": true,
+    "warnings": 970
+  },
+  "fixture": {
+    "scenarios": 7,
+    "turns": 21,
+    "passed": true,
+    "source": "refactor-results.json"
+  },
+  "ui": {
+    "turns": 3,
+    "passed": true,
+    "criterion": "First visible text observed before the provider resumes after a 600 ms pause. DOM plus two animation frames; synthetic bridge, not complete Electron IPC.",
+    "source": "refactor-ui-results.json",
+    "initialThresholdTrial": "An initial arbitrary 400 ms threshold failed under load. The final criterion checks the frozen action (during the 600 ms provider pause); no claim that rendering always takes under 400 ms."
+  },
+  "remainingLimits": [
+    "Cold first provider request still waits for exact tokenizer initialization if prewarm has not finished.",
+    "Early tools cannot advance the next request before the prior provider response is complete.",
+    "Real provider and complete desktop experience still require the same user actions after rebuilding/restarting."
+  ]
+}

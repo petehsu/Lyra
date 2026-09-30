@@ -9,8 +9,8 @@
     "applicableAppVersion": "0.1.x beta",
     "verifiedDate": "2026-07-28"
   },
-  "x-lyra-source-keyset-hash": "b809a4c5f0bed17a73dfda2e45b5d2dd5ce1af1fbfa62c263dbf9ec1971c16a5",
-  "x-lyra-source-content-hash": "212503a7f5d29999f5fb39a387666091546e5972fe4f020a222c89de97d5ea29",
+  "x-lyra-source-keyset-hash": "759d011650ff983e93cc2356ea675c6558a4b781af546ac2fbf05a63752b256b",
+  "x-lyra-source-content-hash": "3f6959c9bcd8dc81d2c5010b97be7c2b3731099d83be4794aa7ae0103230109e",
   "type": "object",
   "required": [
     "agentGit.binaryDiff",
@@ -1097,14 +1097,11 @@
     "settings.generalCategoryLabel",
     "settings.importSettingsBack",
     "settings.importSettingsCategoryLabel",
-    "settings.importSettingsChooseProject",
-    "settings.importSettingsClearProject",
     "settings.importSettingsDescription",
     "settings.importSettingsDetect",
     "settings.importSettingsLoading",
     "settings.importSettingsNeedsAttention",
     "settings.importSettingsNoContent",
-    "settings.importSettingsProject",
     "settings.importSettingsSync",
     "settings.importSettingsSynced",
     "settings.importSettingsUnavailable",
@@ -1168,6 +1165,19 @@
     "settings.preventSleepDisabled",
     "settings.preventSleepEnabled",
     "settings.preventSleepLabel",
+    "settings.projectsBack",
+    "settings.projectsCategoryLabel",
+    "settings.projectsEmpty",
+    "settings.projectsError",
+    "settings.projectsFollowGlobal",
+    "settings.projectsGlobalOff",
+    "settings.projectsGlobalOn",
+    "settings.projectsLoading",
+    "settings.projectsNoCapabilities",
+    "settings.projectsOverride",
+    "settings.projectsReset",
+    "settings.projectsSearch",
+    "settings.projectsUnavailable",
     "settings.searchCategoryLabel",
     "settings.searchEngineModeDynamicDescription",
     "settings.searchEngineModeDynamicLabel",
@@ -1221,8 +1231,6 @@
     "settings.windowMaterialEnabled",
     "settings.windowMaterialLabel",
     "settings.workspaceCategoryLabel",
-    "softwareStore.action.browserSearchOpenUrlDescription",
-    "softwareStore.action.browserSearchOpenUrlTitle",
     "softwareStore.action.browserSearchReadCurrentPageDescription",
     "softwareStore.action.browserSearchReadCurrentPageTitle",
     "softwareStore.action.browserSearchReadDownloadsDescription",
@@ -1241,22 +1249,12 @@
     "softwareStore.action.fileManagerReadCurrentDirectoryTitle",
     "softwareStore.action.fileManagerRevealPathDescription",
     "softwareStore.action.fileManagerRevealPathTitle",
-    "softwareStore.action.fileManagerSelectEntryDescription",
-    "softwareStore.action.fileManagerSelectEntryTitle",
-    "softwareStore.action.imageViewerOpenSourceDescription",
-    "softwareStore.action.imageViewerOpenSourceTitle",
-    "softwareStore.action.imageViewerPrepareVisionFallbackDescription",
-    "softwareStore.action.imageViewerPrepareVisionFallbackTitle",
-    "softwareStore.action.imageViewerReadMetadataDescription",
-    "softwareStore.action.imageViewerReadMetadataTitle",
-    "softwareStore.action.imageViewerZoomPanDescription",
-    "softwareStore.action.imageViewerZoomPanTitle",
+    "softwareStore.action.imageViewerOpenDescription",
+    "softwareStore.action.imageViewerOpenTitle",
     "softwareStore.action.loginManagerFillCredentialDescription",
     "softwareStore.action.loginManagerFillCredentialTitle",
     "softwareStore.action.loginManagerLogoutSiteDescription",
     "softwareStore.action.loginManagerLogoutSiteTitle",
-    "softwareStore.action.loginManagerOpenDescription",
-    "softwareStore.action.loginManagerOpenTitle",
     "softwareStore.action.loginManagerReadStateDescription",
     "softwareStore.action.loginManagerReadStateTitle",
     "softwareStore.action.loginManagerUpdateAuthMethodDescription",
@@ -4782,12 +4780,6 @@
     "settings.importSettingsCategoryLabel": {
       "type": "string"
     },
-    "settings.importSettingsChooseProject": {
-      "type": "string"
-    },
-    "settings.importSettingsClearProject": {
-      "type": "string"
-    },
     "settings.importSettingsDescription": {
       "type": "string"
     },
@@ -4801,9 +4793,6 @@
       "type": "string"
     },
     "settings.importSettingsNoContent": {
-      "type": "string"
-    },
-    "settings.importSettingsProject": {
       "type": "string"
     },
     "settings.importSettingsSync": {
@@ -4995,6 +4984,45 @@
     "settings.preventSleepLabel": {
       "type": "string"
     },
+    "settings.projectsBack": {
+      "type": "string"
+    },
+    "settings.projectsCategoryLabel": {
+      "type": "string"
+    },
+    "settings.projectsEmpty": {
+      "type": "string"
+    },
+    "settings.projectsError": {
+      "type": "string"
+    },
+    "settings.projectsFollowGlobal": {
+      "type": "string"
+    },
+    "settings.projectsGlobalOff": {
+      "type": "string"
+    },
+    "settings.projectsGlobalOn": {
+      "type": "string"
+    },
+    "settings.projectsLoading": {
+      "type": "string"
+    },
+    "settings.projectsNoCapabilities": {
+      "type": "string"
+    },
+    "settings.projectsOverride": {
+      "type": "string"
+    },
+    "settings.projectsReset": {
+      "type": "string"
+    },
+    "settings.projectsSearch": {
+      "type": "string"
+    },
+    "settings.projectsUnavailable": {
+      "type": "string"
+    },
     "settings.searchCategoryLabel": {
       "type": "string"
     },
@@ -5154,12 +5182,6 @@
     "settings.workspaceCategoryLabel": {
       "type": "string"
     },
-    "softwareStore.action.browserSearchOpenUrlDescription": {
-      "type": "string"
-    },
-    "softwareStore.action.browserSearchOpenUrlTitle": {
-      "type": "string"
-    },
     "softwareStore.action.browserSearchReadCurrentPageDescription": {
       "type": "string"
     },
@@ -5214,34 +5236,10 @@
     "softwareStore.action.fileManagerRevealPathTitle": {
       "type": "string"
     },
-    "softwareStore.action.fileManagerSelectEntryDescription": {
+    "softwareStore.action.imageViewerOpenDescription": {
       "type": "string"
     },
-    "softwareStore.action.fileManagerSelectEntryTitle": {
-      "type": "string"
-    },
-    "softwareStore.action.imageViewerOpenSourceDescription": {
-      "type": "string"
-    },
-    "softwareStore.action.imageViewerOpenSourceTitle": {
-      "type": "string"
-    },
-    "softwareStore.action.imageViewerPrepareVisionFallbackDescription": {
-      "type": "string"
-    },
-    "softwareStore.action.imageViewerPrepareVisionFallbackTitle": {
-      "type": "string"
-    },
-    "softwareStore.action.imageViewerReadMetadataDescription": {
-      "type": "string"
-    },
-    "softwareStore.action.imageViewerReadMetadataTitle": {
-      "type": "string"
-    },
-    "softwareStore.action.imageViewerZoomPanDescription": {
-      "type": "string"
-    },
-    "softwareStore.action.imageViewerZoomPanTitle": {
+    "softwareStore.action.imageViewerOpenTitle": {
       "type": "string"
     },
     "softwareStore.action.loginManagerFillCredentialDescription": {
@@ -5254,12 +5252,6 @@
       "type": "string"
     },
     "softwareStore.action.loginManagerLogoutSiteTitle": {
-      "type": "string"
-    },
-    "softwareStore.action.loginManagerOpenDescription": {
-      "type": "string"
-    },
-    "softwareStore.action.loginManagerOpenTitle": {
       "type": "string"
     },
     "softwareStore.action.loginManagerReadStateDescription": {

@@ -2,8 +2,12 @@ use super::*;
 
 pub(crate) fn create_session(payload: Value) -> AgentRuntimeResult<Value> {
     let title = string_opt(&payload, "title");
-    let working_dir = string_opt(&payload, "workingDir");
+    let working_dir = string_opt(&payload, "workingDir")
+        .filter(|path| !path.trim().is_empty())
+        .map(|path| projects::normalized_path(&path))
+        .transpose()?;
     let session = new_session(title, working_dir, "normal");
+    projects::register_snapshot(&session.snapshot)?;
     let session_id = session.id.clone();
     let (root, session, callback) = {
         let mut state = state()
@@ -305,7 +309,12 @@ pub(crate) fn create_temporary_session(payload: Value) -> AgentRuntimeResult<Val
             .cloned()
             .unwrap_or(Value::Null);
         let seed = temp_chat_seed_message(&plan, &todo);
-        let session = new_ephemeral_session(working_dir, &parent_session_id, seed);
+        let mut session = new_ephemeral_session(working_dir, &parent_session_id, seed);
+        session.snapshot["workingDirIsHome"] = parent
+            .snapshot
+            .get("workingDirIsHome")
+            .cloned()
+            .unwrap_or(json!(false));
         let snapshot = session.snapshot.clone();
         // Insert but deliberately do NOT set active_session_id and do NOT
         // save_state — ephemeral sessions are in-memory only.
@@ -703,6 +712,8 @@ pub(crate) fn bind_project(payload: Value) -> AgentRuntimeResult<Value> {
             "session is already bound to a project and cannot be rebound".to_string(),
         ));
     }
+    let working_dir = projects::normalized_path(&working_dir)?;
+    projects::register_snapshot(&json!({ "workingDir": working_dir, "workingDirIsHome": false }))?;
     set_string(&mut session.snapshot, "workingDir", working_dir.clone());
     set_bool(&mut session.snapshot, "projectBound", true);
     set_bool(&mut session.snapshot, "workingDirIsHome", false);

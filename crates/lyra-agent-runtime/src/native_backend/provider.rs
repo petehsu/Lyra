@@ -23,6 +23,7 @@ mod scheduler_tests;
 #[cfg(test)]
 #[path = "provider/stop_signal_tests.test.rs"]
 mod stop_signal_tests;
+pub(crate) mod streaming_tools;
 mod usage;
 
 pub(crate) use cache_state::*;
@@ -75,9 +76,16 @@ struct ProviderRequestLane {
     capacity: usize,
     consecutive_successes: u8,
     next_ticket: u64,
-    waiting: VecDeque<(u64, bool)>,
+    waiting: VecDeque<(u64, RequestPriority)>,
     cooldown_until: Option<Instant>,
     backoff_attempt: u8,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum RequestPriority {
+    Foreground,
+    Worker,
+    Background,
 }
 
 struct ProviderRequestPermit {
@@ -137,9 +145,22 @@ async fn acquire_provider_request_permit(
     session_id: &str,
     cancellation: &CancellationToken,
 ) -> AgentRuntimeResult<ProviderRequestPermit> {
+    let priority = if is_subagent_session_id(session_id) {
+        RequestPriority::Worker
+    } else {
+        RequestPriority::Foreground
+    };
+    acquire_prioritized_provider_permit(provider, model, priority, cancellation).await
+}
+
+async fn acquire_prioritized_provider_permit(
+    provider: &NativeProviderProfile,
+    model: &str,
+    priority: RequestPriority,
+    cancellation: &CancellationToken,
+) -> AgentRuntimeResult<ProviderRequestPermit> {
     let scheduler = provider_request_scheduler();
     let key = provider_lane_key(provider, model);
-    let worker = is_subagent_session_id(session_id);
     let ticket = {
         let mut state = scheduler
             .state
@@ -153,7 +174,7 @@ async fn acquire_provider_request_permit(
             });
         let ticket = lane.next_ticket;
         lane.next_ticket = lane.next_ticket.wrapping_add(1);
-        enqueue_lane_ticket(&mut lane.waiting, ticket, worker);
+        enqueue_lane_ticket(&mut lane.waiting, ticket, priority);
         ticket
     };
     let _queued = ProviderQueueTicket {
@@ -206,14 +227,35 @@ async fn acquire_provider_request_permit(
     }
 }
 
-fn enqueue_lane_ticket(waiting: &mut VecDeque<(u64, bool)>, ticket: u64, worker: bool) {
-    if worker {
-        waiting.push_back((ticket, true));
-    } else if let Some(index) = waiting.iter().position(|(_, is_worker)| *is_worker) {
-        waiting.insert(index, (ticket, false));
-    } else {
-        waiting.push_back((ticket, false));
-    }
+fn enqueue_lane_ticket(
+    waiting: &mut VecDeque<(u64, RequestPriority)>,
+    ticket: u64,
+    priority: RequestPriority,
+) {
+    let index = waiting
+        .iter()
+        .position(|(_, queued)| *queued > priority)
+        .unwrap_or(waiting.len());
+    waiting.insert(index, (ticket, priority));
+}
+
+pub(crate) async fn scheduled_background_provider_request<
+    F: Future<Output = AgentRuntimeResult<ModelReply>>,
+>(
+    provider: &NativeProviderProfile,
+    model: &str,
+    request: F,
+) -> AgentRuntimeResult<ModelReply> {
+    let permit = acquire_prioritized_provider_permit(
+        provider,
+        model,
+        RequestPriority::Background,
+        &CancellationToken::default(),
+    )
+    .await?;
+    let result = request.await;
+    release_provider_request_permit(permit, &result);
+    result
 }
 
 fn remove_waiting_ticket(scheduler: &ProviderRequestScheduler, key: &str, ticket: u64) {
@@ -313,7 +355,7 @@ pub(crate) enum ModelToolChoice {
     None,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct ModelReply {
     pub(crate) content: Option<String>,
     pub(crate) reasoning_content: Option<String>,
@@ -413,6 +455,12 @@ pub(crate) struct ProviderStreamState {
     pub(crate) saw_refusal: bool,
     pub(crate) reasoning_replay: openai_chat::ReasoningAccumulator,
     pub(crate) tool_calls: HashMap<usize, openai_chat::StreamingToolCallAccumulator>,
+    /// Provider tool-call id → stream slot. A missing `index` must not fall
+    /// into slot 0 when that slot already belongs to another id.
+    pub(crate) tool_call_ids: HashMap<String, usize>,
+    /// Holds a trailing `<` that might open a textual `<tool_call>` so the
+    /// markup never becomes assistant text.
+    pub(crate) visible_markup_hold: String,
     pub(crate) saw_choice: bool,
     pub(crate) finish_reason: Option<String>,
     pub(crate) response_meta: ProviderResponseMeta,
@@ -530,13 +578,18 @@ mod lane_priority_tests {
     #[test]
     fn parent_tickets_queue_ahead_of_waiting_workers() {
         let mut waiting = VecDeque::new();
-        enqueue_lane_ticket(&mut waiting, 1, true);
-        enqueue_lane_ticket(&mut waiting, 2, true);
-        enqueue_lane_ticket(&mut waiting, 3, false);
-        enqueue_lane_ticket(&mut waiting, 4, true);
+        enqueue_lane_ticket(&mut waiting, 1, RequestPriority::Worker);
+        enqueue_lane_ticket(&mut waiting, 2, RequestPriority::Worker);
+        enqueue_lane_ticket(&mut waiting, 3, RequestPriority::Foreground);
+        enqueue_lane_ticket(&mut waiting, 4, RequestPriority::Worker);
         assert_eq!(
             waiting.into_iter().collect::<Vec<_>>(),
-            vec![(3, false), (1, true), (2, true), (4, true)]
+            vec![
+                (3, RequestPriority::Foreground),
+                (1, RequestPriority::Worker),
+                (2, RequestPriority::Worker),
+                (4, RequestPriority::Worker)
+            ]
         );
     }
 }

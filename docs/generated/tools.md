@@ -105,7 +105,6 @@ Total referenced paths: **91**.
 | `/tools/skills/list` | `skills` | manifest catalog, runtime adapter |
 | `/tools/skills/uninstall` | `skills` | manifest catalog, runtime adapter |
 | `/tools/software/inspect_capability` | `software` | manifest catalog, runtime adapter |
-| `/tools/software/invoke_capability` | `software` | manifest catalog, runtime adapter |
 | `/tools/software/list_capabilities` | `software` | manifest catalog, runtime adapter |
 | `/tools/software/read_state` | `software` | manifest catalog, runtime adapter |
 | `/tools/todo/read` | `todo` | manifest catalog, runtime adapter |

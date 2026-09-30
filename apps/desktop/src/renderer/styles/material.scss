@@ -35,7 +35,7 @@
   --lyra-effect-glass-soft: rgba(255, 255, 255, 0.05);
   --lyra-effect-glass-medium: rgba(255, 255, 255, 0.06);
   --lyra-effect-glass-hover: rgba(255, 255, 255, 0.28);
-  --lyra-effect-code-block-bg: rgba(0, 0, 0, 0.25);
+  --lyra-effect-code-block-bg: var(--lyra-app-muted-bg);
   --lyra-effect-control-raised-bg: rgba(255, 255, 255, 0.9);
   --lyra-effect-debug-panel-bg: rgba(30, 32, 36, 0.95);
   --lyra-effect-permission-approve-hover: #8fffaa;

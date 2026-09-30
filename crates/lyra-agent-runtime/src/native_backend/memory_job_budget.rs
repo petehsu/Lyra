@@ -1,4 +1,4 @@
-use super::memory_event_trigger::{EVENT_FILE_CHANGE_RECORDED, EVENT_TOOL_CALL_COMPLETED};
+use super::memory_event_trigger::EVENT_FILE_CHANGE_RECORDED;
 
 #[derive(Clone, Debug)]
 pub(crate) struct JobDrainBudget {
@@ -28,14 +28,13 @@ pub(crate) fn drain_budget_for_queue_depth(depth: usize) -> JobDrainBudget {
 
 pub(crate) fn per_job_time_budget_ms(job_type: &str) -> u128 {
     match job_type {
-        EVENT_TOOL_CALL_COMPLETED | EVENT_FILE_CHANGE_RECORDED => 4_000,
+        EVENT_FILE_CHANGE_RECORDED => 4_000,
         _ => 2_000,
     }
 }
 
 pub(crate) fn job_type_order_clause() -> &'static str {
     "CASE job_type
-        WHEN 'tool_call_completed' THEN 10
         WHEN 'file_change_recorded' THEN 10
         ELSE 40
      END ASC, created_at ASC"

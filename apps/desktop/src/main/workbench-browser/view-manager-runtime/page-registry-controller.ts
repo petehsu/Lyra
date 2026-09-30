@@ -190,6 +190,7 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
   const pendingLoadAddressByTabId = new Map<string, string>();
 
   const knownPages = new Map<string, WorkbenchBrowserPageSpec>();
+  const pendingAgentPages = new Map<string, number>();
   const getEntry = (tabId: string): BrowserPageEntry | undefined => {
     const entry = entries.get(tabId);
     return entry && !entry.isDestroyed && !entry.webContents.isDestroyed() ? entry : undefined;
@@ -201,6 +202,15 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
     if (!spec) return undefined; // A closed/unknown tab is never resurrected.
     const runtime = host.readTombstoneRuntime(tabId);
     return ensureEntry({...spec, address:runtime?.address ?? spec.address}, true) ?? undefined;
+  };
+  const prepareAgentPage = (tabId: string, address: string): BrowserPageEntry | null => {
+    const existing = getEntry(tabId);
+    if (existing) return existing;
+    const spec: WorkbenchBrowserPageSpec = { tabId, address, isActive: false, isVisible: true };
+    knownPages.set(tabId, spec);
+    // A topology echo that has not seen this tab yet must not destroy it.
+    pendingAgentPages.set(tabId, Date.now() + 10_000);
+    return ensureEntry(spec, true);
   };
 
   const hasEntry = (tabId: string): boolean => entries.has(tabId);
@@ -801,8 +811,14 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
     const nextTabIds = new Set(knownPages.keys());
     for (const [tabId, entry] of entries) {
       if (nextTabIds.has(tabId)) {
+        pendingAgentPages.delete(tabId);
         continue;
       }
+      const pendingUntil = pendingAgentPages.get(tabId);
+      if (pendingUntil !== undefined && pendingUntil > Date.now()) {
+        continue;
+      }
+      pendingAgentPages.delete(tabId);
       // A closed tab has no restore target. Capturing its full DOM snapshot
       // here made rapid tab closes run several expensive page scripts at once.
       destroyEntry(entry, true);
@@ -1117,6 +1133,7 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
     findFrameInWebContents,
     getEntry,
     ensureAgentEntry,
+    prepareAgentPage,
     goBack,
     goForward,
     hasEntry,

@@ -8,9 +8,11 @@ import {
   type ReactNode
 } from "react";
 import { Streamdown, StreamdownContext, type StreamdownProps } from "streamdown";
+import remend from "remend";
 
 import { LyraImage, LyraLink } from "./streamdown-components";
-import { LyraMarkdownPre } from "./markdown-code-block";
+import { LyraMarkdownPre, MarkdownStreamingContext } from "./markdown-code-block";
+import { LyraMarkdownTable } from "./markdown-table";
 import { splitSettledMarkdown } from "./markdown-stream-split";
 import { normalizeAiLatex } from "./normalize-ai-latex";
 import { lyraRehypePlugins, lyraRemarkPlugins } from "./rich-markdown-plugins";
@@ -36,6 +38,7 @@ function LyraDetails({ children, node: _node, ...props }: ComponentProps<"detail
   readonly node?: unknown;
 }) {
   const arrangeMedia = useContext(ArrangeMediaContext);
+  const streaming = useContext(MarkdownStreamingContext);
   const context = useContext(StreamdownContext);
   const childNodes = Children.toArray(children);
   const summaryIndex = childNodes.findIndex((child) =>
@@ -55,7 +58,7 @@ function LyraDetails({ children, node: _node, ...props }: ComponentProps<"detail
           <LyraMarkdown
             arrangeMedia={arrangeMedia}
             content={rawBody}
-            streaming={context.isAnimating}
+            streaming={streaming}
             {...(context.linkSafety === undefined ? {} : { linkSafety: context.linkSafety })}
           />
         ) : bodyNodes}
@@ -80,7 +83,8 @@ const components = {
   details: LyraDetails,
   img: LyraImage,
   pre: LyraMarkdownPre,
-  summary: LyraSummary
+  summary: LyraSummary,
+  table: LyraMarkdownTable
 } as NonNullable<StreamdownProps["components"]>;
 
 // text-only avoids temporary placeholder links becoming clickable while the
@@ -108,23 +112,14 @@ const defaultLinkSafety = { enabled: true } satisfies NonNullable<
   StreamdownProps["linkSafety"]
 >;
 
-// Streamdown only skips useTransition when `animated` is a truthy plugin
-// config. Duration 0 does not fade; isAnimating=false keeps the plugin off.
-const liveStreamdownAnimated = { duration: 0 } as const;
-
 /**
  * The one rich-document renderer used by chat, file preview, plan previews
- * and temporary chat. Settled Markdown chunks keep a stable Streamdown instance so finishing
- * a response does not swap to a different parser or DOM shape. Only the live
- * tail re-parses while tokens arrive.
- *
- * Streamdown 2.5 `mode="streaming"` keeps the previous block tree in useState
- * and, when `animated` is unset, commits the next tree through useTransition.
- * Token bursts interrupt that update until the stream goes idle — a few words
- * paint, then the rest dumps at the end. A zero-duration `animated` object
- * takes Streamdown's synchronous setState path. `isAnimating` stays false so
- * the rehype fade plugin (also gated on that flag) does not restrobe old text.
- * Settled chunks use static mode and paint in the same turn.
+ * and temporary chat. Use Streamdown's own remend tolerance for the live tail,
+ * then keep its synchronous static tree throughout the response. Switching
+ * Streamdown 2.5 between streaming and static changes its internal tree and
+ * remounts code controls at completion; its transition path can also starve
+ * during token bursts. This keeps one parser/DOM path without either problem.
+ * Settled chunks retain their source and skip reparsing as before.
  */
 export function LyraMarkdown({
   arrangeMedia = true,
@@ -156,19 +151,19 @@ export function LyraMarkdown({
       components={components}
       controls={false}
       dir="auto"
-      animated={live ? liveStreamdownAnimated : false}
+      animated={false}
       isAnimating={false}
       lineNumbers={false}
       linkSafety={linkSafety}
-      mode={live ? "streaming" : "static"}
+      mode="static"
       normalizeHtmlIndentation
-      parseIncompleteMarkdown={live}
+      parseIncompleteMarkdown={false}
       plugins={plugins}
       rehypePlugins={lyraRehypePlugins}
       remarkPlugins={lyraRemarkPlugins}
       remend={streamingTolerance}
     >
-      {body}
+      {live ? remend(body, streamingTolerance) : body}
     </Streamdown>
   );
 
@@ -197,8 +192,10 @@ export function LyraMarkdown({
   );
 
   return (
-    <ArrangeMediaContext.Provider value={arrangeMedia}>
-      {body}
-    </ArrangeMediaContext.Provider>
+    <MarkdownStreamingContext.Provider value={streaming}>
+      <ArrangeMediaContext.Provider value={arrangeMedia}>
+        {body}
+      </ArrangeMediaContext.Provider>
+    </MarkdownStreamingContext.Provider>
   );
 }

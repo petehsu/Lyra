@@ -64,6 +64,37 @@ describe("ai-panel-drag-attach", () => {
     });
   });
 
+  test("attaches the open file when the dragged tab is an image viewer", async () => {
+    clearWorkspaceTabDragPayload();
+    const writer = createEmptyDataTransfer();
+    writeWorkspaceTabDragPayload(writer, "tab-image");
+    const imageTab: WorkspaceTab = {
+      ...workspaceTab("tab-image"),
+      pageKind: "app",
+      appId: "image-viewer",
+      title: "diagram.png",
+      filePath: "/tmp/diagram.png",
+      displayAddress: "lyra://app/image-viewer/image-1"
+    };
+
+    const action = await resolveAiPanelDragAttachAction(
+      createEmptyDataTransfer(),
+      [imageTab],
+      []
+    );
+
+    expect(action?.kind).toBe("images");
+    if (action?.kind !== "images") {
+      return;
+    }
+    expect(action.images[0]).toMatchObject({
+      source: "/tmp/diagram.png",
+      workspaceTabId: "tab-image",
+      workspaceTabPageKind: "image-viewer",
+      workspaceTabAddress: "/tmp/diagram.png"
+    });
+  });
+
   test("returns null after in-memory payload is cleared before resolve", async () => {
     clearWorkspaceTabDragPayload();
     const writer = createEmptyDataTransfer();

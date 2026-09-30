@@ -95,6 +95,68 @@ pub(crate) fn sanitize_truncated_assistant_text(text: &str) -> Option<String> {
     (!sanitized.trim().is_empty()).then_some(sanitized)
 }
 
+const TEXTUAL_TOOL_MARKUP: &[&str] = &["<tool_call", "<function="];
+const TEXTUAL_TOOL_MARKUP_END: &str = "</tool_call>";
+
+/// Drop Hermes/Qwen `<tool_call><function=...></tool_call>` from assistant
+/// text. Structured `tool_calls` are the only tool channel. The markup is not
+/// parsed into a call.
+pub(crate) fn drain_textual_tool_markup(hold: &mut String, incoming: &str) -> String {
+    hold.push_str(incoming);
+    let mut visible = String::new();
+    loop {
+        let Some(start) = earliest_textual_tool_markup(hold) else {
+            let keep = textual_tool_markup_prefix_len(hold);
+            let emit = hold.len() - keep;
+            visible.push_str(&hold[..emit]);
+            hold.replace_range(..emit, "");
+            return visible;
+        };
+        visible.push_str(&hold[..start]);
+        if let Some(relative_end) = hold[start..].find(TEXTUAL_TOOL_MARKUP_END) {
+            let end = start + relative_end + TEXTUAL_TOOL_MARKUP_END.len();
+            hold.replace_range(..end, "");
+            continue;
+        }
+        let rest = hold.split_off(start);
+        *hold = rest;
+        return visible;
+    }
+}
+
+/// Stream finished. An unclosed `<tool_call>` / `<function=` is discarded.
+/// A trailing `<` that never became markup is emitted.
+pub(crate) fn finish_textual_tool_markup(hold: &mut String) -> String {
+    let visible = drain_textual_tool_markup(hold, "");
+    if earliest_textual_tool_markup(hold).is_some() {
+        hold.clear();
+        return visible;
+    }
+    let tail = std::mem::take(hold);
+    let mut visible = visible;
+    visible.push_str(&tail);
+    visible
+}
+
+fn earliest_textual_tool_markup(text: &str) -> Option<usize> {
+    TEXTUAL_TOOL_MARKUP
+        .iter()
+        .filter_map(|marker| text.find(marker))
+        .min()
+}
+
+fn textual_tool_markup_prefix_len(text: &str) -> usize {
+    let mut best = 0;
+    for marker in TEXTUAL_TOOL_MARKUP {
+        for len in 1..marker.len() {
+            if text.ends_with(&marker[..len]) {
+                best = best.max(len);
+            }
+        }
+    }
+    best
+}
+
 pub(crate) fn contains_leaked_internal_protocol_markers(text: &str) -> bool {
     internal_protocol_markers()
         .iter()
@@ -415,4 +477,31 @@ fn browser_tool_classification_includes_provider_visible_names() {
     ] {
         assert!(!is_browser_tool_name(name));
     }
+}
+
+#[test]
+fn textual_tool_markup_is_dropped_and_prose_around_it_stays() {
+    let mut hold = String::new();
+    let first = drain_textual_tool_markup(&mut hold, "收尾：");
+    let second = drain_textual_tool_markup(
+        &mut hold,
+        "<tool_call><function=write_stdin><parameter=chars>\u{3}</parameter></function></tool_call>",
+    );
+    let tail = finish_textual_tool_markup(&mut hold);
+    assert_eq!(format!("{first}{second}{tail}"), "收尾：");
+    assert!(hold.is_empty());
+}
+
+#[test]
+fn textual_tool_markup_split_across_chunks_does_not_leak() {
+    let mut hold = String::new();
+    let mut visible = String::new();
+    for piece in [
+        "看一下 <too",
+        "l_call><function=exec_command></function></tool_call> 完",
+    ] {
+        visible.push_str(&drain_textual_tool_markup(&mut hold, piece));
+    }
+    visible.push_str(&finish_textual_tool_markup(&mut hold));
+    assert_eq!(visible, "看一下  完");
 }

@@ -1580,6 +1580,11 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentProviderOptionsUpdate,
         request
       ) as Promise<AgentModelCatalogSnapshot>,
+    listProjects: () => ipcRenderer.invoke(LYRA_CHANNELS.agentProjectsList),
+    registerProject: (request) => ipcRenderer.invoke(LYRA_CHANNELS.agentProjectsRegister, request),
+    getProjectSettings: (request) => ipcRenderer.invoke(LYRA_CHANNELS.agentProjectsSettings, request),
+    setProjectOverride: (request) => ipcRenderer.invoke(LYRA_CHANNELS.agentProjectsSetOverride, request),
+    setMcpEnabled: (request) => ipcRenderer.invoke(LYRA_CHANNELS.agentMcpSetEnabled, request),
     listAgentSkills: () =>
       ipcRenderer.invoke(LYRA_CHANNELS.agentSkillsList) as Promise<AgentSkillsListResponse>,
     inspectAgentSkill: (request: AgentSkillInspectRequest) =>
@@ -1627,8 +1632,8 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
         LYRA_CHANNELS.agentSkillUpdateStoreConfig,
         request
       ) as Promise<AgentSkillStoreResponse>,
-    listMcpServers: (request) =>
-      ipcRenderer.invoke(LYRA_CHANNELS.agentMcpList, request) as Promise<AgentMcpListResponse>,
+    listMcpServers: () =>
+      ipcRenderer.invoke(LYRA_CHANNELS.agentMcpList) as Promise<AgentMcpListResponse>,
     upsertMcpServer: (request: AgentMcpServerUpsertRequest) =>
       ipcRenderer.invoke(
         LYRA_CHANNELS.agentMcpUpsert,
@@ -1775,6 +1780,7 @@ const createLyraDesktopApi = (): LyraDesktopApi => ({
     }
   },
   softwareCapabilities: {
+    publish: (software) => ipcRenderer.invoke(LYRA_CHANNELS.softwareCapabilitiesSnapshot, software) as Promise<void>,
     registerHandler: (handler) => {
       ensureSoftwareCapabilitiesBridge();
       softwareCapabilitiesHandler = handler;

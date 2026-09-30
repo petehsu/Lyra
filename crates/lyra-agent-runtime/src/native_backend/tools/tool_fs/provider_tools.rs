@@ -15,8 +15,9 @@ pub(crate) fn model_provider_tools() -> Vec<Value> {
 pub(crate) fn root_summary_for_scene(
     scene: &str,
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
+    root: Option<&str>,
 ) -> Value {
-    runtime_registry_with_dispatcher(dispatcher).root_summary_for_scene(ToolScene::parse(scene))
+    runtime_registry_for_project(dispatcher, root).root_summary_for_scene(ToolScene::parse(scene))
 }
 
 pub(crate) fn pinned_handles_for_scene(

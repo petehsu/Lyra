@@ -149,14 +149,20 @@ fn streaming_parser_emits_delta_and_collects_tool_call() {
         .collect::<Vec<_>>();
     assert_eq!(
         event_kinds,
-        ["messageCommitted", "messageDelta", "messageCommitted"]
+        [
+            "messageCommitted",
+            "messageDelta",
+            "messageDelta",
+            "messageCommitted"
+        ]
     );
     let delta_events = session_events
         .iter()
         .filter(|event| event["kind"].as_str() == Some("messageDelta"))
         .collect::<Vec<_>>();
-    assert_eq!(delta_events.len(), 1);
-    assert_eq!(delta_events[0]["delta"].as_str(), Some("Hello"));
+    assert_eq!(delta_events.len(), 2);
+    assert_eq!(delta_events[0]["delta"].as_str(), Some("Hel"));
+    assert_eq!(delta_events[1]["delta"].as_str(), Some("lo"));
     assert!(
         delta_events
             .iter()
@@ -179,7 +185,7 @@ fn streaming_parser_emits_delta_and_collects_tool_call() {
 }
 
 #[test]
-fn streaming_parser_batches_single_character_deltas() {
+fn streaming_parser_forwards_single_character_deltas_without_waiting_for_another_chunk() {
     let backend = LyraAgentBackend;
     let created = backend
         .call_agent_method(
@@ -235,10 +241,10 @@ fn streaming_parser_batches_single_character_deltas() {
         .collect::<Vec<_>>()
         .join("");
     assert_eq!(streamed_text, expected);
-    assert!(
-        (8..=20).contains(&delta_events.len()),
-        "expected frame-scale batches, got {}",
-        delta_events.len()
+    assert_eq!(
+        delta_events.len(),
+        300,
+        "frame batching belongs to the renderer"
     );
     backend.clear_event_callback();
 }
@@ -397,14 +403,20 @@ fn streaming_parser_commits_final_answer_once_without_tool_calls() {
         .collect::<Vec<_>>();
     assert_eq!(
         event_kinds,
-        ["messageCommitted", "messageDelta", "messageCommitted"]
+        [
+            "messageCommitted",
+            "messageDelta",
+            "messageDelta",
+            "messageCommitted"
+        ]
     );
     let delta_events = session_events
         .iter()
         .filter(|event| event["kind"].as_str() == Some("messageDelta"))
         .collect::<Vec<_>>();
-    assert_eq!(delta_events.len(), 1);
-    assert_eq!(delta_events[0]["delta"].as_str(), Some("Hello"));
+    assert_eq!(delta_events.len(), 2);
+    assert_eq!(delta_events[0]["delta"].as_str(), Some("Hel"));
+    assert_eq!(delta_events[1]["delta"].as_str(), Some("lo"));
     assert!(
         delta_events
             .iter()
@@ -671,7 +683,10 @@ fn streaming_parser_classifies_missing_terminal_event_as_transport_interruption(
             ..
         }
     ));
-    assert!(!committed_any);
+    assert!(
+        committed_any,
+        "visible reasoning must prohibit replay of the original request"
+    );
 }
 
 #[test]

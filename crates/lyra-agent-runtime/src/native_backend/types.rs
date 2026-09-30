@@ -8,7 +8,6 @@ pub(crate) struct NativeRuntimeState {
     pub(crate) sessions: HashMap<String, NativeSession>,
     pub(crate) active_session_id: Option<String>,
     pub(crate) config: NativeConfig,
-    pub(crate) active_skills: HashSet<String>,
     pub(crate) pending_permissions: HashMap<String, PermissionRequest>,
     pub(crate) pending_clarifications: HashMap<String, ClarificationRequest>,
     pub(crate) suppressed_tool_usage_by_turn: HashMap<String, HashSet<String>>,
@@ -35,8 +34,6 @@ pub(crate) struct NativeStateFile {
     pub(crate) tool_usage_cache: HashMap<String, ToolUsageCacheEntry>,
     pub(crate) active_session_id: Option<String>,
     pub(crate) config: NativeConfig,
-    #[serde(default)]
-    pub(crate) active_skills: HashSet<String>,
     #[serde(default)]
     pub(crate) pending_permissions: HashMap<String, PermissionRequest>,
     #[serde(default)]

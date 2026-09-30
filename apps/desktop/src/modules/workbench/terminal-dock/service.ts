@@ -894,12 +894,29 @@ export const syncTerminalSnapshotsState = (
   };
 };
 
+/** A bare `%` is a prompt marker, not a path. `%20` stays valid. */
+export const isReportableShellCwd = (value: string): boolean => {
+  if (!(value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value))) {
+    return false;
+  }
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] !== "%") {
+      continue;
+    }
+    if (!/^[0-9A-Fa-f]{2}$/.test(value.slice(index + 1, index + 3))) {
+      return false;
+    }
+    index += 2;
+  }
+  return true;
+};
+
 export const applyTerminalCwdChangedState = (
   state: TerminalDockState,
   event: TerminalCwdChangedEvent
 ): TerminalDockState => {
   const currentCwd = normalizeOptionalString(event.currentCwd) ?? normalizeOptionalString(event.cwd);
-  if (currentCwd === undefined) {
+  if (currentCwd === undefined || !isReportableShellCwd(currentCwd)) {
     return state;
   }
 

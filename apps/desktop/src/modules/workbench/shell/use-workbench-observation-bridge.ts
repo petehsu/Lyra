@@ -12,7 +12,8 @@ export const useWorkbenchObservationBridge = ({
   imageViewerModel,
   terminalModel,
   embeddedBrowserPages,
-  activateEmbeddedBrowserTab
+  activateEmbeddedBrowserTab,
+  closeEmbeddedBrowserTab
 }: WorkbenchObservationBridgeParams): void => {
   useEffect(() => {
     return attachWorkbenchObservationBridge({
@@ -23,10 +24,12 @@ export const useWorkbenchObservationBridge = ({
       imageViewerModel,
       terminalModel,
       ...(embeddedBrowserPages === undefined ? {} : { embeddedBrowserPages }),
-      ...(activateEmbeddedBrowserTab === undefined ? {} : { activateEmbeddedBrowserTab })
+      ...(activateEmbeddedBrowserTab === undefined ? {} : { activateEmbeddedBrowserTab }),
+      ...(closeEmbeddedBrowserTab === undefined ? {} : { closeEmbeddedBrowserTab })
     });
   }, [
     activateEmbeddedBrowserTab,
+    closeEmbeddedBrowserTab,
     desktopApi,
     embeddedBrowserPages,
     fileEditorModel,

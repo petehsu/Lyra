@@ -41,44 +41,67 @@ fn browser_action_requires_effect(display_name: &str, action: &str) -> bool {
     )
 }
 
-fn parse_browser_action_effect(
-    input: &Value,
-) -> Result<BrowserActionEffect, BrowserActionEffectFailure> {
-    let Some(effect) = input.get("effect").and_then(Value::as_str) else {
-        return Err(BrowserActionEffectFailure {
-            code: "missing_browser_action_effect",
-            message: "State-changing browser actions require a declared effect.".to_string(),
-            detail: json!({ "requiredField": "effect" }),
-        });
-    };
-    let parsed = match effect {
-        "observe" => BrowserActionEffect::Observe,
-        "navigate" => BrowserActionEffect::Navigate,
-        "editDraft" => BrowserActionEffect::EditDraft,
-        "submitExternal" => BrowserActionEffect::SubmitExternal,
-        "authorize" => BrowserActionEffect::Authorize,
-        "purchase" => BrowserActionEffect::Purchase,
-        "delete" => BrowserActionEffect::Delete,
-        "upload" => BrowserActionEffect::Upload,
-        "download" => BrowserActionEffect::Download,
-        "communicate" => BrowserActionEffect::Communicate,
-        "unknown" => {
-            return Err(BrowserActionEffectFailure {
-                code: "browser_action_effect_unknown",
-                message: "Browser action effect is unknown; Lyra failed closed.".to_string(),
-                detail: json!({ "effect": effect }),
-            });
-        }
-        _ => {
-            return Err(BrowserActionEffectFailure {
-                code: "invalid_browser_action_effect",
-                message: "Browser action effect is not part of the native action-effect contract."
-                    .to_string(),
-                detail: json!({ "effect": effect }),
-            });
-        }
-    };
-    Ok(parsed)
+fn effect_name(effect: BrowserActionEffect) -> &'static str {
+    match effect {
+        BrowserActionEffect::Observe => "observe",
+        BrowserActionEffect::Navigate => "navigate",
+        BrowserActionEffect::EditDraft => "editDraft",
+        BrowserActionEffect::SubmitExternal => "submitExternal",
+        BrowserActionEffect::Authorize => "authorize",
+        BrowserActionEffect::Purchase => "purchase",
+        BrowserActionEffect::Delete => "delete",
+        BrowserActionEffect::Upload => "upload",
+        BrowserActionEffect::Download => "download",
+        BrowserActionEffect::Communicate => "communicate",
+    }
+}
+
+fn declared_browser_action_effect(input: &Value) -> Option<BrowserActionEffect> {
+    match input.get("effect").and_then(Value::as_str) {
+        Some("observe") => Some(BrowserActionEffect::Observe),
+        Some("navigate") => Some(BrowserActionEffect::Navigate),
+        Some("editDraft") => Some(BrowserActionEffect::EditDraft),
+        Some("submitExternal") => Some(BrowserActionEffect::SubmitExternal),
+        Some("authorize") => Some(BrowserActionEffect::Authorize),
+        Some("purchase") => Some(BrowserActionEffect::Purchase),
+        Some("delete") => Some(BrowserActionEffect::Delete),
+        Some("upload") => Some(BrowserActionEffect::Upload),
+        Some("download") => Some(BrowserActionEffect::Download),
+        Some("communicate") => Some(BrowserActionEffect::Communicate),
+        _ => None,
+    }
+}
+
+fn is_submission_effect(effect: BrowserActionEffect) -> bool {
+    matches!(
+        effect,
+        BrowserActionEffect::Communicate
+            | BrowserActionEffect::SubmitExternal
+            | BrowserActionEffect::Authorize
+            | BrowserActionEffect::Purchase
+            | BrowserActionEffect::Delete
+            | BrowserActionEffect::Upload
+            | BrowserActionEffect::Download
+    )
+}
+
+fn keep_mutating_effect(
+    declared: Option<BrowserActionEffect>,
+    fallback: BrowserActionEffect,
+) -> BrowserActionEffect {
+    match declared {
+        Some(effect) if effect != BrowserActionEffect::Observe => effect,
+        _ => fallback,
+    }
+}
+
+pub(crate) fn write_browser_action_effect(input: &mut Value, effect: BrowserActionEffect) {
+    if let Some(object) = input.as_object_mut() {
+        object.insert(
+            "effect".to_string(),
+            Value::String(effect_name(effect).to_string()),
+        );
+    }
 }
 
 fn browser_press_is_observational(input: &Value) -> bool {
@@ -120,107 +143,114 @@ pub(crate) fn validate_browser_action_effect(
     if !browser_action_requires_effect(display_name, action) {
         return Ok(None);
     }
-    let effect = parse_browser_action_effect(input)?;
+    // The action is the operation. A parallel effect field is only kept when it
+    // names a real consequence of that same action (a click that purchases).
+    // A missing or contradictory declaration is replaced, not rejected.
+    let declared = declared_browser_action_effect(input);
     let interaction = input
         .get("interaction")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    let valid = match (display_name, action) {
-        ("lyra_lumen", "upload") => effect == BrowserActionEffect::Upload,
-        ("lyra_lumen", "navigate" | "reload") => effect == BrowserActionEffect::Navigate,
+    let effect = match (display_name, action) {
+        ("lyra_lumen", "upload") => BrowserActionEffect::Upload,
+        ("lyra_lumen", "navigate" | "reload") => BrowserActionEffect::Navigate,
+        ("lyra_lumen", "elevate") => BrowserActionEffect::Authorize,
         ("lyra_lumen", "type") => {
-            // The declared effect belongs to the final click when typing and
-            // submission are one operation. Do not downgrade its permission.
             if input
                 .get("thenClick")
                 .and_then(Value::as_str)
                 .is_some_and(|target| !target.trim().is_empty())
             {
-                matches!(
-                    effect,
-                    BrowserActionEffect::Communicate
-                        | BrowserActionEffect::SubmitExternal
-                        | BrowserActionEffect::Authorize
-                        | BrowserActionEffect::Purchase
-                        | BrowserActionEffect::Delete
-                        | BrowserActionEffect::Upload
-                        | BrowserActionEffect::Download
-                )
+                declared
+                    .filter(|effect| is_submission_effect(*effect))
+                    .unwrap_or(BrowserActionEffect::Communicate)
             } else {
-                effect == BrowserActionEffect::EditDraft
+                BrowserActionEffect::EditDraft
             }
         }
-        ("lyra_lumen", "elevate") => effect == BrowserActionEffect::Authorize,
-        ("lyra_lumen", "submit") => matches!(
-            effect,
-            BrowserActionEffect::SubmitExternal
-                | BrowserActionEffect::Authorize
-                | BrowserActionEffect::Purchase
-                | BrowserActionEffect::Delete
-                | BrowserActionEffect::Upload
-                | BrowserActionEffect::Download
-                | BrowserActionEffect::Communicate
-        ),
+        ("lyra_lumen", "submit") => declared
+            .filter(|effect| is_submission_effect(*effect))
+            .unwrap_or(BrowserActionEffect::SubmitExternal),
+        ("lyra_lumen", "dialog") => {
+            keep_mutating_effect(declared, BrowserActionEffect::Communicate)
+        }
         ("lyra_lumen", "act") => {
-            (interaction == "hover") == (effect == BrowserActionEffect::Observe)
+            if interaction == "hover" {
+                BrowserActionEffect::Observe
+            } else {
+                keep_mutating_effect(declared, BrowserActionEffect::EditDraft)
+            }
         }
         ("lyra_lumen", "vact") => {
             if let Some(steps) = input.get("steps").and_then(Value::as_array) {
-                !steps.is_empty()
-                    && steps.len() <= 16
-                    && steps.iter().all(|step| {
-                        let gesture = step
-                            .get("interaction")
-                            .and_then(Value::as_str)
-                            .unwrap_or("");
-                        matches!(
-                            gesture,
-                            "click"
-                                | "doubleClick"
-                                | "rightClick"
-                                | "hover"
-                                | "drag"
-                                | "scroll"
-                                | "type"
-                                | "press"
-                        ) && (effect != BrowserActionEffect::Observe
-                            || matches!(gesture, "hover" | "scroll"))
-                    })
+                if steps.is_empty() || steps.len() > 16 {
+                    return Err(BrowserActionEffectFailure {
+                        code: "invalid_browser_action",
+                        message: "Browser action sequence is not a valid operation.".to_string(),
+                        detail: json!({ "action": action, "steps": steps.len() }),
+                    });
+                }
+                let mut mutating = false;
+                for step in steps {
+                    let gesture = step
+                        .get("interaction")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    if !matches!(
+                        gesture,
+                        "click"
+                            | "doubleClick"
+                            | "rightClick"
+                            | "hover"
+                            | "drag"
+                            | "scroll"
+                            | "type"
+                            | "press"
+                    ) {
+                        return Err(BrowserActionEffectFailure {
+                            code: "invalid_browser_action",
+                            message: "Browser action sequence is not a valid operation."
+                                .to_string(),
+                            detail: json!({ "action": action, "interaction": gesture }),
+                        });
+                    }
+                    if !matches!(gesture, "hover" | "scroll") {
+                        mutating = true;
+                    }
+                }
+                if mutating {
+                    keep_mutating_effect(declared, BrowserActionEffect::EditDraft)
+                } else {
+                    BrowserActionEffect::Observe
+                }
+            } else if matches!(interaction, "hover" | "scroll") {
+                BrowserActionEffect::Observe
             } else {
-                matches!(interaction, "hover" | "scroll")
-                    == (effect == BrowserActionEffect::Observe)
+                keep_mutating_effect(declared, BrowserActionEffect::EditDraft)
             }
         }
         ("lyra_ax", "act") => {
-            matches!(interaction, "hover" | "focus") == (effect == BrowserActionEffect::Observe)
+            if matches!(interaction, "hover" | "focus") {
+                BrowserActionEffect::Observe
+            } else {
+                keep_mutating_effect(declared, BrowserActionEffect::EditDraft)
+            }
         }
         ("lyra_lumen" | "lyra_ax", "press") => {
             if browser_press_is_observational(input) {
-                matches!(
-                    effect,
-                    BrowserActionEffect::Observe | BrowserActionEffect::EditDraft
-                )
+                match declared {
+                    Some(BrowserActionEffect::Observe | BrowserActionEffect::EditDraft) => {
+                        declared.unwrap_or(BrowserActionEffect::Observe)
+                    }
+                    _ => BrowserActionEffect::Observe,
+                }
             } else {
-                effect != BrowserActionEffect::Observe
+                keep_mutating_effect(declared, BrowserActionEffect::EditDraft)
             }
         }
-        _ => effect != BrowserActionEffect::Observe,
+        _ => keep_mutating_effect(declared, BrowserActionEffect::EditDraft),
     };
-    if valid {
-        return Ok(Some(effect));
-    }
-    Err(BrowserActionEffectFailure {
-        code: "browser_action_effect_conflict",
-        message: "Declared browser action effect conflicts with the requested operation."
-            .to_string(),
-        detail: json!({
-            "displayName": display_name,
-            "action": action,
-            "interaction": input.get("interaction").cloned().unwrap_or(Value::Null),
-            "key": input.get("key").cloned().unwrap_or(Value::Null),
-            "effect": input.get("effect").cloned().unwrap_or(Value::Null),
-        }),
-    })
+    Ok(Some(effect))
 }
 
 pub(crate) async fn execute_host_tool_adapter(
@@ -264,7 +294,11 @@ pub(crate) async fn execute_host_tool_adapter(
         "toolStarted",
     );
     match validate_browser_action_effect(display_name, action, &input) {
-        Ok(effect) => effect,
+        Ok(effect) => {
+            if let Some(effect) = effect {
+                write_browser_action_effect(&mut input, effect);
+            }
+        }
         Err(failure) => {
             let output = json!({
                 "content": failure.message,
@@ -532,15 +566,6 @@ pub(crate) async fn execute_host_tool_adapter(
                 action,
                 &mut value,
             );
-            attach_software_image_evidence_artifact(
-                session_id,
-                turn_id,
-                tool_call_id,
-                display_name,
-                action,
-                &input,
-                &mut value,
-            );
             let activity_input = resolved_tool_activity_input(input.clone(), &value);
             let raw = attach_host_log_artifact(
                 session_id,
@@ -627,8 +652,17 @@ pub(crate) fn host_adapter_arguments(arguments: Value, action: &str) -> Value {
     Value::Object(input)
 }
 
-// Resolve only an omitted gesture. A caller's declared consequence is never
-// rewritten: policy and the desktop must see the same action the model requested.
+pub(crate) fn host_call_arguments(display_name: &str, arguments: Value, action: &str) -> Value {
+    // computer_act's catalog operation is "act". The model's action (focus,
+    // press, scroll) is the gesture the host executes.
+    if display_name == "lyra_computer" {
+        return arguments;
+    }
+    host_adapter_arguments(arguments, action)
+}
+
+// Resolve only an omitted gesture. The action, not a second effect field,
+// decides whether the call is observation or a mutation.
 fn default_browser_interaction(display_name: &str, action: &str, input: &mut Value) {
     if !matches!(
         (display_name, action),
@@ -686,13 +720,19 @@ fn browser_type_submit_does_not_downgrade_the_click_before_policy() {
                 .is_some()
         );
     }
-    for effect in ["observe", "editDraft", "navigate"] {
+    for effect in ["observe", "editDraft", "navigate", "click"] {
         let input = json!({"thenClick":"lumen:submit", "effect":effect});
-        assert!(validate_browser_action_effect("lyra_lumen", "type", &input).is_err());
+        assert_eq!(
+            validate_browser_action_effect("lyra_lumen", "type", &input).unwrap(),
+            Some(BrowserActionEffect::Communicate)
+        );
     }
     let mut missing = json!({"thenClick":"lumen:submit"});
     default_lumen_type_effect("lyra_lumen", "type", &mut missing);
-    assert!(validate_browser_action_effect("lyra_lumen", "type", &missing).is_err());
+    assert_eq!(
+        validate_browser_action_effect("lyra_lumen", "type", &missing).unwrap(),
+        Some(BrowserActionEffect::Communicate)
+    );
 }
 
 fn strip_untrusted_ax_authorization(display_name: &str, action: &str, input: &mut Value) {
@@ -827,7 +867,10 @@ mod tests {
         let mut request = json!({"interaction":"sequence","effect":"observe","steps":[
             {"interaction":"hover","mark":"1"},{"interaction":"click","mark":"2"}
         ]});
-        assert!(validate_browser_action_effect("lyra_lumen", "vact", &request).is_err());
+        assert_eq!(
+            validate_browser_action_effect("lyra_lumen", "vact", &request).unwrap(),
+            Some(BrowserActionEffect::EditDraft)
+        );
         request["effect"] = json!("editDraft");
         assert!(validate_browser_action_effect("lyra_lumen", "vact", &request).is_ok());
         request["steps"][1]["interaction"] = json!("invented");
@@ -835,27 +878,52 @@ mod tests {
     }
 
     #[test]
-    fn explicit_gestures_never_rewrite_declared_effects() {
+    fn action_assigns_effect_when_the_declaration_disagrees() {
         for (display, action) in [
             ("lyra_lumen", "act"),
             ("lyra_lumen", "vact"),
             ("lyra_ax", "act"),
         ] {
-            for (gesture, effect) in [("click", "observe"), ("hover", "delete")] {
-                let mut input = json!({"interaction":gesture,"effect":effect});
-                default_browser_interaction(display, action, &mut input);
-                assert_eq!(input["effect"], effect);
-                assert!(validate_browser_action_effect(display, action, &input).is_err());
-            }
-            let mut input = json!({"effect":"observe"});
-            default_browser_interaction(display, action, &mut input);
-            assert_eq!(input["interaction"], "click");
-            assert!(validate_browser_action_effect(display, action, &input).is_err());
+            let mut click = json!({"interaction":"click","effect":"observe"});
+            default_browser_interaction(display, action, &mut click);
+            assert_eq!(
+                validate_browser_action_effect(display, action, &click).unwrap(),
+                Some(BrowserActionEffect::EditDraft)
+            );
+            let mut hover = json!({"interaction":"hover","effect":"delete"});
+            default_browser_interaction(display, action, &mut hover);
+            assert_eq!(
+                validate_browser_action_effect(display, action, &hover).unwrap(),
+                Some(BrowserActionEffect::Observe)
+            );
+            let mut omitted = json!({"effect":"observe"});
+            default_browser_interaction(display, action, &mut omitted);
+            assert_eq!(omitted["interaction"], "click");
+            assert_eq!(
+                validate_browser_action_effect(display, action, &omitted).unwrap(),
+                Some(BrowserActionEffect::EditDraft)
+            );
         }
-        let mut input = json!({"effect":"observe"});
-        default_lumen_type_effect("lyra_lumen", "type", &mut input);
-        assert_eq!(input["effect"], "observe");
-        assert!(validate_browser_action_effect("lyra_lumen", "type", &input).is_err());
+        let mut typed = json!({"effect":"observe"});
+        default_lumen_type_effect("lyra_lumen", "type", &mut typed);
+        assert_eq!(
+            validate_browser_action_effect("lyra_lumen", "type", &typed).unwrap(),
+            Some(BrowserActionEffect::EditDraft)
+        );
+        assert_eq!(
+            validate_browser_action_effect("lyra_lumen", "elevate", &json!({"effect":"observe"}))
+                .unwrap(),
+            Some(BrowserActionEffect::Authorize)
+        );
+        assert_eq!(
+            validate_browser_action_effect("lyra_lumen", "drag", &json!({"effect":"observe"}))
+                .unwrap(),
+            Some(BrowserActionEffect::EditDraft)
+        );
+        assert_eq!(
+            validate_browser_action_effect("lyra_lumen", "dialog", &json!({})).unwrap(),
+            Some(BrowserActionEffect::Communicate)
+        );
     }
 }
 
@@ -894,13 +962,14 @@ fn browser_selection_keys_allow_draft_navigation_but_never_downgrade_submit_keys
         "return",
         "SPACE",
     ] {
-        assert!(
+        assert_eq!(
             validate_browser_action_effect(
                 "lyra_lumen",
                 "press",
                 &json!({"key": key, "effect": "observe"})
             )
-            .is_err()
+            .unwrap(),
+            Some(BrowserActionEffect::EditDraft)
         );
     }
     assert!(
@@ -911,4 +980,17 @@ fn browser_selection_keys_allow_draft_navigation_but_never_downgrade_submit_keys
         )
         .is_ok()
     );
+}
+
+#[test]
+fn computer_act_keeps_the_model_action() {
+    let kept = host_call_arguments(
+        "lyra_computer",
+        json!({"action": "focus", "name": "v2rayN"}),
+        "act",
+    );
+    assert_eq!(kept["action"], "focus");
+    let replaced = host_call_arguments("lyra_lumen", json!({"interaction": "click"}), "act");
+    assert_eq!(replaced["action"], "act");
+    assert_eq!(replaced["interaction"], "click");
 }

@@ -1,4 +1,23 @@
 use serde_json::Value;
+use std::sync::{
+    Once,
+    atomic::{AtomicBool, Ordering},
+};
+
+static TOKENIZER_WARMUP: Once = Once::new();
+static TOKENIZER_READY: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn warm_tokenizer() {
+    TOKENIZER_WARMUP.call_once(|| {
+        std::thread::spawn(|| {
+            estimate_tokens("warmup");
+        });
+    });
+}
+
+pub(crate) fn tokenizer_ready() -> bool {
+    TOKENIZER_READY.load(Ordering::Acquire)
+}
 
 /// OpenAI-style high-detail ballpark for one raster image. Used so provider
 /// `image_url` data URLs are not BPE-tokenized as text (a 2.8MB JPEG was
@@ -33,7 +52,11 @@ pub(crate) fn estimate_tokens(text: &str) -> usize {
     // (o200k_base) thanks to the `tokenizer-tiktoken` feature this crate enables.
     // Accurate counts here keep context-window trimming and memory checkpoints
     // from under-counting CJK text and code.
-    lyra_agent_reader::estimate_tokens(text)
+    let tokens = lyra_agent_reader::estimate_tokens(text);
+    if !text.is_empty() {
+        TOKENIZER_READY.store(true, Ordering::Release);
+    }
+    tokens
 }
 
 #[cfg(test)]

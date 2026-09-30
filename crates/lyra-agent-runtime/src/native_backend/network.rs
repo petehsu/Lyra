@@ -1,5 +1,8 @@
 use super::*;
 
+mod clients;
+pub(crate) use clients::{provider_http_client, provider_http_client_async};
+
 const PROXY_ENV_VARS: &[&str] = &[
     "HTTPS_PROXY",
     "https_proxy",

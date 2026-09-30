@@ -8,6 +8,17 @@ import { LyraMarkdown } from "../LyraMarkdown";
 import { normalizeMermaidThemeColor } from "../streamdown-plugins";
 
 describe("LyraMarkdown", () => {
+  it("keeps footnotes and tables valid through streaming completion", () => {
+    const content = "See the note[^1].\n\n| Name | Value |\n| --- | --- |\n| first | **value** |\n\n[^1]: complete footnote";
+    const view = render(<LyraMarkdown content={content} streaming />);
+    expect(screen.getByRole("table").textContent).toContain("value");
+    expect(view.container.querySelector("sup a")).not.toBeNull();
+    view.rerender(<LyraMarkdown content={content} />);
+    expect(screen.getByRole("table").textContent).toContain("value");
+    expect(view.container.querySelector("sup a")).not.toBeNull();
+    expect(view.container.textContent).toContain("complete footnote");
+  });
+
   it("renders settled heading and live tail through the same streamdown pipeline", () => {
     const view = render(<LyraMarkdown content={"# Title\n\nBody still writing"} streaming />);
     expect(screen.getByRole("heading", { name: "Title" })).toBeTruthy();

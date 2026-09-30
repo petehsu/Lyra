@@ -69,6 +69,12 @@ const TOKEN_ESTIMATE_REFRESH_MS: i64 = 5_000;
 /// of reading the socket, throttling code generation to a crawl. A time gate
 /// keeps the meter fresh enough (5s) while making the hot path O(1).
 fn refresh_token_estimate_if_stale(snapshot: &mut Value) {
+    // The UI meter must never initialize the tokenizer under the session lock.
+    // Request budgeting still performs an exact count before sending a request.
+    if !super::token_estimate::tokenizer_ready() {
+        super::token_estimate::warm_tokenizer();
+        return;
+    }
     let now_ms = Utc::now().timestamp_millis();
     let stamped_at = snapshot
         .get("tokenEstimateAtMs")

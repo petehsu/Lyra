@@ -54,9 +54,7 @@ pub(crate) fn resolve_memory_layer(
 
 pub(crate) fn resolve_value_class(event_type: Option<&str>) -> String {
     match event_type {
-        Some("tool_call_completed") | Some("file_change_recorded") => {
-            VALUE_EXECUTION_EVIDENCE.to_string()
-        }
+        Some("file_change_recorded") => VALUE_EXECUTION_EVIDENCE.to_string(),
         Some("decision_recorded") => VALUE_CONTEXT.to_string(),
         _ => VALUE_SEMANTIC.to_string(),
     }

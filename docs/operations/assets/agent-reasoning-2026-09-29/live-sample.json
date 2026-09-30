@@ -1,0 +1,1621 @@
+{
+  "capturedAt": "2026-09-29T11:02:51.518243+00:00",
+  "sessionId": "session-38b86242-9637-4fa1-9033-726a13b34e90",
+  "durationMs": 20048.7,
+  "before": {
+    "readMs": 81.45,
+    "turnStatus": "running",
+    "activeTurnId": "turn-90a05707-7a33-407e-bdf0-f4213658c9bc",
+    "lastMessageId": "message-3344cce4-ae99-4f41-bb71-a4d71def226a",
+    "reasoningChars": 10413,
+    "visibleChars": 0,
+    "telemetry": {
+      "firstReasoningAtMs": 1790679696735,
+      "lastReasoningAtMs": 1790679771407,
+      "reasoningBytes": 10861,
+      "reasoningChars": 10413,
+      "reasoningChunkCount": 950
+    }
+  },
+  "after": {
+    "readMs": 51.05,
+    "turnStatus": "running",
+    "activeTurnId": "turn-90a05707-7a33-407e-bdf0-f4213658c9bc",
+    "lastMessageId": "message-3344cce4-ae99-4f41-bb71-a4d71def226a",
+    "reasoningChars": 13712,
+    "visibleChars": 0,
+    "telemetry": {
+      "firstReasoningAtMs": 1790679696735,
+      "lastReasoningAtMs": 1790679791566,
+      "reasoningBytes": 14665,
+      "reasoningChars": 13712,
+      "reasoningChunkCount": 1212
+    }
+  },
+  "eventCount": 262,
+  "characters": 3299,
+  "charactersPerSecond": 164.55,
+  "deliveryMs": {
+    "median": 1.2,
+    "max": 8.2
+  },
+  "interEventMs": {
+    "median": 73.4,
+    "max": 516.9
+  },
+  "events": [
+    {
+      "receivedAtMs": 1790679771539.9,
+      "kind": "messageReasoningDelta",
+      "chars": 21,
+      "emittedAtMs": 1790679771539
+    },
+    {
+      "receivedAtMs": 1790679771560.8,
+      "kind": "messageReasoningDelta",
+      "chars": 17,
+      "emittedAtMs": 1790679771560
+    },
+    {
+      "receivedAtMs": 1790679771937.3,
+      "kind": "messageReasoningDelta",
+      "chars": 21,
+      "emittedAtMs": 1790679771936
+    },
+    {
+      "receivedAtMs": 1790679771955.4,
+      "kind": "messageReasoningDelta",
+      "chars": 20,
+      "emittedAtMs": 1790679771954
+    },
+    {
+      "receivedAtMs": 1790679771972.6,
+      "kind": "messageReasoningDelta",
+      "chars": 21,
+      "emittedAtMs": 1790679771971
+    },
+    {
+      "receivedAtMs": 1790679771978.0,
+      "kind": "messageReasoningDelta",
+      "chars": 13,
+      "emittedAtMs": 1790679771977
+    },
+    {
+      "receivedAtMs": 1790679772002.8,
+      "kind": "messageReasoningDelta",
+      "chars": 6,
+      "emittedAtMs": 1790679772002
+    },
+    {
+      "receivedAtMs": 1790679772020.9,
+      "kind": "messageReasoningDelta",
+      "chars": 3,
+      "emittedAtMs": 1790679772020
+    },
+    {
+      "receivedAtMs": 1790679772088.5,
+      "kind": "messageReasoningDelta",
+      "chars": 28,
+      "emittedAtMs": 1790679772086
+    },
+    {
+      "receivedAtMs": 1790679772155.3,
+      "kind": "messageReasoningDelta",
+      "chars": 27,
+      "emittedAtMs": 1790679772154
+    },
+    {
+      "receivedAtMs": 1790679772230.0,
+      "kind": "messageReasoningDelta",
+      "chars": 6,
+      "emittedAtMs": 1790679772229
+    },
+    {
+      "receivedAtMs": 1790679772375.0,
+      "kind": "messageReasoningDelta",
+      "chars": 7,
+      "emittedAtMs": 1790679772374
+    },
+    {
+      "receivedAtMs": 1790679772395.3,
+      "kind": "messageReasoningDelta",
+      "chars": 19,
+      "emittedAtMs": 1790679772394
+    },
+    {
+      "receivedAtMs": 1790679772457.2,
+      "kind": "messageReasoningDelta",
+      "chars": 20,
+      "emittedAtMs": 1790679772456
+    },
+    {
+      "receivedAtMs": 1790679772642.6,
+      "kind": "messageReasoningDelta",
+      "chars": 20,
+      "emittedAtMs": 1790679772642
+    },
+    {
+      "receivedAtMs": 1790679772643.7,
+      "kind": "messageReasoningDelta",
+      "chars": 12,
+      "emittedAtMs": 1790679772642
+    },
+    {
+      "receivedAtMs": 1790679772698.3,
+      "kind": "messageReasoningDelta",
+      "chars": 6,
+      "emittedAtMs": 1790679772697
+    },
+    {
+      "receivedAtMs": 1790679772778.9,
+      "kind": "messageReasoningDelta",
+      "chars": 21,
+      "emittedAtMs": 1790679772778
+    },
+    {
+      "receivedAtMs": 1790679772850.9,
+      "kind": "messageReasoningDelta",
+      "chars": 23,
+      "emittedAtMs": 1790679772848
+    },
+    {
+      "receivedAtMs": 1790679772937.4,
+      "kind": "messageReasoningDelta",
+      "chars": 23,
+      "emittedAtMs": 1790679772934
+    },
+    {
+      "receivedAtMs": 1790679773031.2,
+      "kind": "messageReasoningDelta",
+      "chars": 19,
+      "emittedAtMs": 1790679773029
+    },
+    {
+      "receivedAtMs": 1790679773089.3,
+      "kind": "messageReasoningDelta",
+      "chars": 6,
+      "emittedAtMs": 1790679773088
+    },
+    {
+      "receivedAtMs": 1790679773157.1,
+      "kind": "messageReasoningDelta",
+      "chars": 7,
+      "emittedAtMs": 1790679773156
+    },
+    {
+      "receivedAtMs": 1790679773251.8,
+      "kind": "messageReasoningDelta",
+      "chars": 12,
+      "emittedAtMs": 1790679773245
+    },
+    {
+      "receivedAtMs": 1790679773319.1,
+      "kind": "messageReasoningDelta",
+      "chars": 23,
+      "emittedAtMs": 1790679773317
+    },
+    {
+      "receivedAtMs": 1790679773445.4,
+      "kind": "messageReasoningDelta",
+      "chars": 7,
+      "emittedAtMs": 1790679773444
+    },
+    {
+      "receivedAtMs": 1790679773448.6,
+      "kind": "messageReasoningDelta",
+      "chars": 8,
+      "emittedAtMs": 1790679773448
+    },
+    {
+      "receivedAtMs": 1790679773551.0,
+      "kind": "messageReasoningDelta",
+      "chars": 18,
+      "emittedAtMs": 1790679773549
+    },
+    {
+      "receivedAtMs": 1790679773601.3,
+      "kind": "messageReasoningDelta",
+      "chars": 21,
+      "emittedAtMs": 1790679773599
+    },
+    {
+      "receivedAtMs": 1790679773672.8,
+      "kind": "messageReasoningDelta",
+      "chars": 6,
+      "emittedAtMs": 1790679773672
+    },
+    {
+      "receivedAtMs": 1790679773757.4,
+      "kind": "messageReasoningDelta",
+      "chars": 10,
+      "emittedAtMs": 1790679773756
+    },
+    {
+      "receivedAtMs": 1790679773822.8,
+      "kind": "messageReasoningDelta",
+      "chars": 1,
+      "emittedAtMs": 1790679773822
+    },
+    {
+      "receivedAtMs": 1790679773896.6,
+      "kind": "messageReasoningDelta",
+      "chars": 9,
+      "emittedAtMs": 1790679773896
+    },
+    {
+      "receivedAtMs": 1790679773965.2,
+      "kind": "messageReasoningDelta",
+      "chars": 6,
+      "emittedAtMs": 1790679773964
+    },
+    {
+      "receivedAtMs": 1790679774048.6,
+      "kind": "messageReasoningDelta",
+      "chars": 4,
+      "emittedAtMs": 1790679774048
+    },
+    {
+      "receivedAtMs": 1790679774107.0,
+      "kind": "messageReasoningDelta",
+      "chars": 8,
+      "emittedAtMs": 1790679774106
+    },
+    {
+      "receivedAtMs": 1790679774203.7,
+      "kind": "messageReasoningDelta",
+      "chars": 4,
+      "emittedAtMs": 1790679774203
+    },
+    {
+      "receivedAtMs": 1790679774259.5,
+      "kind": "messageReasoningDelta",
+      "chars": 4,
+      "emittedAtMs": 1790679774258
+    },
+    {
+      "receivedAtMs": 1790679774331.3,
+      "kind": "messageReasoningDelta",
+      "chars": 2,
+      "emittedAtMs": 1790679774330
+    },
+    {
+      "receivedAtMs": 1790679774404.8,
+      "kind": "messageReasoningDelta",
+      "chars": 4,
+      "emittedAtMs": 1790679774404
+    },
+    {
+      "receivedAtMs": 1790679774472.9,
+      "kind": "messageReasoningDelta",
+      "chars": 3,
+      "emittedAtMs": 1790679774472
+    },
+    {
+      "receivedAtMs": 1790679774554.8,
+      "kind": "messageReasoningDelta",
+      "chars": 4,
+      "emittedAtMs": 1790679774554
+    },
+    {
+      "receivedAtMs": 1790679774630.1,
+      "kind": "messageReasoningDelta",
+      "chars": 16,
+      "emittedAtMs": 1790679774629
+    },
+    {
+      "receivedAtMs": 1790679774719.0,
+      "kind": "messageReasoningDelta",
+      "chars": 18,
+      "emittedAtMs": 1790679774717
+    },
+    {
+      "receivedAtMs": 1790679774794.4,
+      "kind": "messageReasoningDelta",
+      "chars": 25,
+      "emittedAtMs": 1790679774793
+    },
+    {
+      "receivedAtMs": 1790679774873.6,
+      "kind": "messageReasoningDelta",
+      "chars": 35,
+      "emittedAtMs": 1790679774873
+    },
+    {
+      "receivedAtMs": 1790679774946.1,
+      "kind": "messageReasoningDelta",
+      "chars": 18,
+      "emittedAtMs": 1790679774945
+    },
+    {
+      "receivedAtMs": 1790679775064.0,
+      "kind": "messageReasoningDelta",
+      "chars": 32,
+      "emittedAtMs": 1790679775063
+    },
+    {
+      "receivedAtMs": 1790679775105.3,
+      "kind": "messageReasoningDelta",
+      "chars": 30,
+      "emittedAtMs": 1790679775104
+    },
+    {
+      "receivedAtMs": 1790679775172.6,
+      "kind": "messageReasoningDelta",
+      "chars": 3,
+      "emittedAtMs": 1790679775172
+    },
+    {
+      "receivedAtMs": 1790679775254.4,
+      "kind": "messageReasoningDelta",
+      "chars": 34,
+      "emittedAtMs": 1790679775253
+    },
+    {
+      "receivedAtMs": 1790679775325.2,
+      "kind": "messageReasoningDelta",
+      "chars": 2,
+      "emittedAtMs": 1790679775324
+    },
+    {
+      "receivedAtMs": 1790679775396.7,
+      "kind": "messageReasoningDelta",
+      "chars": 6,
+      "emittedAtMs": 1790679775396
+    },
+    {
+      "receivedAtMs": 1790679775489.0,
+      "kind": "messageReasoningDelta",
+      "chars": 24,
+      "emittedAtMs": 1790679775488
+    },
+    {
+      "receivedAtMs": 1790679775559.3,
+      "kind": "messageReasoningDelta",
+      "chars": 24,
+      "emittedAtMs": 1790679775558
+    },
+    {
+      "receivedAtMs": 1790679775626.8,
+      "kind": "messageReasoningDelta",
+      "chars": 22,
+      "emittedAtMs": 1790679775626
+    },
+    {
+      "receivedAtMs": 1790679775704.0,
+      "kind": "messageReasoningDelta",
+      "chars": 32,
+      "emittedAtMs": 1790679775703
+    },
+    {
+      "receivedAtMs": 1790679775780.6,
+      "kind": "messageReasoningDelta",
+      "chars": 27,
+      "emittedAtMs": 1790679775780
+    },
+    {
+      "receivedAtMs": 1790679775859.0,
+      "kind": "messageReasoningDelta",
+      "chars": 24,
+      "emittedAtMs": 1790679775858
+    },
+    {
+      "receivedAtMs": 1790679775931.2,
+      "kind": "messageReasoningDelta",
+      "chars": 22,
+      "emittedAtMs": 1790679775930
+    },
+    {
+      "receivedAtMs": 1790679776021.6,
+      "kind": "messageReasoningDelta",
+      "chars": 30,
+      "emittedAtMs": 1790679776020
+    },
+    {
+      "receivedAtMs": 1790679776089.4,
+      "kind": "messageReasoningDelta",
+      "chars": 12,
+      "emittedAtMs": 1790679776088
+    },
+    {
+      "receivedAtMs": 1790679776164.5,
+      "kind": "messageReasoningDelta",
+      "chars": 9,
+      "emittedAtMs": 1790679776163
+    },
+    {
+      "receivedAtMs": 1790679776253.4,
+      "kind": "messageReasoningDelta",
+      "chars": 12,
+      "emittedAtMs": 1790679776252
+    },
+    {
+      "receivedAtMs": 1790679776320.8,
+      "kind": "messageReasoningDelta",
+      "chars": 32,
+      "emittedAtMs": 1790679776320
+    },
+    {
+      "receivedAtMs": 1790679776398.0,
+      "kind": "messageReasoningDelta",
+      "chars": 28,
+      "emittedAtMs": 1790679776397
+    },
+    {
+      "receivedAtMs": 1790679776537.9,
+      "kind": "messageReasoningDelta",
+      "chars": 31,
+      "emittedAtMs": 1790679776537
+    },
+    {
+      "receivedAtMs": 1790679776553.2,
+      "kind": "messageReasoningDelta",
+      "chars": 25,
+      "emittedAtMs": 1790679776552
+    },
+    {
+      "receivedAtMs": 1790679776643.9,
+      "kind": "messageReasoningDelta",
+      "chars": 26,
+      "emittedAtMs": 1790679776643
+    },
+    {
+      "receivedAtMs": 1790679776707.0,
+      "kind": "messageReasoningDelta",
+      "chars": 4,
+      "emittedAtMs": 1790679776706
+    },
+    {
+      "receivedAtMs": 1790679776784.8,
+      "kind": "messageReasoningDelta",
+      "chars": 7,
+      "emittedAtMs": 1790679776783
+    },
+    {
+      "receivedAtMs": 1790679776849.2,
+      "kind": "messageReasoningDelta",
+      "chars": 23,
+      "emittedAtMs": 1790679776848
+    },
+    {
+      "receivedAtMs": 1790679776922.3,
+      "kind": "messageReasoningDelta",
+      "chars": 17,
+      "emittedAtMs": 1790679776921
+    },
+    {
+      "receivedAtMs": 1790679776995.8,
+      "kind": "messageReasoningDelta",
+      "chars": 28,
+      "emittedAtMs": 1790679776995
+    },
+    {
+      "receivedAtMs": 1790679777068.4,
+      "kind": "messageReasoningDelta",
+      "chars": 16,
+      "emittedAtMs": 1790679777067
+    },
+    {
+      "receivedAtMs": 1790679777162.5,
+      "kind": "messageReasoningDelta",
+      "chars": 14,
+      "emittedAtMs": 1790679777161
+    },
+    {
+      "receivedAtMs": 1790679777217.7,
+      "kind": "messageReasoningDelta",
+      "chars": 18,
+      "emittedAtMs": 1790679777216
+    },
+    {
+      "receivedAtMs": 1790679777293.9,
+      "kind": "messageReasoningDelta",
+      "chars": 12,
+      "emittedAtMs": 1790679777293
+    },
+    {
+      "receivedAtMs": 1790679777359.4,
+      "kind": "messageReasoningDelta",
+      "chars": 31,
+      "emittedAtMs": 1790679777358
+    },
+    {
+      "receivedAtMs": 1790679777440.8,
+      "kind": "messageReasoningDelta",
+      "chars": 8,
+      "emittedAtMs": 1790679777440
+    },
+    {
+      "receivedAtMs": 1790679777518.5,
+      "kind": "messageReasoningDelta",
+      "chars": 33,
+      "emittedAtMs": 1790679777517
+    },
+    {
+      "receivedAtMs": 1790679777600.6,
+      "kind": "messageReasoningDelta",
+      "chars": 20,
+      "emittedAtMs": 1790679777599
+    },
+    {
+      "receivedAtMs": 1790679777663.2,
+      "kind": "messageReasoningDelta",
+      "chars": 12,
+      "emittedAtMs": 1790679777662
+    },
+    {
+      "receivedAtMs": 1790679777737.8,
+      "kind": "messageReasoningDelta",
+      "chars": 2,
+      "emittedAtMs": 1790679777737
+    },
+    {
+      "receivedAtMs": 1790679777817.7,
+      "kind": "messageReasoningDelta",
+      "chars": 2,
+      "emittedAtMs": 1790679777817
+    },
+    {
+      "receivedAtMs": 1790679777891.8,
+      "kind": "messageReasoningDelta",
+      "chars": 1,
+      "emittedAtMs": 1790679777891
+    },
+    {
+      "receivedAtMs": 1790679778070.1,
+      "kind": "messageReasoningDelta",
+      "chars": 1,
+      "emittedAtMs": 1790679778069
+    },
+    {
+      "receivedAtMs": 1790679778070.8,
+      "kind": "messageReasoningDelta",
+      "chars": 5,
+      "emittedAtMs": 1790679778069
+    },
+    {
+      "receivedAtMs": 1790679778124.6,
+      "kind": "messageReasoningDelta",
+      "chars": 3,
+      "emittedAtMs": 1790679778124
+    },
+    {
+      "receivedAtMs": 1790679778197.1,
+      "kind": "messageReasoningDelta",
+      "chars": 3,
+      "emittedAtMs": 1790679778196
+    },
+    {
+      "receivedAtMs": 1790679778271.4,
+      "kind": "messageReasoningDelta",
+      "chars": 20,
+      "emittedAtMs": 1790679778270
+    },
+    {
+      "receivedAtMs": 1790679778343.4,
+      "kind": "messageReasoningDelta",
+      "chars": 11,
+      "emittedAtMs": 1790679778342
+    },
+    {
+      "receivedAtMs": 1790679778412.2,
+      "kind": "messageReasoningDelta",
+      "chars": 9,
+      "emittedAtMs": 1790679778411
+    },
+    {
+      "receivedAtMs": 1790679778485.8,
+      "kind": "messageReasoningDelta",
+      "chars": 22,
+      "emittedAtMs": 1790679778485
+    },
+    {
+      "receivedAtMs": 1790679778602.2,
+      "kind": "messageReasoningDelta",
+      "chars": 1,
+      "emittedAtMs": 1790679778601
+    },
+    {
+      "receivedAtMs": 1790679778705.5,
+      "kind": "messageReasoningDelta",
+      "chars": 6,
+      "emittedAtMs": 1790679778704
+    },
+    {
+      "receivedAtMs": 1790679778713.0,
+      "kind": "messageReasoningDelta",
+      "chars": 22,
+      "emittedAtMs": 1790679778712
+    },
+    {
+      "receivedAtMs": 1790679778798.3,
+      "kind": "messageReasoningDelta",
+      "chars": 40,
+      "emittedAtMs": 1790679778797
+    },
+    {
+      "receivedAtMs": 1790679778866.4,
+      "kind": "messageReasoningDelta",
+      "chars": 31,
+      "emittedAtMs": 1790679778865
+    },
+    {
+      "receivedAtMs": 1790679778944.6,
+      "kind": "messageReasoningDelta",
+      "chars": 13,
+      "emittedAtMs": 1790679778944
+    },
+    {
+      "receivedAtMs": 1790679779017.5,
+      "kind": "messageReasoningDelta",
+      "chars": 32,
+      "emittedAtMs": 1790679779016
+    },
+    {
+      "receivedAtMs": 1790679779091.6,
+      "kind": "messageReasoningDelta",
+      "chars": 28,
+      "emittedAtMs": 1790679779091
+    },
+    {
+      "receivedAtMs": 1790679779608.5,
+      "kind": "messageReasoningDelta",
+      "chars": 10,
+      "emittedAtMs": 1790679779607
+    },
+    {
+      "receivedAtMs": 1790679779608.9,
+      "kind": "messageReasoningDelta",
+      "chars": 32,
+      "emittedAtMs": 1790679779608
+    },
+    {
+      "receivedAtMs": 1790679779609.3,
+      "kind": "messageReasoningDelta",
+      "chars": 15,
+      "emittedAtMs": 1790679779608
+    },
+    {
+      "receivedAtMs": 1790679779609.8,
+      "kind": "messageReasoningDelta",
+      "chars": 20,
+      "emittedAtMs": 1790679779609
+    },
+    {
+      "receivedAtMs": 1790679779689.6,
+      "kind": "messageReasoningDelta",
+      "chars": 33,
+      "emittedAtMs": 1790679779689
+    },
+    {
+      "receivedAtMs": 1790679779912.4,
+      "kind": "messageReasoningDelta",
+      "chars": 16,
+      "emittedAtMs": 1790679779911
+    },
+    {
+      "receivedAtMs": 1790679779912.8,
+      "kind": "messageReasoningDelta",
+      "chars": 2,
+      "emittedAtMs": 1790679779912
+    },
+    {
+      "receivedAtMs": 1790679779914.3,
+      "kind": "messageReasoningDelta",
+      "chars": 4,
+      "emittedAtMs": 1790679779913
+    },
+    {
+      "receivedAtMs": 1790679779915.3,
+      "kind": "messageReasoningDelta",
+      "chars": 2,
+      "emittedAtMs": 1790679779914
+    },
+    {
+      "receivedAtMs": 1790679779916.6,
+      "kind": "messageReasoningDelta",
+      "chars": 1,
+      "emittedAtMs": 1790679779915
+    },
+    {
+      "receivedAtMs": 1790679779965.1,
+      "kind": "messageReasoningDelta",
+      "chars": 16,
+      "emittedAtMs": 1790679779964
+    },
+    {
+      "receivedAtMs": 1790679780027.5,
+      "kind": "messageReasoningDelta",
+      "chars": 15,
+      "emittedAtMs": 1790679780026
+    },
+    {
+      "receivedAtMs": 1790679780105.4,
+      "kind": "messageReasoningDelta",
+      "chars": 5,
+      "emittedAtMs": 1790679780104
+    },
+    {
+      "receivedAtMs": 1790679780184.6,
+      "kind": "messageReasoningDelta",
+      "chars": 6,
+      "emittedAtMs": 1790679780184
+    },
+    {
+      "receivedAtMs": 1790679780256.5,
+      "kind": "messageReasoningDelta",
+      "chars": 22,
+      "emittedAtMs": 1790679780255
+    },
+    {
+      "receivedAtMs": 1790679780340.6,
+      "kind": "messageReasoningDelta",
+      "chars": 9,
+      "emittedAtMs": 1790679780340
+    },
+    {
+      "receivedAtMs": 1790679780415.6,
+      "kind": "messageReasoningDelta",
+      "chars": 6,
+      "emittedAtMs": 1790679780415
+    },
+    {
+      "receivedAtMs": 1790679780487.1,
+      "kind": "messageReasoningDelta",
+      "chars": 13,
+      "emittedAtMs": 1790679780486
+    },
+    {
+      "receivedAtMs": 1790679780605.7,
+      "kind": "messageReasoningDelta",
+      "chars": 8,
+      "emittedAtMs": 1790679780605
+    },
+    {
+      "receivedAtMs": 1790679780645.1,
+      "kind": "messageReasoningDelta",
+      "chars": 6,
+      "emittedAtMs": 1790679780644
+    },
+    {
+      "receivedAtMs": 1790679780879.0,
+      "kind": "messageReasoningDelta",
+      "chars": 1,
+      "emittedAtMs": 1790679780878
+    },
+    {
+      "receivedAtMs": 1790679780899.8,
+      "kind": "messageReasoningDelta",
+      "chars": 7,
+      "emittedAtMs": 1790679780899
+    },
+    {
+      "receivedAtMs": 1790679780907.7,
+      "kind": "messageReasoningDelta",
+      "chars": 2,
+      "emittedAtMs": 1790679780907
+    },
+    {
+      "receivedAtMs": 1790679780950.5,
+      "kind": "messageReasoningDelta",
+      "chars": 15,
+      "emittedAtMs": 1790679780950
+    },
+    {
+      "receivedAtMs": 1790679781025.5,
+      "kind": "messageReasoningDelta",
+      "chars": 3,
+      "emittedAtMs": 1790679781024
+    },
+    {
+      "receivedAtMs": 1790679781092.6,
+      "kind": "messageReasoningDelta",
+      "chars": 31,
+      "emittedAtMs": 1790679781092
+    },
+    {
+      "receivedAtMs": 1790679781174.9,
+      "kind": "messageReasoningDelta",
+      "chars": 10,
+      "emittedAtMs": 1790679781174
+    },
+    {
+      "receivedAtMs": 1790679781255.8,
+      "kind": "messageReasoningDelta",
+      "chars": 10,
+      "emittedAtMs": 1790679781255
+    },
+    {
+      "receivedAtMs": 1790679781437.3,
+      "kind": "messageReasoningDelta",
+      "chars": 37,
+      "emittedAtMs": 1790679781436
+    },
+    {
+      "receivedAtMs": 1790679781456.7,
+      "kind": "messageReasoningDelta",
+      "chars": 19,
+      "emittedAtMs": 1790679781456
+    },
+    {
+      "receivedAtMs": 1790679781488.6,
+      "kind": "messageReasoningDelta",
+      "chars": 24,
+      "emittedAtMs": 1790679781488
+    },
+    {
+      "receivedAtMs": 1790679781652.9,
+      "kind": "messageReasoningDelta",
+      "chars": 14,
+      "emittedAtMs": 1790679781652
+    },
+    {
+      "receivedAtMs": 1790679781653.6,
+      "kind": "messageReasoningDelta",
+      "chars": 37,
+      "emittedAtMs": 1790679781652
+    },
+    {
+      "receivedAtMs": 1790679781721.1,
+      "kind": "messageReasoningDelta",
+      "chars": 18,
+      "emittedAtMs": 1790679781720
+    },
+    {
+      "receivedAtMs": 1790679781965.3,
+      "kind": "messageReasoningDelta",
+      "chars": 12,
+      "emittedAtMs": 1790679781964
+    },
+    {
+      "receivedAtMs": 1790679781966.3,
+      "kind": "messageReasoningDelta",
+      "chars": 8,
+      "emittedAtMs": 1790679781965
+    },
+    {
+      "receivedAtMs": 1790679781966.9,
+      "kind": "messageReasoningDelta",
+      "chars": 9,
+      "emittedAtMs": 1790679781966
+    },
+    {
+      "receivedAtMs": 1790679782031.6,
+      "kind": "messageReasoningDelta",
+      "chars": 1,
+      "emittedAtMs": 1790679782030
+    },
+    {
+      "receivedAtMs": 1790679782097.8,
+      "kind": "messageReasoningDelta",
+      "chars": 19,
+      "emittedAtMs": 1790679782097
+    },
+    {
+      "receivedAtMs": 1790679782180.9,
+      "kind": "messageReasoningDelta",
+      "chars": 25,
+      "emittedAtMs": 1790679782179
+    },
+    {
+      "receivedAtMs": 1790679782271.7,
+      "kind": "messageReasoningDelta",
+      "chars": 29,
+      "emittedAtMs": 1790679782271
+    },
+    {
+      "receivedAtMs": 1790679782325.8,
+      "kind": "messageReasoningDelta",
+      "chars": 16,
+      "emittedAtMs": 1790679782325
+    },
+    {
+      "receivedAtMs": 1790679782398.3,
+      "kind": "messageReasoningDelta",
+      "chars": 28,
+      "emittedAtMs": 1790679782397
+    },
+    {
+      "receivedAtMs": 1790679782471.8,
+      "kind": "messageReasoningDelta",
+      "chars": 13,
+      "emittedAtMs": 1790679782471
+    },
+    {
+      "receivedAtMs": 1790679782549.2,
+      "kind": "messageReasoningDelta",
+      "chars": 2,
+      "emittedAtMs": 1790679782548
+    },
+    {
+      "receivedAtMs": 1790679782721.5,
+      "kind": "messageReasoningDelta",
+      "chars": 13,
+      "emittedAtMs": 1790679782720
+    },
+    {
+      "receivedAtMs": 1790679782749.9,
+      "kind": "messageReasoningDelta",
+      "chars": 5,
+      "emittedAtMs": 1790679782749
+    },
+    {
+      "receivedAtMs": 1790679782782.5,
+      "kind": "messageReasoningDelta",
+      "chars": 16,
+      "emittedAtMs": 1790679782781
+    },
+    {
+      "receivedAtMs": 1790679782866.6,
+      "kind": "messageReasoningDelta",
+      "chars": 15,
+      "emittedAtMs": 1790679782866
+    },
+    {
+      "receivedAtMs": 1790679782937.6,
+      "kind": "messageReasoningDelta",
+      "chars": 19,
+      "emittedAtMs": 1790679782937
+    },
+    {
+      "receivedAtMs": 1790679783011.0,
+      "kind": "messageReasoningDelta",
+      "chars": 16,
+      "emittedAtMs": 1790679783009
+    },
+    {
+      "receivedAtMs": 1790679783080.9,
+      "kind": "messageReasoningDelta",
+      "chars": 8,
+      "emittedAtMs": 1790679783080
+    },
+    {
+      "receivedAtMs": 1790679783171.1,
+      "kind": "messageReasoningDelta",
+      "chars": 11,
+      "emittedAtMs": 1790679783170
+    },
+    {
+      "receivedAtMs": 1790679783253.9,
+      "kind": "messageReasoningDelta",
+      "chars": 9,
+      "emittedAtMs": 1790679783250
+    },
+    {
+      "receivedAtMs": 1790679783323.2,
+      "kind": "messageReasoningDelta",
+      "chars": 6,
+      "emittedAtMs": 1790679783322
+    },
+    {
+      "receivedAtMs": 1790679783502.4,
+      "kind": "messageReasoningDelta",
+      "chars": 6,
+      "emittedAtMs": 1790679783501
+    },
+    {
+      "receivedAtMs": 1790679783518.1,
+      "kind": "messageReasoningDelta",
+      "chars": 6,
+      "emittedAtMs": 1790679783517
+    },
+    {
+      "receivedAtMs": 1790679783548.1,
+      "kind": "messageReasoningDelta",
+      "chars": 14,
+      "emittedAtMs": 1790679783547
+    },
+    {
+      "receivedAtMs": 1790679783661.1,
+      "kind": "messageReasoningDelta",
+      "chars": 10,
+      "emittedAtMs": 1790679783660
+    },
+    {
+      "receivedAtMs": 1790679783697.2,
+      "kind": "messageReasoningDelta",
+      "chars": 18,
+      "emittedAtMs": 1790679783696
+    },
+    {
+      "receivedAtMs": 1790679783781.2,
+      "kind": "messageReasoningDelta",
+      "chars": 32,
+      "emittedAtMs": 1790679783780
+    },
+    {
+      "receivedAtMs": 1790679783858.2,
+      "kind": "messageReasoningDelta",
+      "chars": 39,
+      "emittedAtMs": 1790679783857
+    },
+    {
+      "receivedAtMs": 1790679783945.3,
+      "kind": "messageReasoningDelta",
+      "chars": 2,
+      "emittedAtMs": 1790679783944
+    },
+    {
+      "receivedAtMs": 1790679784011.9,
+      "kind": "messageReasoningDelta",
+      "chars": 2,
+      "emittedAtMs": 1790679784011
+    },
+    {
+      "receivedAtMs": 1790679784090.3,
+      "kind": "messageReasoningDelta",
+      "chars": 9,
+      "emittedAtMs": 1790679784089
+    },
+    {
+      "receivedAtMs": 1790679784178.3,
+      "kind": "messageReasoningDelta",
+      "chars": 7,
+      "emittedAtMs": 1790679784177
+    },
+    {
+      "receivedAtMs": 1790679784254.4,
+      "kind": "messageReasoningDelta",
+      "chars": 4,
+      "emittedAtMs": 1790679784253
+    },
+    {
+      "receivedAtMs": 1790679784338.3,
+      "kind": "messageReasoningDelta",
+      "chars": 8,
+      "emittedAtMs": 1790679784337
+    },
+    {
+      "receivedAtMs": 1790679784445.1,
+      "kind": "messageReasoningDelta",
+      "chars": 7,
+      "emittedAtMs": 1790679784444
+    },
+    {
+      "receivedAtMs": 1790679784503.9,
+      "kind": "messageReasoningDelta",
+      "chars": 21,
+      "emittedAtMs": 1790679784503
+    },
+    {
+      "receivedAtMs": 1790679784575.6,
+      "kind": "messageReasoningDelta",
+      "chars": 8,
+      "emittedAtMs": 1790679784574
+    },
+    {
+      "receivedAtMs": 1790679784648.9,
+      "kind": "messageReasoningDelta",
+      "chars": 14,
+      "emittedAtMs": 1790679784647
+    },
+    {
+      "receivedAtMs": 1790679784733.4,
+      "kind": "messageReasoningDelta",
+      "chars": 9,
+      "emittedAtMs": 1790679784732
+    },
+    {
+      "receivedAtMs": 1790679784795.3,
+      "kind": "messageReasoningDelta",
+      "chars": 11,
+      "emittedAtMs": 1790679784794
+    },
+    {
+      "receivedAtMs": 1790679784988.2,
+      "kind": "messageReasoningDelta",
+      "chars": 4,
+      "emittedAtMs": 1790679784987
+    },
+    {
+      "receivedAtMs": 1790679785016.3,
+      "kind": "messageReasoningDelta",
+      "chars": 17,
+      "emittedAtMs": 1790679785012
+    },
+    {
+      "receivedAtMs": 1790679785031.7,
+      "kind": "messageReasoningDelta",
+      "chars": 3,
+      "emittedAtMs": 1790679785031
+    },
+    {
+      "receivedAtMs": 1790679785102.5,
+      "kind": "messageReasoningDelta",
+      "chars": 17,
+      "emittedAtMs": 1790679785100
+    },
+    {
+      "receivedAtMs": 1790679785174.3,
+      "kind": "messageReasoningDelta",
+      "chars": 2,
+      "emittedAtMs": 1790679785173
+    },
+    {
+      "receivedAtMs": 1790679785377.8,
+      "kind": "messageReasoningDelta",
+      "chars": 10,
+      "emittedAtMs": 1790679785376
+    },
+    {
+      "receivedAtMs": 1790679785414.8,
+      "kind": "messageReasoningDelta",
+      "chars": 13,
+      "emittedAtMs": 1790679785414
+    },
+    {
+      "receivedAtMs": 1790679785468.5,
+      "kind": "messageReasoningDelta",
+      "chars": 6,
+      "emittedAtMs": 1790679785468
+    },
+    {
+      "receivedAtMs": 1790679785596.5,
+      "kind": "messageReasoningDelta",
+      "chars": 4,
+      "emittedAtMs": 1790679785596
+    },
+    {
+      "receivedAtMs": 1790679785625.4,
+      "kind": "messageReasoningDelta",
+      "chars": 20,
+      "emittedAtMs": 1790679785624
+    },
+    {
+      "receivedAtMs": 1790679785697.1,
+      "kind": "messageReasoningDelta",
+      "chars": 9,
+      "emittedAtMs": 1790679785696
+    },
+    {
+      "receivedAtMs": 1790679785776.8,
+      "kind": "messageReasoningDelta",
+      "chars": 9,
+      "emittedAtMs": 1790679785775
+    },
+    {
+      "receivedAtMs": 1790679785851.3,
+      "kind": "messageReasoningDelta",
+      "chars": 5,
+      "emittedAtMs": 1790679785850
+    },
+    {
+      "receivedAtMs": 1790679786088.1,
+      "kind": "messageReasoningDelta",
+      "chars": 11,
+      "emittedAtMs": 1790679786087
+    },
+    {
+      "receivedAtMs": 1790679786107.3,
+      "kind": "messageReasoningDelta",
+      "chars": 8,
+      "emittedAtMs": 1790679786106
+    },
+    {
+      "receivedAtMs": 1790679786126.2,
+      "kind": "messageReasoningDelta",
+      "chars": 20,
+      "emittedAtMs": 1790679786125
+    },
+    {
+      "receivedAtMs": 1790679786164.1,
+      "kind": "messageReasoningDelta",
+      "chars": 5,
+      "emittedAtMs": 1790679786163
+    },
+    {
+      "receivedAtMs": 1790679786238.1,
+      "kind": "messageReasoningDelta",
+      "chars": 6,
+      "emittedAtMs": 1790679786237
+    },
+    {
+      "receivedAtMs": 1790679786319.6,
+      "kind": "messageReasoningDelta",
+      "chars": 2,
+      "emittedAtMs": 1790679786318
+    },
+    {
+      "receivedAtMs": 1790679786406.2,
+      "kind": "messageReasoningDelta",
+      "chars": 16,
+      "emittedAtMs": 1790679786405
+    },
+    {
+      "receivedAtMs": 1790679786538.1,
+      "kind": "messageReasoningDelta",
+      "chars": 9,
+      "emittedAtMs": 1790679786537
+    },
+    {
+      "receivedAtMs": 1790679786560.3,
+      "kind": "messageReasoningDelta",
+      "chars": 3,
+      "emittedAtMs": 1790679786559
+    },
+    {
+      "receivedAtMs": 1790679786708.5,
+      "kind": "messageReasoningDelta",
+      "chars": 18,
+      "emittedAtMs": 1790679786707
+    },
+    {
+      "receivedAtMs": 1790679786792.8,
+      "kind": "messageReasoningDelta",
+      "chars": 8,
+      "emittedAtMs": 1790679786791
+    },
+    {
+      "receivedAtMs": 1790679786853.2,
+      "kind": "messageReasoningDelta",
+      "chars": 6,
+      "emittedAtMs": 1790679786852
+    },
+    {
+      "receivedAtMs": 1790679786938.5,
+      "kind": "messageReasoningDelta",
+      "chars": 1,
+      "emittedAtMs": 1790679786938
+    },
+    {
+      "receivedAtMs": 1790679787025.0,
+      "kind": "messageReasoningDelta",
+      "chars": 13,
+      "emittedAtMs": 1790679787023
+    },
+    {
+      "receivedAtMs": 1790679787097.0,
+      "kind": "messageReasoningDelta",
+      "chars": 16,
+      "emittedAtMs": 1790679787096
+    },
+    {
+      "receivedAtMs": 1790679787171.7,
+      "kind": "messageReasoningDelta",
+      "chars": 16,
+      "emittedAtMs": 1790679787171
+    },
+    {
+      "receivedAtMs": 1790679787248.0,
+      "kind": "messageReasoningDelta",
+      "chars": 12,
+      "emittedAtMs": 1790679787247
+    },
+    {
+      "receivedAtMs": 1790679787322.6,
+      "kind": "messageReasoningDelta",
+      "chars": 4,
+      "emittedAtMs": 1790679787321
+    },
+    {
+      "receivedAtMs": 1790679787397.3,
+      "kind": "messageReasoningDelta",
+      "chars": 7,
+      "emittedAtMs": 1790679787396
+    },
+    {
+      "receivedAtMs": 1790679787477.7,
+      "kind": "messageReasoningDelta",
+      "chars": 31,
+      "emittedAtMs": 1790679787477
+    },
+    {
+      "receivedAtMs": 1790679787549.6,
+      "kind": "messageReasoningDelta",
+      "chars": 6,
+      "emittedAtMs": 1790679787549
+    },
+    {
+      "receivedAtMs": 1790679787644.0,
+      "kind": "messageReasoningDelta",
+      "chars": 2,
+      "emittedAtMs": 1790679787643
+    },
+    {
+      "receivedAtMs": 1790679787711.5,
+      "kind": "messageReasoningDelta",
+      "chars": 6,
+      "emittedAtMs": 1790679787710
+    },
+    {
+      "receivedAtMs": 1790679787795.2,
+      "kind": "messageReasoningDelta",
+      "chars": 12,
+      "emittedAtMs": 1790679787794
+    },
+    {
+      "receivedAtMs": 1790679787877.1,
+      "kind": "messageReasoningDelta",
+      "chars": 20,
+      "emittedAtMs": 1790679787876
+    },
+    {
+      "receivedAtMs": 1790679787981.5,
+      "kind": "messageReasoningDelta",
+      "chars": 8,
+      "emittedAtMs": 1790679787981
+    },
+    {
+      "receivedAtMs": 1790679788030.9,
+      "kind": "messageReasoningDelta",
+      "chars": 6,
+      "emittedAtMs": 1790679788030
+    },
+    {
+      "receivedAtMs": 1790679788110.4,
+      "kind": "messageReasoningDelta",
+      "chars": 3,
+      "emittedAtMs": 1790679788109
+    },
+    {
+      "receivedAtMs": 1790679788187.5,
+      "kind": "messageReasoningDelta",
+      "chars": 4,
+      "emittedAtMs": 1790679788186
+    },
+    {
+      "receivedAtMs": 1790679788416.9,
+      "kind": "messageReasoningDelta",
+      "chars": 2,
+      "emittedAtMs": 1790679788416
+    },
+    {
+      "receivedAtMs": 1790679788432.0,
+      "kind": "messageReasoningDelta",
+      "chars": 4,
+      "emittedAtMs": 1790679788431
+    },
+    {
+      "receivedAtMs": 1790679788447.7,
+      "kind": "messageReasoningDelta",
+      "chars": 9,
+      "emittedAtMs": 1790679788447
+    },
+    {
+      "receivedAtMs": 1790679788482.3,
+      "kind": "messageReasoningDelta",
+      "chars": 4,
+      "emittedAtMs": 1790679788481
+    },
+    {
+      "receivedAtMs": 1790679788560.8,
+      "kind": "messageReasoningDelta",
+      "chars": 11,
+      "emittedAtMs": 1790679788560
+    },
+    {
+      "receivedAtMs": 1790679788690.6,
+      "kind": "messageReasoningDelta",
+      "chars": 1,
+      "emittedAtMs": 1790679788689
+    },
+    {
+      "receivedAtMs": 1790679788707.6,
+      "kind": "messageReasoningDelta",
+      "chars": 1,
+      "emittedAtMs": 1790679788706
+    },
+    {
+      "receivedAtMs": 1790679788926.1,
+      "kind": "messageReasoningDelta",
+      "chars": 24,
+      "emittedAtMs": 1790679788925
+    },
+    {
+      "receivedAtMs": 1790679788926.9,
+      "kind": "messageReasoningDelta",
+      "chars": 2,
+      "emittedAtMs": 1790679788926
+    },
+    {
+      "receivedAtMs": 1790679789029.4,
+      "kind": "messageReasoningDelta",
+      "chars": 4,
+      "emittedAtMs": 1790679789028
+    },
+    {
+      "receivedAtMs": 1790679789082.2,
+      "kind": "messageReasoningDelta",
+      "chars": 1,
+      "emittedAtMs": 1790679789081
+    },
+    {
+      "receivedAtMs": 1790679789140.9,
+      "kind": "messageReasoningDelta",
+      "chars": 5,
+      "emittedAtMs": 1790679789137
+    },
+    {
+      "receivedAtMs": 1790679789207.9,
+      "kind": "messageReasoningDelta",
+      "chars": 4,
+      "emittedAtMs": 1790679789207
+    },
+    {
+      "receivedAtMs": 1790679789278.1,
+      "kind": "messageReasoningDelta",
+      "chars": 13,
+      "emittedAtMs": 1790679789277
+    },
+    {
+      "receivedAtMs": 1790679789370.9,
+      "kind": "messageReasoningDelta",
+      "chars": 21,
+      "emittedAtMs": 1790679789369
+    },
+    {
+      "receivedAtMs": 1790679789444.4,
+      "kind": "messageReasoningDelta",
+      "chars": 7,
+      "emittedAtMs": 1790679789443
+    },
+    {
+      "receivedAtMs": 1790679789511.6,
+      "kind": "messageReasoningDelta",
+      "chars": 11,
+      "emittedAtMs": 1790679789510
+    },
+    {
+      "receivedAtMs": 1790679789586.3,
+      "kind": "messageReasoningDelta",
+      "chars": 8,
+      "emittedAtMs": 1790679789585
+    },
+    {
+      "receivedAtMs": 1790679789649.0,
+      "kind": "messageReasoningDelta",
+      "chars": 16,
+      "emittedAtMs": 1790679789647
+    },
+    {
+      "receivedAtMs": 1790679789752.1,
+      "kind": "messageReasoningDelta",
+      "chars": 12,
+      "emittedAtMs": 1790679789751
+    },
+    {
+      "receivedAtMs": 1790679789799.2,
+      "kind": "messageReasoningDelta",
+      "chars": 11,
+      "emittedAtMs": 1790679789798
+    },
+    {
+      "receivedAtMs": 1790679789866.6,
+      "kind": "messageReasoningDelta",
+      "chars": 7,
+      "emittedAtMs": 1790679789865
+    },
+    {
+      "receivedAtMs": 1790679789938.4,
+      "kind": "messageReasoningDelta",
+      "chars": 8,
+      "emittedAtMs": 1790679789937
+    },
+    {
+      "receivedAtMs": 1790679790015.1,
+      "kind": "messageReasoningDelta",
+      "chars": 9,
+      "emittedAtMs": 1790679790014
+    },
+    {
+      "receivedAtMs": 1790679790096.7,
+      "kind": "messageReasoningDelta",
+      "chars": 8,
+      "emittedAtMs": 1790679790096
+    },
+    {
+      "receivedAtMs": 1790679790166.3,
+      "kind": "messageReasoningDelta",
+      "chars": 1,
+      "emittedAtMs": 1790679790165
+    },
+    {
+      "receivedAtMs": 1790679790248.0,
+      "kind": "messageReasoningDelta",
+      "chars": 5,
+      "emittedAtMs": 1790679790247
+    },
+    {
+      "receivedAtMs": 1790679790313.5,
+      "kind": "messageReasoningDelta",
+      "chars": 15,
+      "emittedAtMs": 1790679790312
+    },
+    {
+      "receivedAtMs": 1790679790449.9,
+      "kind": "messageReasoningDelta",
+      "chars": 1,
+      "emittedAtMs": 1790679790444
+    },
+    {
+      "receivedAtMs": 1790679790459.5,
+      "kind": "messageReasoningDelta",
+      "chars": 5,
+      "emittedAtMs": 1790679790458
+    },
+    {
+      "receivedAtMs": 1790679790539.5,
+      "kind": "messageReasoningDelta",
+      "chars": 7,
+      "emittedAtMs": 1790679790536
+    },
+    {
+      "receivedAtMs": 1790679790609.6,
+      "kind": "messageReasoningDelta",
+      "chars": 6,
+      "emittedAtMs": 1790679790608
+    },
+    {
+      "receivedAtMs": 1790679790675.6,
+      "kind": "messageReasoningDelta",
+      "chars": 1,
+      "emittedAtMs": 1790679790674
+    },
+    {
+      "receivedAtMs": 1790679790751.2,
+      "kind": "messageReasoningDelta",
+      "chars": 6,
+      "emittedAtMs": 1790679790750
+    },
+    {
+      "receivedAtMs": 1790679790845.3,
+      "kind": "messageReasoningDelta",
+      "chars": 6,
+      "emittedAtMs": 1790679790844
+    },
+    {
+      "receivedAtMs": 1790679790910.6,
+      "kind": "messageReasoningDelta",
+      "chars": 9,
+      "emittedAtMs": 1790679790907
+    },
+    {
+      "receivedAtMs": 1790679791004.8,
+      "kind": "messageReasoningDelta",
+      "chars": 5,
+      "emittedAtMs": 1790679791003
+    },
+    {
+      "receivedAtMs": 1790679791051.6,
+      "kind": "messageReasoningDelta",
+      "chars": 10,
+      "emittedAtMs": 1790679791050
+    },
+    {
+      "receivedAtMs": 1790679791112.0,
+      "kind": "messageReasoningDelta",
+      "chars": 5,
+      "emittedAtMs": 1790679791111
+    },
+    {
+      "receivedAtMs": 1790679791204.3,
+      "kind": "messageReasoningDelta",
+      "chars": 9,
+      "emittedAtMs": 1790679791202
+    },
+    {
+      "receivedAtMs": 1790679791268.2,
+      "kind": "messageReasoningDelta",
+      "chars": 6,
+      "emittedAtMs": 1790679791265
+    },
+    {
+      "receivedAtMs": 1790679791361.2,
+      "kind": "messageReasoningDelta",
+      "chars": 6,
+      "emittedAtMs": 1790679791353
+    },
+    {
+      "receivedAtMs": 1790679791491.3,
+      "kind": "messageReasoningDelta",
+      "chars": 4,
+      "emittedAtMs": 1790679791490
+    },
+    {
+      "receivedAtMs": 1790679791566.9,
+      "kind": "messageReasoningDelta",
+      "chars": 1,
+      "emittedAtMs": 1790679791566
+    }
+  ],
+  "limits": "Native event receipt via an auxiliary client, not Electron renderer paint. Characters are not tokens. No prompts, reasoning content or credentials captured."
+}

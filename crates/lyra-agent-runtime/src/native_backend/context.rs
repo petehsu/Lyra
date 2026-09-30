@@ -1,6 +1,9 @@
 use super::*;
 use crate::persona::ComputedPersona;
 
+mod persona;
+pub(crate) use persona::computed_persona_for_turn;
+
 fn browser_snapshot_active_tab(snapshot: &Value) -> Option<&Value> {
     let active_tab_id = snapshot.get("activeTabId").and_then(Value::as_str)?;
     snapshot
@@ -146,81 +149,46 @@ fn compact_browser_recovery_context(snapshot: Value) -> Value {
     })
 }
 
-fn browser_recovery_context(dispatcher: Option<&Arc<HostCapabilityDispatcher>>) -> Value {
-    let Some(dispatcher) = dispatcher else {
-        return json!({
-            "hostCapabilityAvailable": false,
-            "snapshotAvailable": false,
-            "message": "Browser session recovery bridge is not available."
-        });
-    };
-    match invoke_host_capability_with_timeout(
-        dispatcher.clone(),
-        "workbench.browser.readSessionSnapshot".to_string(),
-        json!({ "includeRecoveryAnchor": true, "includeStorageState": true }),
-        DEFAULT_HOST_TOOL_TIMEOUT_MS,
-    ) {
-        Ok(snapshot) => compact_browser_recovery_context(snapshot),
-        Err(error) => json!({
-            "hostCapabilityAvailable": false,
-            "snapshotAvailable": false,
-            "error": error
-        }),
-    }
-}
-
-pub(crate) fn fetch_workbench(dispatcher: Option<&Arc<HostCapabilityDispatcher>>) -> Value {
+pub(crate) fn read_turn_host_context(dispatcher: Option<&Arc<HostCapabilityDispatcher>>) -> Value {
     dispatcher
         .and_then(|dispatcher| {
             invoke_host_capability_with_timeout(
                 dispatcher.clone(),
-                "workbench.listTabs".to_string(),
-                json!({ "scope": "all", "includeUnsupported": true }),
+                "agent.readTurnContext".to_string(),
+                json!({}),
                 DEFAULT_HOST_TOOL_TIMEOUT_MS,
             )
             .ok()
         })
-        .unwrap_or_else(|| {
-            json!({
-                "hostCapabilityAvailable": false,
-                "message": "Workbench observation bridge is not available."
-            })
-        })
+        .unwrap_or_else(|| json!({}))
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn build_runtime_context(
-    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
+    host: &Value,
     memory_records: &[LongTermMemoryRecord],
     capabilities: &ModelCapabilityProfile,
 ) -> Value {
-    let workbench = fetch_workbench(dispatcher);
-    build_runtime_context_with_workbench(dispatcher, memory_records, capabilities, workbench)
-}
-
-pub(crate) fn build_runtime_context_with_workbench(
-    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
-    memory_records: &[LongTermMemoryRecord],
-    capabilities: &ModelCapabilityProfile,
-    workbench: Value,
-) -> Value {
-    let software = dispatcher
-        .and_then(|dispatcher| {
-            invoke_host_capability_with_timeout(
-                dispatcher.clone(),
-                "software.listCapabilities".to_string(),
-                json!({ "includeSchemas": false }),
-                DEFAULT_HOST_TOOL_TIMEOUT_MS,
-            )
-            .ok()
-        })
-        .unwrap_or_else(|| {
-            json!({
-                "hostCapabilityAvailable": false,
-                "software": [],
-                "message": "Software capability bridge is not available."
-            })
-        });
+    let workbench = host
+        .get("workbench")
+        .cloned()
+        .unwrap_or_else(|| json!({"hostCapabilityAvailable": false}));
+    let mut software = host
+        .get("software")
+        .cloned()
+        .unwrap_or_else(|| json!({"hostCapabilityAvailable": false, "software": []}));
+    // Prompt metadata uses the same catalog, without a second schema copy.
+    if let Some(entries) = software.get_mut("software").and_then(Value::as_array_mut) {
+        for entry in entries {
+            if let Some(actions) = entry.get_mut("actions").and_then(Value::as_array_mut) {
+                for action in actions {
+                    if let Some(object) = action.as_object_mut() {
+                        object.remove("inputSchema");
+                        object.remove("outputSchema");
+                    }
+                }
+            }
+        }
+    }
     let memory = memory_records
         .iter()
         .rev()
@@ -245,7 +213,8 @@ pub(crate) fn build_runtime_context_with_workbench(
     json!({
         "identity": "agent",
         "workbench": workbench,
-        "browserRecovery": browser_recovery_context(dispatcher),
+        "browserRecovery": host.get("browserRecovery").filter(|value| !value.is_null()).cloned()
+            .map(compact_browser_recovery_context).unwrap_or_else(|| json!({"snapshotAvailable": false})),
         "browserModePolicy": {
             "defaultTargetMode": "live",
             "followControl": "visible Follow cursor is controlled by the user's real Follow toggle, not by targetMode",
@@ -321,14 +290,15 @@ pub(crate) fn infer_tool_filesystem_scene(
 
 pub(crate) fn tool_filesystem_runtime_context(
     scene: &str,
-    _session_id: Option<&str>,
+    session_id: Option<&str>,
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
 ) -> Value {
+    let root = session_id.and_then(|id| projects::session_root(id).ok().flatten());
     json!({
         "scene": scene,
         "internalRegistry": true,
-        "rootSummary": tools::tool_fs::root_summary_for_scene(scene, dispatcher),
-        "manifestSources": tools::tool_fs::runtime_manifest_source_summary(dispatcher),
+        "rootSummary": tools::tool_fs::root_summary_for_scene(scene, dispatcher, root.as_deref()),
+        "manifestSources": tools::tool_fs::runtime_manifest_source_summary(dispatcher, root.as_deref()),
     })
 }
 
@@ -423,40 +393,6 @@ pub(crate) fn working_dir_is_git_repo(working_dir: Option<&str>) -> bool {
         .output()
         .ok()
         .is_some_and(|output| output.status.success())
-}
-
-pub(crate) fn read_host_persona_context(
-    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
-) -> PersonaContext {
-    let Some(dispatcher) = dispatcher else {
-        return PersonaContext::default();
-    };
-    match invoke_host_capability_with_timeout(
-        dispatcher.clone(),
-        "agent.readHostPersonaContext".to_string(),
-        json!({}),
-        DEFAULT_HOST_TOOL_TIMEOUT_MS,
-    ) {
-        Ok(value) => prompt_policy::persona_context_from_value(&value),
-        Err(_) => PersonaContext::default(),
-    }
-}
-
-pub(crate) fn host_persona_signal_collection_allowed(
-    dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
-) -> bool {
-    let Some(dispatcher) = dispatcher else {
-        return false;
-    };
-    invoke_host_capability_with_timeout(
-        dispatcher.clone(),
-        "agent.readPersonaConsent".to_string(),
-        json!({}),
-        DEFAULT_HOST_TOOL_TIMEOUT_MS,
-    )
-    .ok()
-    .and_then(|value| value.get("allowed").and_then(Value::as_bool))
-    .unwrap_or(false)
 }
 
 pub(crate) fn build_system_prompt_report(

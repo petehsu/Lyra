@@ -445,4 +445,69 @@ describe("terminal agent tools", () => {
 
     bridge.dispose();
   });
+
+  test("write_stdin addresses an agent-owned workbench pane and refuses a user pane", async () => {
+    const registered = new Map<string, (payload: unknown) => unknown>();
+    const runtimeClient = createRuntimeClient(registered);
+    const terminalBridge = createTerminalBridgeMock();
+    const owned = {
+      terminalTabId: "tab-own",
+      paneId: "pane-own",
+      sessionId: "session-own",
+      title: "Agent",
+      placement: "dock" as const,
+      sourceAgentSessionId: "agent-1"
+    };
+    const userPane = {
+      terminalTabId: "tab-user",
+      paneId: "pane-user",
+      sessionId: "session-user",
+      title: "User",
+      placement: "dock" as const
+    };
+    const observationService = {
+      listTerminalPanes: vi.fn(async () => ({
+        active: userPane,
+        panes: [userPane, owned]
+      })),
+      focusTerminalPane: vi.fn(async (request: { readonly paneId?: string }) =>
+        request.paneId === owned.paneId ? owned : userPane
+      )
+    } as unknown as WorkbenchObservationService;
+    const bridge = createAgentIpcBridge({
+      runtimeClient,
+      storageRoot: "/tmp/lyra-agent-test",
+      terminalBridge: terminalBridge as never,
+      getWindow: () => null,
+      getBrowserBridge: () => null,
+      getWorkbenchObservationService: () => observationService,
+      workbenchState: createWorkbenchStateMock()
+    });
+
+    await expect(registered.get("terminal.write")?.({
+      data: "echo LYRA-OWN-OK",
+      appendNewline: true,
+      sessionId: "session-own",
+      runtimeCancellation: { sessionId: "agent-1" }
+    })).resolves.toMatchObject({
+      target: {
+        type: "ui",
+        sessionId: "session-own"
+      }
+    });
+    expect(terminalBridge.write).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "session-own",
+      data: "echo LYRA-OWN-OK"
+    }));
+
+    terminalBridge.write.mockClear();
+    await expect(registered.get("terminal.write")?.({
+      data: "echo NO",
+      sessionId: "session-user",
+      runtimeCancellation: { sessionId: "agent-1" }
+    })).rejects.toThrow(/belongs to the user/);
+    expect(terminalBridge.write).not.toHaveBeenCalled();
+
+    bridge.dispose();
+  });
 });

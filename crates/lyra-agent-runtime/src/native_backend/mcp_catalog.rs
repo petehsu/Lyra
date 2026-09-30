@@ -22,6 +22,9 @@ use std::{
 };
 
 mod output;
+mod policy;
+pub(crate) use policy::execute_for_project;
+pub(crate) use policy::{effective_registry, set_enabled};
 
 pub(crate) use output::format_mcp_output;
 
@@ -144,9 +147,9 @@ pub(crate) enum McpTransportConfig {
         args: Vec<String>,
         #[serde(default)]
         env: BTreeMap<String, String>,
-        #[serde(default)]
+        #[serde(default, rename = "secretEnv")]
         secret_env: BTreeMap<String, Value>,
-        #[serde(default)]
+        #[serde(default, rename = "envVars")]
         env_vars: Vec<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cwd: Option<String>,
@@ -155,22 +158,32 @@ pub(crate) enum McpTransportConfig {
         url: String,
         #[serde(default)]
         headers: BTreeMap<String, String>,
-        #[serde(default)]
+        #[serde(default, rename = "secretHeaders")]
         secret_headers: BTreeMap<String, Value>,
-        #[serde(default)]
+        #[serde(default, rename = "envHttpHeaders")]
         env_http_headers: BTreeMap<String, String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            rename = "bearerTokenEnvVar",
+            alias = "bearer_token_env_var",
+            skip_serializing_if = "Option::is_none"
+        )]
         bearer_token_env_var: Option<String>,
     },
     Sse {
         url: String,
         #[serde(default)]
         headers: BTreeMap<String, String>,
-        #[serde(default)]
+        #[serde(default, rename = "secretHeaders")]
         secret_headers: BTreeMap<String, Value>,
-        #[serde(default)]
+        #[serde(default, rename = "envHttpHeaders")]
         env_http_headers: BTreeMap<String, String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[serde(
+            default,
+            rename = "bearerTokenEnvVar",
+            alias = "bearer_token_env_var",
+            skip_serializing_if = "Option::is_none"
+        )]
         bearer_token_env_var: Option<String>,
     },
 }
@@ -190,6 +203,8 @@ pub(crate) struct McpToolInfo {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct McpServerConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) source_label: Option<String>,
     pub(crate) id: String,
     pub(crate) name: String,
     pub(crate) transport: McpTransportConfig,
@@ -668,6 +683,9 @@ pub(crate) fn mcp_storage_root() -> PathBuf {
         }
     }
     let root = runtime_root();
+    if cfg!(test) {
+        return root.join("mcp");
+    }
     root.parent()
         .map(|parent| parent.join("mcp"))
         .unwrap_or_else(|| root.join("mcp"))
@@ -677,14 +695,25 @@ fn registry_path(storage_root: &Path) -> PathBuf {
     storage_root.join(REGISTRY_FILE_NAME)
 }
 
-fn read_registry_from(storage_root: &Path) -> McpRegistryDocument {
-    read_json::<McpRegistryDocument>(&registry_path(storage_root)).unwrap_or_default()
+pub(crate) fn read_registry_from(storage_root: &Path) -> McpRegistryDocument {
+    // Reading a catalog must not rename or remove the user's configuration.
+    // Mutations validate existing JSON before writing.
+    fs::read(registry_path(storage_root))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<McpRegistryDocument>(&bytes).ok())
+        .unwrap_or_default()
 }
 
-fn write_registry_to(
+pub(crate) fn write_registry_to(
     storage_root: &Path,
     registry: &McpRegistryDocument,
 ) -> AgentRuntimeResult<()> {
+    let path = registry_path(storage_root);
+    if path.exists() {
+        let bytes = fs::read(&path).map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        serde_json::from_slice::<McpRegistryDocument>(&bytes)
+            .map_err(|error| AgentRuntimeError::Core(format!("{}: {error}", path.display())))?;
+    }
     fs::create_dir_all(storage_root).map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
     write_json(&registry_path(storage_root), registry)
 }
@@ -728,7 +757,7 @@ fn slugify_id(value: &str) -> String {
     }
 }
 
-fn transport_label(transport: &McpTransportConfig) -> String {
+pub(crate) fn transport_label(transport: &McpTransportConfig) -> String {
     match transport {
         McpTransportConfig::Stdio { command, args, .. } => std::iter::once(command.as_str())
             .chain(args.iter().map(String::as_str))
@@ -802,6 +831,7 @@ fn server_value(server: &McpServerConfig) -> Value {
         "state": server.state,
         "toolCount": server.tools.len(),
         "tools": server.tools,
+        "sourceLabel": server.source_label,
         "lastError": server.last_error,
         "createdAt": server.created_at,
         "updatedAt": server.updated_at,
@@ -1082,31 +1112,70 @@ fn preserve_redacted_values(
     }
 }
 
+fn preserve_secret_refs(
+    plain: &mut BTreeMap<String, String>,
+    refs: &mut BTreeMap<String, Value>,
+    existing: &BTreeMap<String, Value>,
+) {
+    for (key, reference) in existing {
+        if plain.get(key).is_some_and(|value| value == "<configured>") {
+            plain.remove(key);
+            refs.insert(key.clone(), reference.clone());
+        }
+    }
+}
+
 fn preserve_existing_secrets(
     mut transport: McpTransportConfig,
     existing: Option<&McpServerConfig>,
 ) -> McpTransportConfig {
     match (&mut transport, existing.map(|server| &server.transport)) {
         (
-            McpTransportConfig::Stdio { env, .. },
+            McpTransportConfig::Stdio {
+                env, secret_env, ..
+            },
             Some(McpTransportConfig::Stdio {
-                env: existing_env, ..
+                env: existing_env,
+                secret_env: existing_secrets,
+                ..
             }),
-        ) => preserve_redacted_values(env, existing_env),
+        ) => {
+            preserve_redacted_values(env, existing_env);
+            preserve_secret_refs(env, secret_env, existing_secrets);
+        }
         (
-            McpTransportConfig::Http { headers, .. } | McpTransportConfig::Sse { headers, .. },
+            McpTransportConfig::Http {
+                headers,
+                secret_headers,
+                ..
+            }
+            | McpTransportConfig::Sse {
+                headers,
+                secret_headers,
+                ..
+            },
             Some(McpTransportConfig::Http {
                 headers: existing_headers,
+                secret_headers: existing_secrets,
                 ..
             })
             | Some(McpTransportConfig::Sse {
                 headers: existing_headers,
+                secret_headers: existing_secrets,
                 ..
             }),
-        ) => preserve_redacted_values(headers, existing_headers),
+        ) => {
+            preserve_redacted_values(headers, existing_headers);
+            preserve_secret_refs(headers, secret_headers, existing_secrets);
+        }
         _ => {}
     }
     transport
+}
+
+pub(crate) fn mutation_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
 }
 
 pub(crate) fn upsert_mcp_servers_at(
@@ -1114,6 +1183,9 @@ pub(crate) fn upsert_mcp_servers_at(
     payload: Value,
 ) -> AgentRuntimeResult<Value> {
     let drafts = parse_server_drafts(&payload)?;
+    let _guard = mutation_lock()
+        .lock()
+        .map_err(|_| AgentRuntimeError::Core("MCP registry lock failed".into()))?;
     let mut registry = read_registry_from(storage_root);
     let timestamp = now();
     let mut installed = Vec::new();
@@ -1128,10 +1200,14 @@ pub(crate) fn upsert_mcp_servers_at(
         let existing = registry.servers.iter().find(|server| server.id == id);
         let transport = preserve_existing_secrets(draft.transport, existing);
         let server = McpServerConfig {
+            source_label: string_field(&payload, &["sourceLabel"])
+                .or_else(|| existing.and_then(|server| server.source_label.clone())),
             id: id.clone(),
             name,
             transport,
-            enabled: draft.enabled,
+            enabled: existing
+                .map(|server| server.enabled)
+                .unwrap_or(draft.enabled),
             startup_timeout_ms: draft.startup_timeout_ms,
             tool_timeout_ms: draft.tool_timeout_ms,
             state: existing
@@ -1161,48 +1237,59 @@ pub(crate) fn upsert_mcp_servers_at(
     }))
 }
 
-pub(crate) fn mcp_list(payload: Value) -> AgentRuntimeResult<Value> {
-    let project_storage = project_mcp_storage_from_payload(&payload);
-    let mut registry = read_registry();
-    if let Some(storage_root) = project_storage.as_ref() {
-        let project = read_registry_from(storage_root);
-        let project_ids = project
-            .servers
-            .iter()
-            .map(|server| server.id.clone())
-            .collect::<HashSet<_>>();
-        registry
-            .servers
-            .retain(|server| !project_ids.contains(&server.id));
-        registry.servers.extend(project.servers);
+pub(crate) fn connect_needs_http_install(payload: &Value, servers: &[McpServerConfig]) -> bool {
+    let Some(url) = string_field(payload, &["serverUrl", "url", "endpoint"]) else {
+        return false;
+    };
+    let url = url.trim();
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return false;
     }
-    Ok(json!({
-        "servers": registry.servers.iter().map(server_value).collect::<Vec<_>>(),
-        "storageRoot": project_storage.unwrap_or_else(mcp_storage_root),
-    }))
+    let wanted = normalize_server_url(url);
+    if servers
+        .iter()
+        .any(|server| normalize_server_url(&transport_label(&server.transport)) == wanted)
+    {
+        return false;
+    }
+    let named = server_ids_from_payload(payload);
+    !named
+        .iter()
+        .any(|id| servers.iter().any(|server| &server.id == id))
+}
+
+pub(crate) fn install_http_server_at(storage: &Path, payload: &Value) -> AgentRuntimeResult<()> {
+    let url = string_field(payload, &["serverUrl", "url", "endpoint"])
+        .ok_or_else(|| AgentRuntimeError::Core("serverUrl is required".to_string()))?;
+    let mut body = json!({ "serverUrl": url, "enabled": true });
+    if let Some(name) = string_field(payload, &["name", "serverId", "id"]) {
+        body["name"] = json!(name);
+        body["serverId"] = json!(name);
+    }
+    upsert_mcp_servers_at(storage, body)?;
+    Ok(())
 }
 
 pub(crate) fn mcp_server_upsert(payload: Value) -> AgentRuntimeResult<Value> {
-    let storage = project_mcp_storage_from_payload(&payload).unwrap_or_else(mcp_storage_root);
-    upsert_mcp_servers_at(&storage, payload)
-}
-
-fn project_mcp_storage_from_payload(payload: &Value) -> Option<PathBuf> {
-    string_field(payload, &["projectRoot"])
-        .map(PathBuf::from)
-        .filter(|path| path.is_dir())
-        .map(|path| path.join(".lyra/agent/mcp"))
+    let storage = mcp_storage_root();
+    let result = upsert_mcp_servers_at(&storage, payload)?;
+    projects::notify_changed();
+    Ok(result)
 }
 
 pub(crate) fn mcp_server_remove(payload: Value) -> AgentRuntimeResult<Value> {
+    let _guard = mutation_lock()
+        .lock()
+        .map_err(|_| AgentRuntimeError::Core("MCP registry lock failed".into()))?;
     let server_id = string_field(&payload, &["serverId", "id", "name"])
         .map(|value| slugify_id(&value))
         .ok_or_else(|| AgentRuntimeError::Core("serverId is required".to_string()))?;
-    let storage = project_mcp_storage_from_payload(&payload).unwrap_or_else(mcp_storage_root);
+    let storage = mcp_storage_root();
     let mut registry = read_registry_from(&storage);
     let before = registry.servers.len();
     registry.servers.retain(|server| server.id != server_id);
     write_registry_to(&storage, &registry)?;
+    projects::notify_changed();
     Ok(json!({
         "serverId": server_id,
         "removed": before != registry.servers.len(),
@@ -1214,6 +1301,9 @@ fn update_server<F>(server_id: &str, mut update: F) -> AgentRuntimeResult<McpSer
 where
     F: FnMut(&mut McpServerConfig) -> AgentRuntimeResult<()>,
 {
+    let _guard = mutation_lock()
+        .lock()
+        .map_err(|_| AgentRuntimeError::Core("MCP registry lock failed".into()))?;
     let mut registry = read_registry();
     let Some(server) = registry
         .servers
@@ -1271,80 +1361,45 @@ fn server_ids_from_payload(payload: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn connect_servers(payload: Value) -> AgentRuntimeResult<Value> {
-    let requested_ids = server_ids_from_payload(&payload);
-    let registry = read_registry();
-    let targets = registry
-        .servers
-        .iter()
-        .filter(|server| requested_ids.is_empty() || requested_ids.contains(&server.id))
-        .filter(|server| server.enabled)
-        .cloned()
+fn payload_names_a_server(payload: &Value) -> bool {
+    string_field(
+        payload,
+        &["serverId", "id", "name", "serverUrl", "url", "endpoint"],
+    )
+    .is_some()
+        || payload
+            .get("serverIds")
+            .and_then(Value::as_array)
+            .is_some_and(|items| {
+                items
+                    .iter()
+                    .any(|item| item.as_str().is_some_and(|value| !value.trim().is_empty()))
+            })
+}
+
+fn normalize_server_url(value: &str) -> String {
+    value.trim().trim_end_matches('/').to_string()
+}
+
+/// A known id or name wins. An unknown id does not hide a URL. A URL selects
+/// only the server that uses that URL. An empty result is "no server".
+fn server_ids_for_operation(payload: &Value, servers: &[McpServerConfig]) -> Vec<String> {
+    let ids = server_ids_from_payload(payload)
+        .into_iter()
+        .filter(|id| servers.iter().any(|server| &server.id == id))
         .collect::<Vec<_>>();
-    if targets.is_empty() {
-        return Err(AgentRuntimeError::Core(
-            "No enabled MCP servers matched the request".to_string(),
-        ));
+    if !ids.is_empty() {
+        return ids;
     }
-    let mut results = Vec::new();
-    for target in targets {
-        let timeout = timeout_from_payload_or(&payload, target.startup_timeout_ms);
-        let result = match probe_server(&target, timeout) {
-            Ok(tools) => update_server(&target.id, |server| {
-                server.state = "connected".to_string();
-                server.tools = tools.clone();
-                server.last_error = None;
-                Ok(())
-            }),
-            Err(error) => update_server(&target.id, |server| {
-                server.state = "failed".to_string();
-                server.last_error = Some(error.to_string());
-                Ok(())
-            }),
-        }?;
-        results.push(server_value(&result));
-    }
-    Ok(json!({ "servers": results }))
-}
-
-pub(crate) fn mcp_server_connect(payload: Value) -> AgentRuntimeResult<Value> {
-    connect_servers(payload)
-}
-
-pub(crate) fn mcp_server_connect_at(
-    storage_root: &Path,
-    payload: Value,
-) -> AgentRuntimeResult<Value> {
-    let requested_ids = server_ids_from_payload(&payload);
-    let mut registry = read_registry_from(storage_root);
-    let mut results = Vec::new();
-    for server in registry
-        .servers
-        .iter_mut()
-        .filter(|server| requested_ids.is_empty() || requested_ids.contains(&server.id))
-        .filter(|server| server.enabled)
-    {
-        let timeout = timeout_from_payload_or(&payload, server.startup_timeout_ms);
-        match probe_server(server, timeout) {
-            Ok(tools) => {
-                server.state = "connected".to_string();
-                server.tools = tools;
-                server.last_error = None;
-            }
-            Err(error) => {
-                server.state = "failed".to_string();
-                server.last_error = Some(error.to_string());
-            }
-        }
-        server.updated_at = now();
-        results.push(server_value(server));
-    }
-    write_registry_to(storage_root, &registry)?;
-    Ok(json!({ "servers": results }))
-}
-
-pub(crate) fn mcp_server_reload(payload: Value) -> AgentRuntimeResult<Value> {
-    connect_servers(payload)
+    let Some(url) = string_field(payload, &["serverUrl", "url", "endpoint"]) else {
+        return Vec::new();
+    };
+    let wanted = normalize_server_url(&url);
+    servers
+        .iter()
+        .filter(|server| normalize_server_url(&transport_label(&server.transport)) == wanted)
+        .map(|server| server.id.clone())
+        .collect()
 }
 
 pub(crate) fn mcp_server_disconnect(payload: Value) -> AgentRuntimeResult<Value> {
@@ -1364,383 +1419,14 @@ pub(crate) fn mcp_server_disconnect(payload: Value) -> AgentRuntimeResult<Value>
     Ok(json!({ "servers": servers }))
 }
 
-fn mcp_server_disconnect_at(storage_root: &Path, payload: Value) -> AgentRuntimeResult<Value> {
-    let ids = server_ids_from_payload(&payload);
-    if ids.is_empty() {
-        return Err(AgentRuntimeError::Core("serverId is required".to_string()));
-    }
-    let mut registry = read_registry_from(storage_root);
-    let mut servers = Vec::new();
-    for server in registry
-        .servers
-        .iter_mut()
-        .filter(|server| ids.contains(&server.id))
-    {
-        sdk_disconnect_server(&server.id);
-        server.state = "disconnected".to_string();
-        server.updated_at = now();
-        servers.push(server_value(server));
-    }
-    write_registry_to(storage_root, &registry)?;
-    Ok(json!({ "servers": servers }))
-}
-
-fn refresh_server_tools_if_needed(server: McpServerConfig, timeout: Duration) -> McpServerConfig {
-    if !server.enabled || (!server.tools.is_empty() && server.state == "connected") {
-        return server;
-    }
-    match probe_server(&server, timeout) {
-        Ok(tools) => update_server(&server.id, |stored| {
-            stored.state = "connected".to_string();
-            stored.tools = tools.clone();
-            stored.last_error = None;
-            Ok(())
-        })
-        .unwrap_or(server),
-        Err(error) => update_server(&server.id, |stored| {
-            stored.state = "failed".to_string();
-            stored.last_error = Some(error.to_string());
-            Ok(())
-        })
-        .unwrap_or(server),
-    }
-}
-
-fn refresh_server_tools_at(
-    storage_root: &Path,
-    mut server: McpServerConfig,
-    timeout: Duration,
-) -> McpServerConfig {
-    if !server.enabled || (!server.tools.is_empty() && server.state == "connected") {
-        return server;
-    }
-    match probe_server(&server, timeout) {
-        Ok(tools) => {
-            server.state = "connected".to_string();
-            server.tools = tools;
-            server.last_error = None;
-        }
-        Err(error) => {
-            server.state = "failed".to_string();
-            server.last_error = Some(error.to_string());
-        }
-    }
-    server.updated_at = now();
-    let mut registry = read_registry_from(storage_root);
-    registry.servers.retain(|stored| stored.id != server.id);
-    registry.servers.push(server.clone());
-    let _ = write_registry_to(storage_root, &registry);
-    server
-}
-
-fn mcp_tool_discover_at(storage_root: &Path, payload: Value) -> AgentRuntimeResult<Value> {
-    let query = string_field(&payload, &["query", "q"])
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    let requested_ids = server_ids_from_payload(&payload);
-    let mut matches = Vec::new();
-    let mut servers = Vec::new();
-    for server in read_registry_from(storage_root).servers {
-        if !requested_ids.is_empty() && !requested_ids.contains(&server.id) {
-            continue;
-        }
-        let timeout = timeout_from_payload_or(&payload, server.startup_timeout_ms);
-        let server = refresh_server_tools_at(storage_root, server, timeout);
-        for tool in &server.tools {
-            let haystack =
-                format!("{} {} {}", server.name, tool.name, tool.description).to_ascii_lowercase();
-            if query.is_empty() || haystack.contains(&query) {
-                matches.push(json!({ "serverId": server.id, "serverName": server.name, "name": tool.name, "description": tool.description }));
-            }
-        }
-        servers.push(server_value(&server));
-    }
-    Ok(json!({ "query": query, "tools": matches, "servers": servers }))
-}
-
-fn mcp_tool_inspect_at(storage_root: &Path, payload: Value) -> AgentRuntimeResult<Value> {
-    let server_id = string_field(&payload, &["serverId", "id", "name"])
-        .map(|value| slugify_id(&value))
-        .ok_or_else(|| AgentRuntimeError::Core("serverId is required".to_string()))?;
-    let tool_name = string_field(&payload, &["toolName", "tool", "name"])
-        .ok_or_else(|| AgentRuntimeError::Core("toolName is required".to_string()))?;
-    let server = read_registry_from(storage_root)
-        .servers
-        .into_iter()
-        .find(|server| server.id == server_id)
-        .ok_or_else(|| {
-            AgentRuntimeError::Core(format!("MCP server is not configured: {server_id}"))
-        })?;
-    let timeout = timeout_from_payload_or(&payload, server.startup_timeout_ms);
-    let server = refresh_server_tools_at(storage_root, server, timeout);
-    let tool = server
-        .tools
-        .iter()
-        .find(|tool| tool.name == tool_name)
-        .ok_or_else(|| {
-            AgentRuntimeError::Core(format!("MCP tool not found: {server_id}/{tool_name}"))
-        })?;
-    Ok(json!({ "server": server_value(&server), "tool": tool }))
-}
-
-fn mcp_tool_execute_at(storage_root: &Path, payload: Value) -> AgentRuntimeResult<Value> {
-    let server_id = string_field(&payload, &["serverId", "id", "name"])
-        .map(|value| slugify_id(&value))
-        .ok_or_else(|| AgentRuntimeError::Core("serverId is required".to_string()))?;
-    let tool_name = string_field(&payload, &["toolName", "tool"])
-        .ok_or_else(|| AgentRuntimeError::Core("toolName is required".to_string()))?;
-    let arguments = payload
-        .get("arguments")
-        .or_else(|| payload.get("input"))
-        .or_else(|| payload.get("payload"))
-        .cloned()
-        .unwrap_or_else(|| json!({}));
-    let server = read_registry_from(storage_root)
-        .servers
-        .into_iter()
-        .find(|server| server.id == server_id)
-        .ok_or_else(|| {
-            AgentRuntimeError::Core(format!("MCP server is not configured: {server_id}"))
-        })?;
-    if !server.enabled {
-        return Err(AgentRuntimeError::Core(format!(
-            "MCP server is disabled: {server_id}"
-        )));
-    }
-    let timeout = timeout_from_payload_or(&payload, server.tool_timeout_ms);
-    let result = sdk_call_tool(&server, &tool_name, arguments, timeout)?;
-    Ok(json!({ "serverId": server_id, "toolName": tool_name, "result": result }))
-}
-
-pub(crate) fn mcp_tool_discover(payload: Value) -> AgentRuntimeResult<Value> {
-    let query = string_field(&payload, &["query", "q"])
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    let requested_ids = server_ids_from_payload(&payload);
-    let registry = read_registry();
-    let mut matches = Vec::new();
-    let mut servers = Vec::new();
-    for server in registry.servers {
-        if !requested_ids.is_empty() && !requested_ids.contains(&server.id) {
-            continue;
-        }
-        let timeout = timeout_from_payload_or(&payload, server.startup_timeout_ms);
-        let server = refresh_server_tools_if_needed(server, timeout);
-        for tool in &server.tools {
-            let haystack =
-                format!("{} {} {}", server.name, tool.name, tool.description).to_ascii_lowercase();
-            if query.is_empty() || haystack.contains(&query) {
-                matches.push(json!({
-                    "serverId": server.id,
-                    "serverName": server.name,
-                    "name": tool.name,
-                    "description": tool.description,
-                }));
-            }
-        }
-        servers.push(server_value(&server));
-    }
-    Ok(json!({
-        "query": query,
-        "tools": matches,
-        "servers": servers,
-    }))
-}
-
-pub(crate) fn mcp_tool_inspect(payload: Value) -> AgentRuntimeResult<Value> {
-    let server_id = string_field(&payload, &["serverId", "id", "name"])
-        .map(|value| slugify_id(&value))
-        .ok_or_else(|| AgentRuntimeError::Core("serverId is required".to_string()))?;
-    let tool_name = string_field(&payload, &["toolName", "tool", "name"])
-        .ok_or_else(|| AgentRuntimeError::Core("toolName is required".to_string()))?;
-    let server = read_registry()
-        .servers
-        .into_iter()
-        .find(|server| server.id == server_id)
-        .ok_or_else(|| {
-            AgentRuntimeError::Core(format!("MCP server is not configured: {server_id}"))
-        })?;
-    let timeout = timeout_from_payload_or(&payload, server.startup_timeout_ms);
-    let server = refresh_server_tools_if_needed(server, timeout);
-    let tool = server
-        .tools
-        .iter()
-        .find(|tool| tool.name == tool_name)
-        .ok_or_else(|| {
-            AgentRuntimeError::Core(format!("MCP tool not found: {server_id}/{tool_name}"))
-        })?;
-    Ok(json!({ "server": server_value(&server), "tool": tool }))
-}
-
-pub(crate) fn mcp_tool_execute(payload: Value) -> AgentRuntimeResult<Value> {
-    let server_id = string_field(&payload, &["serverId", "id", "name"])
-        .map(|value| slugify_id(&value))
-        .ok_or_else(|| AgentRuntimeError::Core("serverId is required".to_string()))?;
-    let tool_name = string_field(&payload, &["toolName", "tool"])
-        .ok_or_else(|| AgentRuntimeError::Core("toolName is required".to_string()))?;
-    let arguments = payload
-        .get("arguments")
-        .or_else(|| payload.get("input"))
-        .or_else(|| payload.get("payload"))
-        .cloned()
-        .unwrap_or_else(|| json!({}));
-    let server = read_registry()
-        .servers
-        .into_iter()
-        .find(|server| server.id == server_id)
-        .ok_or_else(|| {
-            AgentRuntimeError::Core(format!("MCP server is not configured: {server_id}"))
-        })?;
-    if !server.enabled {
-        return Err(AgentRuntimeError::Core(format!(
-            "MCP server is disabled: {server_id}"
-        )));
-    }
-    let timeout = timeout_from_payload_or(&payload, server.tool_timeout_ms);
-    let result = sdk_call_tool(&server, &tool_name, arguments, timeout);
-    match result {
-        Ok(value) => {
-            let _ = update_server(&server_id, |server| {
-                server.state = "connected".to_string();
-                server.last_error = None;
-                Ok(())
-            });
-            Ok(json!({
-                "serverId": server_id,
-                "toolName": tool_name,
-                "result": value,
-            }))
-        }
-        Err(error) => {
-            let _ = update_server(&server_id, |server| {
-                server.state = "failed".to_string();
-                server.last_error = Some(error.to_string());
-                Ok(())
-            });
-            Err(error)
-        }
-    }
-}
-
 pub(crate) fn execute_mcp_state_change(name: &str, input: &Value) -> Result<Value, String> {
-    let project_storage = string_field(input, &["projectRoot"])
-        .map(PathBuf::from)
-        .filter(|path| path.is_dir())
-        .map(|path| path.join(".lyra/agent/mcp"))
-        .filter(|path| path.join(REGISTRY_FILE_NAME).is_file());
-    if let Some(storage_root) = project_storage.as_deref() {
-        let project = read_registry_from(storage_root);
-        let project_ids = project
-            .servers
-            .iter()
-            .map(|server| server.id.clone())
-            .collect::<HashSet<_>>();
-        let requested_ids = server_ids_from_payload(input);
-        let targets_project =
-            requested_ids.is_empty() || requested_ids.iter().any(|id| project_ids.contains(id));
-        let targets_global =
-            requested_ids.is_empty() || requested_ids.iter().any(|id| !project_ids.contains(id));
-        let result = match name {
-            "mcp_server_list" => {
-                let mut merged = read_registry();
-                merged
-                    .servers
-                    .retain(|server| !project_ids.contains(&server.id));
-                merged.servers.extend(project.servers);
-                Ok(
-                    json!({ "servers": merged.servers.iter().map(server_value).collect::<Vec<_>>(), "projectRoot": storage_root }),
-                )
-            }
-            "mcp_server_connect" | "mcp_server_reload" => {
-                if targets_project && targets_global {
-                    let mut scoped = mcp_server_connect_at(storage_root, input.clone())
-                        .map_err(|error| error.to_string())?;
-                    let global =
-                        connect_servers(input.clone()).map_err(|error| error.to_string())?;
-                    merge_scoped_arrays(&mut scoped, global, "servers", &project_ids);
-                    Ok(scoped)
-                } else if targets_project {
-                    mcp_server_connect_at(storage_root, input.clone())
-                } else {
-                    connect_servers(input.clone())
-                }
-            }
-            "mcp_server_disconnect" if targets_project => {
-                mcp_server_disconnect_at(storage_root, input.clone())
-            }
-            "mcp_tool_discover" => {
-                if targets_project && targets_global {
-                    let mut scoped = mcp_tool_discover_at(storage_root, input.clone())
-                        .map_err(|error| error.to_string())?;
-                    let global =
-                        mcp_tool_discover(input.clone()).map_err(|error| error.to_string())?;
-                    merge_scoped_arrays(&mut scoped, global.clone(), "servers", &project_ids);
-                    merge_scoped_arrays(&mut scoped, global, "tools", &project_ids);
-                    Ok(scoped)
-                } else if targets_project {
-                    mcp_tool_discover_at(storage_root, input.clone())
-                } else {
-                    mcp_tool_discover(input.clone())
-                }
-            }
-            "mcp_tool_inspect" if targets_project => {
-                mcp_tool_inspect_at(storage_root, input.clone())
-            }
-            "mcp_tool_execute" if targets_project => {
-                mcp_tool_execute_at(storage_root, input.clone())
-            }
-            "mcp_tool_inspect" => mcp_tool_inspect(input.clone()),
-            "mcp_tool_execute" => mcp_tool_execute(input.clone()),
-            _ => Err(AgentRuntimeError::Core(
-                "project-scoped MCP only supports list, connect, discover, inspect, and execute"
-                    .to_string(),
-            )),
-        };
-        if result.is_ok() || matches!(name, "mcp_server_list") {
-            return result.map_err(|error| error.to_string());
-        }
-    }
     let result = match name {
-        "mcp_server_list" => mcp_list(input.clone()),
         "mcp_server_upsert" => mcp_server_upsert(input.clone()),
         "mcp_server_remove" => mcp_server_remove(input.clone()),
-        "mcp_server_connect" => mcp_server_connect(input.clone()),
         "mcp_server_disconnect" => mcp_server_disconnect(input.clone()),
-        "mcp_server_reload" => mcp_server_reload(input.clone()),
-        "mcp_tool_discover" => mcp_tool_discover(input.clone()),
-        "mcp_tool_inspect" => mcp_tool_inspect(input.clone()),
-        "mcp_tool_execute" => mcp_tool_execute(input.clone()),
-        _ => Err(AgentRuntimeError::Core(format!(
-            "Unknown Lyra MCP tool: {name}"
-        ))),
+        _ => policy::execute(name, input, None),
     };
     result.map_err(|error| error.to_string())
-}
-
-fn merge_scoped_arrays(
-    scoped: &mut Value,
-    global: Value,
-    key: &str,
-    project_ids: &HashSet<String>,
-) {
-    let Some(target) = scoped.get_mut(key).and_then(Value::as_array_mut) else {
-        return;
-    };
-    let Some(values) = global.get(key).and_then(Value::as_array) else {
-        return;
-    };
-    target.extend(
-        values
-            .iter()
-            .filter(|value| {
-                value
-                    .get("serverId")
-                    .or_else(|| value.get("id"))
-                    .and_then(Value::as_str)
-                    .is_none_or(|id| !project_ids.contains(id))
-            })
-            .cloned(),
-    );
 }
 
 #[cfg(test)]

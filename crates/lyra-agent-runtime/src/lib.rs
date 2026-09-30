@@ -216,6 +216,11 @@ impl AgentRuntimeServices {
             | "agent.session.readWindow"
             | "agent.session.readToolArtifact" => self.backend.call(method, payload),
 
+            "agent.projects.list"
+            | "agent.projects.register"
+            | "agent.projects.settings"
+            | "agent.projects.setOverride" => self.backend.call(method, payload),
+
             "agent.plan.list"
             | "agent.plan.read"
             | "agent.plan.delete"
@@ -266,6 +271,7 @@ impl AgentRuntimeServices {
             | "agent.skills.refreshStore"
             | "agent.skills.updateStoreConfig"
             | "agent.mcp.list"
+            | "agent.mcp.setEnabled"
             | "agent.mcp.upsert"
             | "agent.mcp.remove"
             | "agent.mcp.connect"
@@ -523,8 +529,8 @@ pub fn clear_host_capability_dispatcher() {
 #[cfg(test)]
 mod tests {
     use super::{
-        AgentRuntimeBackend, AgentRuntimeResult, AgentRuntimeServices, EventCallback,
-        HostCapabilityDispatcher,
+        AgentRuntimeBackend, AgentRuntimeError, AgentRuntimeResult, AgentRuntimeServices,
+        EventCallback, HostCapabilityDispatcher,
     };
     use serde_json::{Value, json};
     use std::sync::Arc;
@@ -581,6 +587,11 @@ mod tests {
         // "unknown agent runtime method: agent.plan.revise" to the desktop.
         let services = AgentRuntimeServices::with_backend(Arc::new(EchoBackend));
         for method in [
+            "agent.projects.list",
+            "agent.projects.register",
+            "agent.projects.settings",
+            "agent.projects.setOverride",
+            "agent.mcp.setEnabled",
             "agent.plan.list",
             "agent.plan.read",
             "agent.plan.delete",
@@ -608,6 +619,41 @@ mod tests {
                 .handle_agent_request(method, json!({}))
                 .unwrap_or_else(|error| panic!("{method} should be routed: {error:?}"));
             assert_eq!(routed["method"], method);
+        }
+    }
+
+    #[test]
+    fn runtime_services_preserve_project_and_mcp_setting_payloads() {
+        let services = AgentRuntimeServices::with_backend(Arc::new(EchoBackend));
+        for enabled in [json!(true), json!(false), Value::Null] {
+            let payload = json!({
+                "projectId": "project-a",
+                "kind": "mcp",
+                "itemId": "server-a",
+                "enabled": enabled,
+            });
+            let routed = services
+                .handle_agent_request("agent.projects.setOverride", payload.clone())
+                .expect("project override request should be routed");
+            assert_eq!(routed["payload"], payload);
+        }
+        for enabled in [true, false] {
+            let payload = json!({ "serverId": "server-a", "enabled": enabled });
+            let routed = services
+                .handle_agent_request("agent.mcp.setEnabled", payload.clone())
+                .expect("global MCP setting request should be routed");
+            assert_eq!(routed["payload"], payload);
+        }
+    }
+
+    #[test]
+    fn runtime_services_reject_unregistered_methods() {
+        let services = AgentRuntimeServices::with_backend(Arc::new(EchoBackend));
+        for method in ["agent.projects.unknown", "agent.mcp.unknown"] {
+            assert!(matches!(
+                services.handle_agent_request(method, json!({})),
+                Err(AgentRuntimeError::UnknownMethod(name)) if name == method
+            ));
         }
     }
 

@@ -82,6 +82,7 @@ mod plan_actions;
 mod plan_store;
 mod poke;
 mod projections;
+mod projects;
 mod prompt_cache;
 mod provider;
 mod provider_config;
@@ -160,6 +161,10 @@ impl AgentRuntimeBackend for LyraAgentBackend {
             "agent.session.archive" => archive_session(payload),
             "agent.session.delete" => delete_session(payload),
             "agent.session.bindProject" => bind_project(payload),
+            "agent.projects.list" => projects::list(),
+            "agent.projects.register" => projects::register(payload),
+            "agent.projects.settings" => projects::settings(payload),
+            "agent.projects.setOverride" => projects::update_override(payload),
             "agent.usage.read" => read_usage_stats(payload),
 
             "agent.cli.follow.read" => read_cli_follow(payload),
@@ -243,6 +248,7 @@ impl AgentRuntimeBackend for LyraAgentBackend {
             "agent.mcp.list" => execute_mcp_state_change("mcp_server_list", &payload)
                 .map_err(AgentRuntimeError::Core),
             "agent.mcp.upsert" => mcp_server_upsert(payload),
+            "agent.mcp.setEnabled" => mcp_catalog::set_enabled(payload),
             "agent.mcp.remove" => mcp_server_remove(payload),
             "agent.mcp.connect" => execute_mcp_state_change("mcp_server_connect", &payload)
                 .map_err(AgentRuntimeError::Core),
@@ -275,6 +281,7 @@ impl AgentRuntimeBackend for LyraAgentBackend {
     }
 
     fn register_event_callback(&self, callback: Arc<EventCallback>) {
+        token_estimate::warm_tokenizer();
         set_event_callback(Some(callback));
     }
 

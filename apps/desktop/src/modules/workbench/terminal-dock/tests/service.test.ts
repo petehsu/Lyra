@@ -190,6 +190,24 @@ describe("terminal dock service", () => {
     expect(next.panes[pane.id]?.currentCwd).toBe("/Users/petehsu/Documents/Lyra/apps/desktop");
     expect(next.panes[pane.id]?.autoTitle).toBe("desktop");
     expect(next.tabs.find((tab) => tab.id === result.tab.id)?.title).toBe("desktop");
+
+    const ignored = applyTerminalCwdChangedState(next, {
+      kind: "cwdChanged",
+      sessionId: pane.sessionId,
+      cwd: "#/home/xu-yuanhao/Documents%",
+      currentCwd: "#/home/xu-yuanhao/Documents%"
+    });
+    expect(ignored.panes[pane.id]?.currentCwd).toBe("/Users/petehsu/Documents/Lyra/apps/desktop");
+    expect(ignored.panes[pane.id]?.title).not.toBe("Documents%");
+
+    const promptMarker = applyTerminalCwdChangedState(next, {
+      kind: "cwdChanged",
+      sessionId: pane.sessionId,
+      cwd: "/home/xu-yuanhao/Documents/Lyra%",
+      currentCwd: "/home/xu-yuanhao/Documents/Lyra%"
+    });
+    expect(promptMarker.panes[pane.id]?.currentCwd).toBe("/Users/petehsu/Documents/Lyra/apps/desktop");
+    expect(promptMarker.panes[pane.id]?.title).not.toBe("Lyra%");
   });
 
   test("does not overwrite a manually locked title on cwd changes", () => {

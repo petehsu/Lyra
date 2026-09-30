@@ -1,3 +1,5 @@
+import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
+import { t } from "../i18n";
 import type { SettingsAiLabels, SettingsAiModel } from "../settings-ai";
 import type { GlobalDialogModel } from "../global-dialog";
 import type { SoftwareStoreSurfaceProps } from "../software-store";
@@ -131,6 +133,7 @@ export type SettingsDownloadsCustomControlDescriptor = {
 export type SettingsCustomControlDescriptor =
   | SettingsAiCustomControlDescriptor
   | SettingsLoginManagerCustomControlDescriptor
+  | { readonly kind: "custom"; readonly customKind: "projects"; readonly desktopApi: LyraDesktopApi | null }
   | SettingsImportCustomControlDescriptor
   | SettingsDownloadsCustomControlDescriptor
   | SettingsSoftwareStoreCustomControlDescriptor;
@@ -362,6 +365,8 @@ const resolveCategoryHeading = (
       return props.skillsCategoryLabel;
     case "mcp":
       return props.mcpCategoryLabel;
+    case "projects":
+      return t("settings.projectsCategoryLabel");
     case "importSettings":
       return props.importSettingsCategoryLabel;
     case "experimental":
@@ -793,6 +798,8 @@ const createSectionControl = (
           }
         ]
       });
+    case "projects":
+      return createSettingsSection({ id: sectionId, label: t("settings.projectsCategoryLabel"), frame: "none", controls: [{ kind: "custom", customKind: "projects", desktopApi: props.desktopApi }] });
     case "importSettings":
       return createSettingsSection({
         id: sectionId,

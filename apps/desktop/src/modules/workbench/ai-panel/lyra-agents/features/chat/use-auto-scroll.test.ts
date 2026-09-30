@@ -25,6 +25,18 @@ describe("useAutoScroll", () => {
     vi.unstubAllGlobals();
   });
 
+  test("lets native anchoring preserve history only while the reader owns scrolling", () => {
+    const { result } = renderHook(() => useAutoScroll({ working: true, overflowAnchor: "dynamic" }));
+    const scroller = document.createElement("div");
+    layoutScroller(scroller, { clientHeight: 200, scrollHeight: 800, scrollTop: 600 });
+    act(() => result.current.setScrollElement(scroller));
+    expect(scroller.style.overflowAnchor).toBe("none");
+    act(() => result.current.handleWheel({ deltaY: -40, target: scroller }));
+    expect(scroller.style.overflowAnchor).toBe("auto");
+    act(() => result.current.resume());
+    expect(scroller.style.overflowAnchor).toBe("none");
+  });
+
   test("resume pins to bottom and later content growth keeps following", () => {
     const { result } = renderHook(() => useAutoScroll({
       working: true,

@@ -19,6 +19,7 @@ import type { AgentHostCapabilityHandlers } from "./host-payload";
 import {
   normalizePayload,
   readClampedOptionalNumber,
+  readRuntimeSessionId,
   runHostCapabilityWithTimeout,
   isRecord
 } from "./host-payload";
@@ -487,7 +488,22 @@ export const createWorkbenchObservationAdapter = ({
       if (service === null) {
         throw new Error("Workbench observation capability is not available");
       }
-      return await service.openTerminalPane(normalizePayload(payload));
+      const request = normalizePayload(payload);
+      const placement = request.placement === "workspace" || request.placement === "dock"
+        ? request.placement
+        : undefined;
+      const splitDirection = request.splitDirection === "vertical" || request.splitDirection === "horizontal"
+        ? request.splitDirection
+        : undefined;
+      return await service.openTerminalPane({
+        ...(placement === undefined ? {} : { placement }),
+        ...(typeof request.title === "string" ? { title: request.title } : {}),
+        ...(typeof request.cwd === "string" ? { cwd: request.cwd } : {}),
+        ...(typeof request.terminalTabId === "string" ? { terminalTabId: request.terminalTabId } : {}),
+        ...(typeof request.paneId === "string" ? { paneId: request.paneId } : {}),
+        ...(splitDirection === undefined ? {} : { splitDirection }),
+        sourceAgentSessionId: readRuntimeSessionId(request)
+      });
     },
     "workbench.focusTerminal": async (payload) => {
       const service = getWorkbenchObservationService();

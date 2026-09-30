@@ -10,7 +10,7 @@ import type { BrowserSettingsCategoryId } from "../browser-tabs/settings-surface
 import { resolveWebSearchTarget } from "../browser-search/service";
 import { WORKBENCH_CONFIG } from "../config";
 import type { FileManagerModel } from "../file-manager";
-import type { ImageViewerModel } from "../image-viewer";
+import { isImageViewerSupportedPath, type ImageViewerModel } from "../image-viewer";
 import { requestSoftwareStoreDetail } from "../software-store/service";
 import type { SoftwareStoreLabels } from "../software-store/types";
 import type { WorkspaceTabsModel } from "../workspace-tabs";
@@ -48,7 +48,7 @@ export const createBuiltinHandlers = ({
   readonly labels: SoftwareStoreLabels;
   readonly tabsModel: WorkspaceTabsModel;
   readonly fileManagerModel: FileManagerModel;
-  readonly imageViewerModel: ImageViewerModel | undefined;
+  readonly imageViewerModel?: ImageViewerModel;
   readonly software: readonly LyraSoftwareManifest[];
   readonly stateReaders: SoftwareStateReaders;
   readonly refreshLoginManagerState: () => Promise<unknown>;
@@ -58,32 +58,11 @@ export const createBuiltinHandlers = ({
 }): Map<string, LyraSoftwareActionHandler> => {
   const handlers = new Map<string, LyraSoftwareActionHandler>();
   const {
-    findActiveSoftwareTab,
     readFileManagerState,
-    readImageViewerState,
     readSoftwareState,
     readTerminalState
   } = stateReaders;
 
-  handlers.set("browser-search.openUrl", (input) => {
-    const url = requiredString(input, "url");
-    const title = optionalString(input, "title");
-    const tabId = tabsModel.openPageInNewTab(url, title);
-    if (tabId === null) {
-      throw new Error(`Unable to open invalid browser URL: ${url}`);
-    }
-    return {
-      opened: true,
-      tabId,
-      url,
-      pageKind: "page",
-      openTarget: {
-        kind: "url",
-        url,
-        ...(title === undefined ? {} : { label: title })
-      }
-    };
-  });
   handlers.set("browser-search.search", async (input) => {
     const query = requiredString(input, "query");
     const target = await resolveWebSearchTarget({
@@ -196,15 +175,6 @@ export const createBuiltinHandlers = ({
   });
   handlers.set("file-manager.readCurrentDirectory", () =>
     readSoftwareState({ softwareId: "file-manager" }));
-  handlers.set("file-manager.selectEntry", (input) => {
-    const entryId = requiredString(input, "entryId");
-    const tab = findActiveSoftwareTab("file-manager");
-    if (tab?.appInstanceId === undefined) {
-      throw new Error("No File Manager tab is open.");
-    }
-    fileManagerModel.selectEntry(tab.appInstanceId, entryId);
-    return { selected: true, appInstanceId: tab.appInstanceId, entryId };
-  });
   handlers.set("file-manager.revealPath", async (input) => {
     const path = requiredString(input, "path");
     const nextApp = fileManagerModel.createInstance();
@@ -229,6 +199,46 @@ export const createBuiltinHandlers = ({
     };
   });
 
+  handlers.set("image-viewer.open", async (input) => {
+    const path = requiredString(input, "path");
+    if (!isImageViewerSupportedPath(path)) {
+      throw new Error(`Not an image the viewer can open: ${path}`);
+    }
+    if (imageViewerModel === undefined) {
+      throw new Error("Image viewer is unavailable.");
+    }
+    const existingInstanceId = imageViewerModel.findInstanceByPath(path);
+    const existingTab = tabsModel.tabs.find((tab) =>
+      tab.pageKind === "app"
+      && tab.appId === "image-viewer"
+      && tab.appInstanceId !== undefined
+      && (existingInstanceId !== null
+        ? tab.appInstanceId === existingInstanceId
+        : tab.filePath === path)
+    );
+    if (existingTab?.appInstanceId !== undefined) {
+      tabsModel.setActiveTab(existingTab.id);
+      await imageViewerModel.openImage(existingTab.appInstanceId, path);
+      return {
+        opened: true,
+        appInstanceId: existingTab.appInstanceId,
+        tabId: existingTab.id,
+        path,
+        openTarget: { kind: "file" as const, path }
+      };
+    }
+    const nextViewer = imageViewerModel.createInstance(path);
+    const tabId = tabsModel.openAppTab(nextViewer);
+    await imageViewerModel.openImage(nextViewer.appInstanceId, path);
+    return {
+      opened: true,
+      appInstanceId: nextViewer.appInstanceId,
+      tabId,
+      path,
+      openTarget: { kind: "file" as const, path }
+    };
+  });
+
   handlers.set("settings.openSection", (input) => {
     const section = optionalString(input, "section") ?? "general";
     const categoryId = SETTING_CATEGORY_IDS.has(section as BrowserSettingsCategoryId)
@@ -239,16 +249,6 @@ export const createBuiltinHandlers = ({
   });
 
   handlers.set("login-manager.readState", async () => await refreshLoginManagerState());
-  handlers.set("login-manager.open", () => {
-    onOpenSettingsSection("loginManager");
-    return {
-      opened: true,
-      openTarget: {
-        kind: "software",
-        id: "login-manager"
-      }
-    };
-  });
   handlers.set("login-manager.logoutSite", async (input) => {
     requirePermissionGranted(input, "login-manager.logoutSite");
     if (desktopApi?.loginManager === undefined) {
@@ -423,111 +423,6 @@ export const createBuiltinHandlers = ({
     };
   });
 
-  handlers.set("image-viewer.readMetadata", (input) => {
-    const instanceId = optionalString(input, "instanceId");
-    return readSoftwareState({
-      softwareId: "image-viewer",
-      ...(instanceId === undefined ? {} : { instanceId })
-    });
-  });
-  handlers.set("image-viewer.zoomPan", (input) => {
-    if (imageViewerModel === undefined) {
-      throw new Error("Image Viewer model is unavailable.");
-    }
-    const instanceId =
-      optionalString(input, "instanceId")
-      ?? findActiveSoftwareTab("image-viewer")?.appInstanceId;
-    if (instanceId === undefined) {
-      throw new Error("No Image Viewer tab is open.");
-    }
-    const record = toRecord(input);
-    imageViewerModel.setViewport(instanceId, {
-      ...(typeof record.zoom === "number" ? { zoom: record.zoom } : {}),
-      ...(typeof record.offsetX === "number" ? { offsetX: record.offsetX } : {}),
-      ...(typeof record.offsetY === "number" ? { offsetY: record.offsetY } : {}),
-      ...(typeof record.rotation === "number" ? { rotation: record.rotation } : {}),
-      ...(record.background === "checkerboard" || record.background === "dark" || record.background === "light"
-        ? { background: record.background }
-        : {})
-    });
-    return { updated: true, instanceId, state: readImageViewerState({ softwareId: "image-viewer" }) };
-  });
-  handlers.set("image-viewer.openSource", async (input) => {
-    const explicitPath = optionalString(input, "path");
-    const instanceId = optionalString(input, "instanceId");
-    const imageState = readImageViewerState({
-      softwareId: "image-viewer",
-      ...(instanceId === undefined ? {} : { instanceId })
-    });
-    const filePath = explicitPath ?? nonEmptyString(toRecord(imageState).filePath);
-    if (filePath === null) {
-      throw new Error("No Image Viewer source path is available.");
-    }
-    const nextApp = fileManagerModel.createInstance();
-    tabsModel.openAppTab(nextApp);
-    await fileManagerModel.openDirectory(nextApp.appInstanceId, parentDirectoryPath(filePath), false);
-    const state = fileManagerModel.getState(nextApp.appInstanceId);
-    const entry = state?.entries.find((item) =>
-      item.path === filePath || item.name === baseName(filePath)
-    );
-    if (entry !== undefined) {
-      fileManagerModel.selectEntry(nextApp.appInstanceId, entry.id);
-    }
-    return {
-      opened: true,
-      appInstanceId: nextApp.appInstanceId,
-      path: filePath,
-      openTarget: {
-        kind: "file",
-        path: filePath
-      },
-      ...(entry === undefined ? {} : { selectedEntryId: entry.id })
-    };
-  });
-  handlers.set("image-viewer.prepareVisionFallback", (input) => {
-    const instanceId = optionalString(input, "instanceId");
-    const imageState = readImageViewerState({
-      softwareId: "image-viewer",
-      ...(instanceId === undefined ? {} : { instanceId })
-    });
-    const imageRecord = toRecord(imageState);
-    const filePath = nonEmptyString(imageRecord.filePath);
-    if (filePath === null) {
-      return {
-        available: false,
-        message: "No Image Viewer source path is available for OCR or vision fallback.",
-        state: imageState
-      };
-    }
-    const metadata = toRecord(imageRecord.metadata);
-    const mediaType =
-      nonEmptyString(metadata.mimeType)
-      ?? nonEmptyString(metadata.format)
-      ?? "image/png";
-    return {
-      available: true,
-      ocrAvailable: false,
-      fallback: "model-vision",
-      message:
-        "Local OCR is not available; use this image source as model vision evidence.",
-      imageArtifact: {
-        id: `image-viewer-${imageRecord.appInstanceId ?? instanceId ?? "active"}`,
-        kind: "image",
-        mediaType,
-        path: filePath,
-        width: typeof metadata.width === "number" ? metadata.width : undefined,
-        height: typeof metadata.height === "number" ? metadata.height : undefined,
-        openTarget: {
-          kind: "file",
-          path: filePath
-        }
-      },
-      viewport: imageRecord.viewport,
-      metadata,
-      nextRecommendedAction: "attach_image_to_model_vision_input"
-    };
-  });
-
   handlers.set("terminal.readVisibleBuffer", async (input) => {
     const state = readTerminalState();
     const stateRecord = toRecord(state);
@@ -573,8 +468,18 @@ export const createBuiltinHandlers = ({
       ...(maxBytes === undefined ? {} : { maxBytes }),
       ...(waitMs === undefined ? {} : { waitMs })
     });
+    const matchedPane = requestedSessionId === null
+      ? undefined
+      : panes
+        .map((pane) => toRecord(pane))
+        .find((pane) => nonEmptyString(pane.sessionId) === requestedSessionId);
     return {
       ...stateRecord,
+      ...(requestedSessionId === null
+        ? {}
+        : {
+          activePaneId: matchedPane === undefined ? null : nonEmptyString(matchedPane.paneId)
+        }),
       activeSessionId,
       activeOutput: output.output,
       visibleBufferUnavailable: false,
@@ -597,10 +502,20 @@ export const createBuiltinHandlers = ({
     const sessionId = requiredString(input, "sessionId");
     const inputRecord = toRecord(input);
     const text = typeof inputRecord.text === "string" ? inputRecord.text : undefined;
+    const state = readTerminalState();
+    const panes = Array.isArray(toRecord(state).panes) ? toRecord(state).panes as unknown[] : [];
+    const pane = panes
+      .map((entry) => toRecord(entry))
+      .find((entry) => nonEmptyString(entry.sessionId) === sessionId);
+    if (pane !== undefined && nonEmptyString(pane.sourceAgentSessionId) === null) {
+      throw new Error(
+        "That terminal belongs to the user. Use write_stdin and omit sessionId to use this task's private terminal."
+      );
+    }
     await write({
       sessionId,
       ...(text === undefined ? {} : { text }),
-      source: "user"
+      source: "agent"
     });
     return { sent: true, sessionId, textLength: text?.length ?? 0 };
   });

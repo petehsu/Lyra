@@ -505,7 +505,7 @@ fn merge_user_content_with_inline_images(role: &str, content: Value, images: &[V
     };
     let transcript_marker = "The user referenced prior transcript excerpts.";
     let page_marker = "The user referenced Workbench browser pages.";
-    let image_anchor_hint = "Treat every <lyra-image-attach> block as a canonical inline image anchor for the member's inline image attachment. Attachment ids are session-local and are not artifact ids—never pass them to artifact_read. Use the source path on <lyra-image-attach> or image-viewer tools on that file path. Describe image content from vision input; describe transparency/alpha/format from lyra-image-attach traits (hasAlpha, transparentBackground, transparentPixelPercent, colorMode, visionComposited). When visionComposited=true, vision shows a white-backed composite for visibility—the original file at source may still be transparent.";
+    let image_anchor_hint = "Treat every <lyra-image-attach> block as a canonical inline image anchor for the member's inline image attachment. Attachment ids are session-local and are not artifact ids—never pass them to artifact_read. Use the source path on <lyra-image-attach>. Describe image content from vision input; describe transparency/alpha/format from lyra-image-attach traits (hasAlpha, transparentBackground, transparentPixelPercent, colorMode, visionComposited). When visionComposited=true, vision shows a white-backed composite for visibility—the original file at source may still be transparent.";
     let merged = if user_text.trim().is_empty() {
         format!("{image_anchor_hint}\n\n{image_blocks}")
     } else if user_text.contains(transcript_marker) || user_text.contains(page_marker) {

@@ -10,7 +10,6 @@ struct SessionContextData {
     session_messages: Vec<Value>,
     session_tools: Vec<Value>,
     host_dispatcher: Option<Arc<HostCapabilityDispatcher>>,
-    active_skills: HashSet<String>,
     working_dir: Option<String>,
     session_kind: Option<String>,
     active_turn_id: Option<String>,
@@ -161,7 +160,6 @@ fn assemble_session_context(session_id: &str) -> AgentRuntimeResult<SessionConte
         session_messages,
         session_tools,
         host_dispatcher: host_dispatcher(),
-        active_skills: state.active_skills.clone(),
         working_dir,
         session_kind,
         active_turn_id,
@@ -331,7 +329,6 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         session_messages,
         session_tools,
         host_dispatcher,
-        active_skills,
         working_dir,
         session_kind,
         active_turn_id,
@@ -345,6 +342,11 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         session_created_at,
         turn_count,
     } = assemble_session_context(session_id)?;
+    let active_skills =
+        skill_catalog::effective_skills(projects::snapshot_root(&session_snapshot))?
+            .into_iter()
+            .map(|skill| skill.id)
+            .collect::<HashSet<_>>();
     let provider = providers::transport::auth::provider_with_resolved_api_key(
         provider,
         host_dispatcher.as_ref(),
@@ -429,11 +431,13 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
     .unwrap_or(route.protocol_id.as_str());
     let openai_responses_replay =
         effective_protocol_id == providers::protocol::openai_responses::PROTOCOL_ID;
-    if capabilities.supports_tool_calling {
-        tools::tool_fs::refresh_software_catalog(host_dispatcher.as_ref());
-    }
+    let host_context = context::read_turn_host_context(host_dispatcher.as_ref());
+    tools::tool_fs::update_software_catalog(host_dispatcher.as_ref(), &host_context["software"]);
     tools::tool_search::persist_discovered_snapshot(session_id, host_dispatcher.as_ref());
-    let workbench = crate::native_backend::context::fetch_workbench(host_dispatcher.as_ref());
+    let workbench = host_context
+        .get("workbench")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
     let mut session_snapshot = session_snapshot;
     let office_tools = tools::tool_search::office_turn_signal(&session_snapshot, Some(&workbench));
     session_snapshot[tools::tool_search::EPHEMERAL_OFFICE_TOOLS_KEY] = json!(office_tools);
@@ -459,11 +463,10 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         .iter()
         .map(|ranked| ranked.record.clone())
         .collect::<Vec<_>>();
-    let mut runtime_context = crate::native_backend::context::build_runtime_context_with_workbench(
-        host_dispatcher.as_ref(),
+    let mut runtime_context = crate::native_backend::context::build_runtime_context(
+        &host_context,
         &memory_record_summaries,
         &capabilities,
-        workbench,
     );
     let capability_record = state().lock().ok().and_then(|state| {
         state
@@ -591,7 +594,7 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
         "systemRecall": system_recall_json(&system_recall_records)
     });
     runtime_context["activeSkills"] =
-        active_skill_context_for_project(&active_skills, working_dir.as_deref());
+        active_skill_context_for_project(projects::snapshot_root(&session_snapshot));
     runtime_context["tools"] = json!(if capabilities.supports_tool_calling {
         tools
             .iter()
@@ -619,17 +622,10 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             .and_then(|m| m.get("createdAt").and_then(Value::as_str))
             .map(|t| (now_ms - super::helpers::iso_ms(t)).max(0) as u64 / 1000)
             .unwrap_or(0);
-        let workspace = if let Some(ref dispatcher) = host_dispatcher {
-            invoke_host_capability_with_timeout(
-                dispatcher.clone(),
-                "agent.readSpatiotemporalContext".to_string(),
-                json!({}),
-                DEFAULT_HOST_TOOL_TIMEOUT_MS,
-            )
-            .unwrap_or_else(|_| json!({}))
-        } else {
-            json!({})
-        };
+        let workspace = host_context
+            .get("workspace")
+            .cloned()
+            .unwrap_or_else(|| json!({}));
         runtime_context["spatiotemporal"] = json!({
             "session": {
                 "startedAt": session_created_at,
@@ -640,20 +636,21 @@ pub(crate) fn build_model_request(session_id: &str) -> AgentRuntimeResult<ModelR
             "workspace": workspace,
         });
     }
-    let persona_context = read_host_persona_context(host_dispatcher.as_ref());
+    let persona_context = prompt_policy::persona_context_from_value(&host_context["persona"]);
     // Identity inference reads OS/Git/SSH/package-manager/editor signals and can
     // reach the selected model through the prompt. Fail closed unless the
     // Desktop host confirms the user's current explicit consent.
-    let computed_persona =
-        host_persona_signal_collection_allowed(host_dispatcher.as_ref()).then(|| {
-            let local_signals = crate::persona::collect_local_signals(Default::default());
-            crate::persona::compute_persona(&local_signals)
-        });
+    let computed_persona = computed_persona_for_turn(
+        host_context
+            .get("personaSignalsAllowed")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+    );
     let first_used_at = state().lock().ok().and_then(|s| s.first_used_at.clone());
     let prompt_report = build_system_prompt_report(
         &runtime_context,
         &persona_context,
-        &active_skill_prompt_for_project(&active_skills, working_dir.as_deref()),
+        &active_skill_prompt_for_project(projects::snapshot_root(&session_snapshot)),
         &combined_memory_prompt(
             &memory_records,
             &system_recall_records,

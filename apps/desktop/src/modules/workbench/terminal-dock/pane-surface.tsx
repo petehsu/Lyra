@@ -6,6 +6,7 @@ import { Terminal } from "xterm";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import { AppIconButton } from "@renderer/ui/components";
 import { getIsLayoutResizing } from "../shell/use-panel-layout";
+import { getIsWindowResizing } from "../shell/use-window-resize-class";
 import {
   wasBulkTerminalRestored,
   waitForBulkTerminalRestore
@@ -513,7 +514,7 @@ export const TerminalPaneSurface = ({
         options?.deferColumns === true &&
         terminal.cols !== dimensions.cols &&
         (
-          getIsLayoutResizing() ||
+          getIsLayoutResizing() || getIsWindowResizing() ||
           readTerminalBufferLength(terminal) >= TERMINAL_HORIZONTAL_RESIZE_BUFFER_THRESHOLD
         );
       const nextCols = shouldDeferColumns ? terminal.cols : dimensions.cols;
@@ -590,7 +591,7 @@ export const TerminalPaneSurface = ({
       }
       // Panel animations produce transient terminal sizes; only user drag needs frame-level fitting.
       // Read the cached flag instead of `classList.contains`, which forces a style reflush each tick.
-      const isLayoutResizing = getIsLayoutResizing();
+      const isLayoutResizing = getIsLayoutResizing() || getIsWindowResizing();
       if (mode === "immediate" || isLayoutResizing) {
         cancelResizeSettleTimer();
         scheduleResizeFrame({ deferColumns: isLayoutResizing });

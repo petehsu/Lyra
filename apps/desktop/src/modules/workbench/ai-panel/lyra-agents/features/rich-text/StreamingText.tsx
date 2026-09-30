@@ -1,7 +1,6 @@
 import { useRef } from "react";
 
 import { useData } from "../../data/DataProvider";
-import { useStreamText } from "../../hooks/useStreamText";
 import { PlainAgentText } from "./LyraDocument";
 import { LyraMarkdown } from "./LyraMarkdown";
 import {
@@ -33,7 +32,6 @@ export function StreamingText({
   blockId: string | null;
 }) {
   const { aiRichRenderingEnabled } = useData();
-  const useTypewriter = streaming && !aiRichRenderingEnabled;
   const rootRef = useRef<HTMLDivElement>(null);
   // The live tail stays in the stream store. `content` is only the first
   // delta until messageCommitted copies the finished sentence.
@@ -51,17 +49,12 @@ export function StreamingText({
   if (replacementRevision > documentRevisionRef.current.revision) {
     documentRevisionRef.current.revision = replacementRevision;
   }
-  const { text } = useStreamText(streamStoreText, {
-    speed: 3,
-    interval: 25,
-    enabled: useTypewriter,
-  });
   const handleClick = useLyraRichTextClickHandler(rootRef);
   if (!aiRichRenderingEnabled) {
     if (streaming) {
       return (
         <div className="lyra-agents-streaming-text lyra-agents-plain-text">
-          <span>{text}</span>
+          <span>{streamStoreText}</span>
         </div>
       );
     }

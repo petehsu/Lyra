@@ -463,6 +463,7 @@ export const createWorkbenchBrowserViewManager = ({
 
   agentController = createWorkbenchBrowserAgentController({
     entries,
+    prepareAgentPage: pageRegistry.prepareAgentPage,
     rememberBrowserRestoreState,
     requireEntry: pageRegistry.requireEntry,
     findFrameInWebContents: pageRegistry.findFrameInWebContents,

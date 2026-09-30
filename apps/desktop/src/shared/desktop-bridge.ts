@@ -124,6 +124,7 @@ import type {
   UiuxUninstallResponse
 } from "./uiux-packs";
 import type {
+  LyraSoftwareManifest,
   SoftwareCapabilitiesQueryRequest,
   SoftwareCapabilitiesQueryResult
 } from "./software-capabilities";
@@ -733,6 +734,11 @@ export const LYRA_CHANNELS = {
   agentModelDelete: "lyra:agent/models/delete",
   agentModelRefresh: "lyra:agent/models/refresh",
   agentProviderOptionsUpdate: "lyra:agent/provider/options/update",
+  agentProjectsList: "lyra:agent/projects/list",
+  agentProjectsRegister: "lyra:agent/projects/register",
+  agentProjectsSettings: "lyra:agent/projects/settings",
+  agentProjectsSetOverride: "lyra:agent/projects/set-override",
+  agentMcpSetEnabled: "lyra:agent/mcp/set-enabled",
   agentSkillsList: "lyra:agent/skills/list",
   agentSkillInspect: "lyra:agent/skills/inspect",
   agentSkillActivate: "lyra:agent/skills/activate",
@@ -773,6 +779,7 @@ export const LYRA_CHANNELS = {
   workbenchObservationQueryResult: "lyra:workbench-observation/query-result",
   softwareCapabilitiesQuery: "lyra:software-capabilities/query",
   softwareCapabilitiesQueryResult: "lyra:software-capabilities/query-result",
+  softwareCapabilitiesSnapshot: "lyra:software-capabilities/snapshot",
   uiuxListPacks: "lyra:uiux/list-packs",
   uiuxInstallFromLocal: "lyra:uiux/install-from-local",
   uiuxInstallFromGit: "lyra:uiux/install-from-git",
@@ -2236,6 +2243,7 @@ export type WorkbenchObservationBridgeApi = {
 };
 
 export type SoftwareCapabilitiesBridgeApi = {
+  readonly publish: (software: readonly LyraSoftwareManifest[]) => Promise<void>;
   readonly registerHandler: (
     handler: (
       request: SoftwareCapabilitiesQueryRequest

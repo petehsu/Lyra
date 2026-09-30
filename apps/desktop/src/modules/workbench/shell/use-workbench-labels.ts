@@ -157,9 +157,6 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         importSettingsLabels: {
           title: t("settings.importSettingsCategoryLabel"),
           description: t("settings.importSettingsDescription"),
-          project: t("settings.importSettingsProject"),
-          chooseProject: t("settings.importSettingsChooseProject"),
-          clearProject: t("settings.importSettingsClearProject"),
           detect: t("settings.importSettingsDetect"),
           sync: t("settings.importSettingsSync"),
           synced: t("settings.importSettingsSynced"),
@@ -952,7 +949,7 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
             title: t("softwareStore.imageViewerTitle"),
             description: t("softwareStore.imageViewerDescription"),
             category: t("softwareStore.categoryMedia"),
-            agentAccess: "readOnly" as const,
+            agentAccess: "controllable" as const,
             openable: false,
             openDisabledReason: t("softwareStore.contextRequired")
           },
@@ -1017,7 +1014,6 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
           }
         ] satisfies readonly SoftwareStoreBuiltinApp[],
         actionLabels: {
-          "browser-search.openUrl": { title: t("softwareStore.action.browserSearchOpenUrlTitle"), description: t("softwareStore.action.browserSearchOpenUrlDescription") },
           "browser-search.search": { title: t("softwareStore.action.browserSearchSearchTitle"), description: t("softwareStore.action.browserSearchSearchDescription") },
           "browser-search.readState": { title: t("softwareStore.action.browserSearchReadStateTitle"), description: t("softwareStore.action.browserSearchReadStateDescription") },
           "browser-search.readCurrentPage": { title: t("softwareStore.action.browserSearchReadCurrentPageTitle"), description: t("softwareStore.action.browserSearchReadCurrentPageDescription") },
@@ -1026,11 +1022,9 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
           "file-manager.openHome": { title: t("softwareStore.action.fileManagerOpenHomeTitle"), description: t("softwareStore.action.fileManagerOpenHomeDescription") },
           "file-manager.openPath": { title: t("softwareStore.action.fileManagerOpenPathTitle"), description: t("softwareStore.action.fileManagerOpenPathDescription") },
           "file-manager.readCurrentDirectory": { title: t("softwareStore.action.fileManagerReadCurrentDirectoryTitle"), description: t("softwareStore.action.fileManagerReadCurrentDirectoryDescription") },
-          "file-manager.selectEntry": { title: t("softwareStore.action.fileManagerSelectEntryTitle"), description: t("softwareStore.action.fileManagerSelectEntryDescription") },
           "file-manager.revealPath": { title: t("softwareStore.action.fileManagerRevealPathTitle"), description: t("softwareStore.action.fileManagerRevealPathDescription") },
           "settings.openSection": { title: t("softwareStore.action.settingsOpenSectionTitle"), description: t("softwareStore.action.settingsOpenSectionDescription") },
           "login-manager.readState": { title: t("softwareStore.action.loginManagerReadStateTitle"), description: t("softwareStore.action.loginManagerReadStateDescription") },
-          "login-manager.open": { title: t("softwareStore.action.loginManagerOpenTitle"), description: t("softwareStore.action.loginManagerOpenDescription") },
           "login-manager.logoutSite": { title: t("softwareStore.action.loginManagerLogoutSiteTitle"), description: t("softwareStore.action.loginManagerLogoutSiteDescription") },
           "login-manager.updateAuthMethod": { title: t("softwareStore.action.loginManagerUpdateAuthMethodTitle"), description: t("softwareStore.action.loginManagerUpdateAuthMethodDescription") },
           "login-manager.fillCredential": { title: t("softwareStore.action.loginManagerFillCredentialTitle"), description: t("softwareStore.action.loginManagerFillCredentialDescription") },
@@ -1041,10 +1035,7 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
           "software-store.uninstall": { title: t("softwareStore.action.softwareStoreUninstallTitle"), description: t("softwareStore.action.softwareStoreUninstallDescription") },
           "terminal.readVisibleBuffer": { title: t("softwareStore.action.terminalReadVisibleBufferTitle"), description: t("softwareStore.action.terminalReadVisibleBufferDescription") },
           "terminal.sendControlledInput": { title: t("softwareStore.action.terminalSendControlledInputTitle"), description: t("softwareStore.action.terminalSendControlledInputDescription") },
-          "image-viewer.readMetadata": { title: t("softwareStore.action.imageViewerReadMetadataTitle"), description: t("softwareStore.action.imageViewerReadMetadataDescription") },
-          "image-viewer.zoomPan": { title: t("softwareStore.action.imageViewerZoomPanTitle"), description: t("softwareStore.action.imageViewerZoomPanDescription") },
-          "image-viewer.openSource": { title: t("softwareStore.action.imageViewerOpenSourceTitle"), description: t("softwareStore.action.imageViewerOpenSourceDescription") },
-          "image-viewer.prepareVisionFallback": { title: t("softwareStore.action.imageViewerPrepareVisionFallbackTitle"), description: t("softwareStore.action.imageViewerPrepareVisionFallbackDescription") }
+          "image-viewer.open": { title: t("softwareStore.action.imageViewerOpenTitle"), description: t("softwareStore.action.imageViewerOpenDescription") }
         }
       },
       loginManager: {

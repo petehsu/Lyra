@@ -78,7 +78,7 @@ fn merge_candidate_action_merges_content() {
 fn memory_trigger_persists_mark_and_job_together() {
     let temp = tempdir().expect("tempdir");
     let event = MemoryTriggerEvent {
-        event_type: EVENT_TOOL_CALL_COMPLETED.to_string(),
+        event_type: EVENT_FILE_CHANGE_RECORDED.to_string(),
         session_id: "session-atomic-trigger".to_string(),
         turn_id: "turn-atomic-trigger".to_string(),
         payload: json!({ "toolName": "file_write" }),

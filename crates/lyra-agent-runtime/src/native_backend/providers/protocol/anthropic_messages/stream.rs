@@ -12,7 +12,7 @@ use crate::{
     AgentRuntimeError, AgentRuntimeResult, ProviderTransportKind,
     native_backend::{
         provider::{ModelReply, ProviderResponseMeta},
-        turns::{StreamDeltaBatcher, turn_was_cancelled},
+        turns::{emit_reasoning_delta, emit_visible_delta, turn_was_cancelled},
     },
 };
 
@@ -48,7 +48,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
 ) -> AgentRuntimeResult<ModelReply> {
     let mut state = AnthropicStreamState::default();
     let mut ui_message_id: Option<String> = None;
-    let mut delta_batcher = StreamDeltaBatcher::default();
+
     let buffer_assistant_text = false;
     let started_at = Instant::now();
 
@@ -74,13 +74,12 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
             &event,
             &mut state,
             &mut ui_message_id,
-            &mut delta_batcher,
             buffer_assistant_text,
             session_id,
             turn_id,
         )?;
     }
-    delta_batcher.flush(&mut ui_message_id, session_id, turn_id)?;
+
     finish_streaming_reply(
         state,
         ui_message_id,
@@ -101,7 +100,7 @@ pub(crate) async fn parse_streaming_response_async(
 ) -> AgentRuntimeResult<ModelReply> {
     let mut state = AnthropicStreamState::default();
     let mut ui_message_id: Option<String> = None;
-    let mut delta_batcher = StreamDeltaBatcher::default();
+
     let buffer_assistant_text = false;
     let started_at = Instant::now();
 
@@ -128,13 +127,50 @@ pub(crate) async fn parse_streaming_response_async(
             &event,
             &mut state,
             &mut ui_message_id,
-            &mut delta_batcher,
             buffer_assistant_text,
             session_id,
             turn_id,
         )?;
+        use crate::native_backend::provider::streaming_tools;
+        match event.get("type").and_then(Value::as_str) {
+            Some("content_block_start") => {
+                let block = &event["content_block"];
+                if block["type"] == "tool_use" {
+                    streaming_tools::declare(
+                        block["id"].as_str().unwrap_or_default(),
+                        block["name"].as_str().unwrap_or_default(),
+                    );
+                }
+            }
+            Some("content_block_stop") => {
+                if let Some(index) = event["index"].as_u64().map(|v| v as usize) {
+                    if let Some(mut block) = state
+                        .content_blocks
+                        .get(&index)
+                        .cloned()
+                        .filter(|v| v["type"] == "tool_use")
+                    {
+                        if let Some(draft) = state
+                            .tool_uses
+                            .get(&index)
+                            .filter(|draft| !draft.input_json.is_empty())
+                        {
+                            block["input"] = parse_tool_arguments(&draft.input_json);
+                        }
+                        if block["input"].get("parseError").is_none() {
+                            if let Ok(calls) = tool_calls_from_content_blocks(&[block], tools) {
+                                for call in calls {
+                                    streaming_tools::complete(call, &mut ui_message_id);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
     }
-    delta_batcher.flush(&mut ui_message_id, session_id, turn_id)?;
+
     finish_streaming_reply(
         state,
         ui_message_id,
@@ -149,7 +185,6 @@ fn map_stream_event(
     event: &Value,
     state: &mut AnthropicStreamState,
     ui_message_id: &mut Option<String>,
-    delta_batcher: &mut StreamDeltaBatcher,
     buffer_assistant_text: bool,
     session_id: &str,
     turn_id: &str,
@@ -191,7 +226,6 @@ fn map_stream_event(
                         append_text_delta(
                             text,
                             ui_message_id,
-                            delta_batcher,
                             buffer_assistant_text,
                             session_id,
                             turn_id,
@@ -200,12 +234,7 @@ fn map_stream_event(
                 }
                 Some("thinking") => {
                     if let Some(thinking) = block.get("thinking").and_then(Value::as_str) {
-                        delta_batcher.push_reasoning(
-                            thinking,
-                            ui_message_id,
-                            session_id,
-                            turn_id,
-                        )?;
+                        emit_reasoning_delta(thinking, ui_message_id, session_id, turn_id)?;
                     }
                 }
                 _ => {}
@@ -226,12 +255,7 @@ fn map_stream_event(
                 Some("thinking_delta") => {
                     if let Some(thinking) = delta.get("thinking").and_then(Value::as_str) {
                         append_content_block_string(state, index, "thinking", "thinking", thinking);
-                        delta_batcher.push_reasoning(
-                            thinking,
-                            ui_message_id,
-                            session_id,
-                            turn_id,
-                        )?;
+                        emit_reasoning_delta(thinking, ui_message_id, session_id, turn_id)?;
                     }
                 }
                 Some("text_delta") => {
@@ -243,7 +267,6 @@ fn map_stream_event(
                     append_text_delta(
                         text,
                         ui_message_id,
-                        delta_batcher,
                         buffer_assistant_text,
                         session_id,
                         turn_id,
@@ -265,7 +288,7 @@ fn map_stream_event(
                     if let Some(partial) = delta.get("partial_json").and_then(Value::as_str) {
                         draft.input_json.push_str(partial);
                     }
-                    delta_batcher.flush(ui_message_id, session_id, turn_id)?;
+
                     let block = state.content_blocks.get(&index).unwrap_or(&Value::Null);
                     if let (Some(tool_call_id), Some(tool_name)) = (
                         block.get("id").and_then(Value::as_str),
@@ -343,7 +366,6 @@ fn append_content_block_string(
 fn append_text_delta(
     text: &str,
     ui_message_id: &mut Option<String>,
-    delta_batcher: &mut StreamDeltaBatcher,
     buffer_assistant_text: bool,
     session_id: &str,
     turn_id: &str,
@@ -352,7 +374,7 @@ fn append_text_delta(
         return Ok(());
     }
     if !buffer_assistant_text {
-        delta_batcher.push_visible(text, ui_message_id, session_id, turn_id)?;
+        emit_visible_delta(text, ui_message_id, session_id, turn_id)?;
     }
     Ok(())
 }

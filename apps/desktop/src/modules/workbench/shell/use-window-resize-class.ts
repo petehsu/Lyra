@@ -1,7 +1,12 @@
 import { useEffect } from "react";
+import { notifyLayoutResizeEnd } from "./layout-resize-end";
 
 const WINDOW_RESIZING_CLASS = "lyra-window-resizing";
 const WINDOW_RESIZE_SETTLE_MS = 150;
+let windowResizingActive = false;
+
+/** Native frame resize is separate from a splitter's imperative CSS draft. */
+export const getIsWindowResizing = (): boolean => windowResizingActive;
 
 /**
  * Toggle `body.lyra-window-resizing` during native window-edge resize so CSS can
@@ -19,12 +24,15 @@ export const useWindowResizeClass = (): void => {
     const onResize = (): void => {
       if (!active) {
         active = true;
+        windowResizingActive = true;
         document.body.classList.add(WINDOW_RESIZING_CLASS);
       }
       window.clearTimeout(settleTimer);
       settleTimer = window.setTimeout(() => {
         active = false;
+        windowResizingActive = false;
         document.body.classList.remove(WINDOW_RESIZING_CLASS);
+        notifyLayoutResizeEnd();
       }, WINDOW_RESIZE_SETTLE_MS);
     };
 
@@ -33,7 +41,9 @@ export const useWindowResizeClass = (): void => {
       window.removeEventListener("resize", onResize);
       window.clearTimeout(settleTimer);
       if (active) {
+        windowResizingActive = false;
         document.body.classList.remove(WINDOW_RESIZING_CLASS);
+        notifyLayoutResizeEnd();
       }
     };
   }, []);

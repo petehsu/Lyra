@@ -71,6 +71,7 @@ describe("createWorkbenchSettingsSchema", () => {
       "models",
       "skills",
       "mcp",
+      "projects",
       "importSettings",
       "experimental"
     ]);
@@ -88,6 +89,7 @@ describe("createWorkbenchSettingsSchema", () => {
       "Models",
       "Skills",
       "MCP",
+      "Projects",
       "Import Settings",
       "Experimental"
     ]);

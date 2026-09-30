@@ -8,7 +8,7 @@ use crate::{
     AgentRuntimeError, AgentRuntimeResult, ProviderTransportKind,
     native_backend::{
         provider::{ModelReply, ProviderResponseMeta, TurnStopSignal},
-        turns::{StreamDeltaBatcher, turn_was_cancelled},
+        turns::{emit_reasoning_delta, emit_visible_delta, turn_was_cancelled},
     },
 };
 
@@ -50,7 +50,7 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
 ) -> AgentRuntimeResult<ModelReply> {
     let mut state = ResponsesStreamState::default();
     let mut ui_message_id: Option<String> = None;
-    let mut delta_batcher = StreamDeltaBatcher::default();
+
     let buffer_assistant_text = false;
     let started_at = Instant::now();
 
@@ -76,13 +76,12 @@ pub(crate) fn parse_streaming_response<R: BufRead>(
             &event,
             &mut state,
             &mut ui_message_id,
-            &mut delta_batcher,
             buffer_assistant_text,
             session_id,
             turn_id,
         )?;
     }
-    delta_batcher.flush(&mut ui_message_id, session_id, turn_id)?;
+
     finish_streaming_reply(
         state,
         ui_message_id,
@@ -103,7 +102,7 @@ pub(crate) async fn parse_streaming_response_async(
 ) -> AgentRuntimeResult<ModelReply> {
     let mut state = ResponsesStreamState::default();
     let mut ui_message_id: Option<String> = None;
-    let mut delta_batcher = StreamDeltaBatcher::default();
+
     let buffer_assistant_text = false;
     let started_at = Instant::now();
 
@@ -130,13 +129,32 @@ pub(crate) async fn parse_streaming_response_async(
             &event,
             &mut state,
             &mut ui_message_id,
-            &mut delta_batcher,
             buffer_assistant_text,
             session_id,
             turn_id,
         )?;
+        use crate::native_backend::provider::streaming_tools;
+        if event.pointer("/item/type").and_then(Value::as_str) == Some("function_call") {
+            let item = &event["item"];
+            match event["type"].as_str() {
+                Some("response.output_item.added") => streaming_tools::declare(
+                    item["call_id"].as_str().unwrap_or_default(),
+                    item["name"].as_str().unwrap_or_default(),
+                ),
+                Some("response.output_item.done") => {
+                    let items = vec![item.clone()];
+                    let calls = tool_calls_from_items(&items, tools);
+                    if validate_tool_call_items(&items, &calls, TurnStopSignal::ToolUse).is_ok() {
+                        for call in calls {
+                            streaming_tools::complete(call, &mut ui_message_id);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
     }
-    delta_batcher.flush(&mut ui_message_id, session_id, turn_id)?;
+
     finish_streaming_reply(
         state,
         ui_message_id,
@@ -214,7 +232,6 @@ fn map_stream_event(
     event: &Value,
     state: &mut ResponsesStreamState,
     ui_message_id: &mut Option<String>,
-    delta_batcher: &mut StreamDeltaBatcher,
     buffer_assistant_text: bool,
     session_id: &str,
     turn_id: &str,
@@ -240,7 +257,7 @@ fn map_stream_event(
                 return Ok(());
             }
             if !buffer_assistant_text {
-                delta_batcher.push_visible(delta, ui_message_id, session_id, turn_id)?;
+                emit_visible_delta(delta, ui_message_id, session_id, turn_id)?;
             }
             state.text.push_str(delta);
         }
@@ -251,7 +268,7 @@ fn map_stream_event(
                 .unwrap_or_default();
             if !delta.is_empty() {
                 state.reasoning.push_str(delta);
-                delta_batcher.push_reasoning(delta, ui_message_id, session_id, turn_id)?;
+                emit_reasoning_delta(delta, ui_message_id, session_id, turn_id)?;
             }
         }
         Some("response.refusal.delta") => {
@@ -270,7 +287,7 @@ fn map_stream_event(
             if let Some(delta) = event.get("delta").and_then(Value::as_str) {
                 draft.arguments.push_str(delta);
             }
-            delta_batcher.flush(ui_message_id, session_id, turn_id)?;
+
             let tool_call_id = draft
                 .call_id
                 .as_deref()

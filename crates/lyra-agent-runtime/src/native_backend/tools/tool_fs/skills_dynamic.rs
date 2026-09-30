@@ -36,10 +36,9 @@ pub(crate) fn skill_capability_path(skill_id: &str) -> String {
 /// Each installed skill contributes one manifest. Invoking the capability
 /// surfaces the skill's tool paths (its capability surface) — the skill
 /// prompt is activated through the existing skills domain tools.
-pub(super) fn skill_capability_manifests() -> (Vec<ToolManifest>, Vec<Value>) {
-    let registry = crate::native_backend::skill_catalog::registry_snapshot();
-    let manifests = registry
-        .installed
+pub(super) fn skill_capability_manifests(root: Option<&str>) -> (Vec<ToolManifest>, Vec<Value>) {
+    let installed = skill_catalog::effective_skills(root).unwrap_or_default();
+    let manifests = installed
         .iter()
         .map(|skill| {
             let path = skill_capability_path(&skill.id);
@@ -91,7 +90,7 @@ pub(super) fn skill_capability_manifests() -> (Vec<ToolManifest>, Vec<Value>) {
             }
         })
         .collect();
-    let diagnostics = if registry.installed.is_empty() {
+    let diagnostics = if installed.is_empty() {
         vec![json!({
             "code": "dynamic_provider_empty",
             "domain": "skills",

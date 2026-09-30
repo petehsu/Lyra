@@ -1,3 +1,4 @@
+import { SettingsProjectsView } from "../settings-projects";
 import { type ReactNode } from "react";
 import {
   ArrowUpRight,
@@ -82,6 +83,7 @@ const SETTINGS_CATEGORY_ICONS: Partial<Record<SettingsCategoryId, LucideIcon>> =
   loginManager: KeyRound,
   models: Package,
   mcp: Webhook,
+  projects: BookText,
   importSettings: Import,
   notifications: Bell,
   softwareStore: AppWindow,
@@ -427,6 +429,7 @@ const renderControl = (
       if (control.customKind === "ai-mcp") {
         return <SettingsAiMcpView labels={control.labels} model={control.model} />;
       }
+      if (control.customKind === "projects") return <SettingsProjectsView desktopApi={control.desktopApi} />;
       if (control.customKind === "import-settings") {
         return <SettingsImportView desktopApi={control.desktopApi} labels={control.labels} />;
       }

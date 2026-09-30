@@ -1,8 +1,9 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import type { BundledLanguage, HighlightResult } from "@streamdown/code";
+import type { HighlightOptions } from "streamdown";
 
 import { lyraCodePlugin } from "./code-plugin";
 
+type HighlightResult = NonNullable<ReturnType<typeof lyraCodePlugin.highlight>>;
 type SyntaxToken = HighlightResult["tokens"][number][number];
 
 const tokenStyle = (token: SyntaxToken): CSSProperties => {
@@ -30,11 +31,6 @@ const tokenStyle = (token: SyntaxToken): CSSProperties => {
 const fallbackTokens = (code: string): HighlightResult["tokens"] =>
   code.split("\n").map((line) => [{ content: line, offset: 0 }]);
 
-const resolveLanguage = (language: string): BundledLanguage =>
-  lyraCodePlugin.supportsLanguage(language as BundledLanguage)
-    ? (language as BundledLanguage)
-    : "text";
-
 export function HighlightedSource({
   code,
   language,
@@ -47,18 +43,20 @@ export function HighlightedSource({
   const [tokens, setTokens] = useState<HighlightResult["tokens"]>(() => fallbackTokens(code));
 
   useEffect(() => {
+    let active = true;
     const apply = (result: HighlightResult): void => {
-      setTokens(result.tokens);
+      if (active) setTokens(result.tokens);
     };
     const next = lyraCodePlugin.highlight(
-      { code, language: resolveLanguage(language), themes: lyraCodePlugin.getThemes() },
+      { code, language: language as HighlightOptions["language"], themes: lyraCodePlugin.getThemes() },
       apply
     );
     if (next) {
       apply(next);
-      return;
+    } else {
+      setTokens(fallbackTokens(code));
     }
-    setTokens(fallbackTokens(code));
+    return () => { active = false; };
   }, [code, language]);
 
   return (

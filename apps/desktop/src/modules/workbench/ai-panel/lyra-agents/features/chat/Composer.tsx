@@ -60,7 +60,7 @@ import {
   WorkspaceTabAttachMenuIcon
 } from "./composer-attach-menu-icons";
 import { buildTerminalTabPageCitation } from "./terminal-tab-citation";
-import { buildWorkspaceTabPageCitation } from "./workspace-tab-citation";
+import { buildWorkspaceTabPageCitation, citedImageViewerAttachment } from "./workspace-tab-citation";
 import { t } from "@workbench/i18n";
 import type { TerminalDockTab } from "../../../../terminal-dock/types";
 import type { WorkspaceTab } from "../../../../workspace-tabs/types";
@@ -270,6 +270,14 @@ export function Composer({
   };
 
   const insertWorkspaceTabCitation = (tab: WorkspaceTab) => {
+    const image = citedImageViewerAttachment(tab);
+    if (image !== null) {
+      composerInputRef.current?.insertImage(image);
+      composerInputRef.current?.focus();
+      setAttachmentMenuOpen(false);
+      setAttachmentSubmenuId(null);
+      return;
+    }
     composerInputRef.current?.insertCitation({
       kind: "page",
       citation: buildWorkspaceTabPageCitation(tab)

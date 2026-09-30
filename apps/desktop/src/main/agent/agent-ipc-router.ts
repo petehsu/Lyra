@@ -763,6 +763,11 @@ export const createAgentIpcRouter = ({
           payload as AgentProviderOptionsUpdateRequest
         )
     ],
+    [LYRA_CHANNELS.agentProjectsList, (_event, payload) => requestRuntime("agent.projects.list", (payload as object | undefined) ?? {})],
+    [LYRA_CHANNELS.agentProjectsRegister, (_event, payload) => requestRuntime("agent.projects.register", (payload as object | undefined) ?? {})],
+    [LYRA_CHANNELS.agentProjectsSettings, (_event, payload) => requestRuntime("agent.projects.settings", (payload as object | undefined) ?? {})],
+    [LYRA_CHANNELS.agentProjectsSetOverride, (_event, payload) => requestRuntime("agent.projects.setOverride", (payload as object | undefined) ?? {})],
+    [LYRA_CHANNELS.agentMcpSetEnabled, (_event, payload) => requestRuntime("agent.mcp.setEnabled", (payload as object | undefined) ?? {})],
     [
       LYRA_CHANNELS.agentSkillsList,
       () => requestRuntime<AgentSkillsListResponse>("agent.skills.list")
@@ -841,10 +846,10 @@ export const createAgentIpcRouter = ({
     ],
     [
       LYRA_CHANNELS.agentMcpList,
-      (_event, payload) =>
+      () =>
         requestRuntime<AgentMcpListResponse>(
           "agent.mcp.list",
-          (payload as { readonly projectRoot?: string | null } | undefined) ?? {}
+          {}
         )
     ],
     [

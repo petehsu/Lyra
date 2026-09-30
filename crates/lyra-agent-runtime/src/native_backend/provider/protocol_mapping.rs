@@ -50,9 +50,7 @@ pub(crate) fn build_openai_compatible_request(
         tool_choice,
         ToolChoiceProtocol::OpenAiChat,
     )?;
-    let client = provider_http_client_builder(streaming)
-        .build()
-        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let client = provider_http_client(streaming)?;
     let route = providers::registry::require_route(&provider.route_id)?;
     let route_hook = providers::registry::hosted_openai_route_hook(&provider.route_id);
     if let Some(route_hook) = route_hook {
@@ -191,9 +189,7 @@ pub(crate) fn build_openai_responses_request(
         tool_choice,
         ToolChoiceProtocol::OpenAiResponses,
     )?;
-    let client = provider_http_client_builder(streaming)
-        .build()
-        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let client = provider_http_client(streaming)?;
     let url = providers::transport::http::endpoint_url(provider, openai_responses::ENDPOINT_PATH)?;
     let request = providers::transport::auth::apply_model_auth(client.post(url), provider)?;
     Ok(request.json(&body))
@@ -228,9 +224,7 @@ pub(crate) fn build_anthropic_messages_request(
         providers::routes::mimo::apply_mimo_model_parameters(&mut body, model, tool_calling);
     }
     apply_selected_reasoning_control(&mut body, provider, model);
-    let client = provider_http_client_builder(streaming)
-        .build()
-        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let client = provider_http_client(streaming)?;
     let url =
         providers::transport::http::endpoint_url(provider, anthropic_messages::ENDPOINT_PATH)?;
     let request = anthropic_messages::apply_headers(client.post(url), provider)?;
@@ -249,9 +243,7 @@ pub(crate) fn build_gemini_generate_content_request(
     let mut body = gemini_generate_content::build_request_body(messages, effective_tools)?;
     apply_model_tool_choice(&mut body, tools, tool_choice, ToolChoiceProtocol::Gemini)?;
     apply_selected_reasoning_control(&mut body, provider, model);
-    let client = provider_http_client_builder(streaming)
-        .build()
-        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let client = provider_http_client(streaming)?;
     let path = if streaming {
         gemini_generate_content::stream_generate_content_path(model)?
     } else {
@@ -269,6 +261,34 @@ pub(crate) fn build_aws_bedrock_converse_request(
     tools: &[Value],
     tool_choice: &ModelToolChoice,
 ) -> AgentRuntimeResult<reqwest::blocking::RequestBuilder> {
+    let body = bedrock_request_body(messages, tools, tool_choice)?;
+    let client = provider_http_client(false)?;
+    let path = aws_bedrock_converse::converse_path(model)?;
+    let url = providers::transport::http::endpoint_url(provider, &path)?;
+    aws_bedrock_converse::build_signed_json_request(&client, provider, &url, &body)
+}
+
+pub(crate) fn build_aws_bedrock_converse_request_async(
+    provider: &NativeProviderProfile,
+    model: &str,
+    messages: &[Value],
+    tools: &[Value],
+    tool_choice: &ModelToolChoice,
+) -> AgentRuntimeResult<reqwest::RequestBuilder> {
+    let body = bedrock_request_body(messages, tools, tool_choice)?;
+    let client = provider_http_client_async(false)?;
+    let url = providers::transport::http::endpoint_url(
+        provider,
+        &aws_bedrock_converse::converse_path(model)?,
+    )?;
+    aws_bedrock_converse::build_signed_json_request_async(&client, provider, &url, &body)
+}
+
+fn bedrock_request_body(
+    messages: &[Value],
+    tools: &[Value],
+    tool_choice: &ModelToolChoice,
+) -> AgentRuntimeResult<Value> {
     let effective_tools = effective_tools(tools, tool_choice);
     let cache = request_prompt_cache_enabled(messages, "bedrockPromptCache");
     let mut body = aws_bedrock_converse::build_request_body_with_options(
@@ -280,12 +300,7 @@ pub(crate) fn build_aws_bedrock_converse_request(
         },
     )?;
     apply_model_tool_choice(&mut body, tools, tool_choice, ToolChoiceProtocol::Bedrock)?;
-    let client = provider_http_client_builder(false)
-        .build()
-        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
-    let path = aws_bedrock_converse::converse_path(model)?;
-    let url = providers::transport::http::endpoint_url(provider, &path)?;
-    aws_bedrock_converse::build_signed_json_request(&client, provider, &url, &body)
+    Ok(body)
 }
 
 pub(crate) fn build_ollama_chat_request(
@@ -299,9 +314,7 @@ pub(crate) fn build_ollama_chat_request(
     let effective_tools = effective_tools(tools, tool_choice);
     let mut body = ollama_chat::build_request_body(model, messages, effective_tools, streaming)?;
     apply_model_tool_choice(&mut body, tools, tool_choice, ToolChoiceProtocol::Ollama)?;
-    let client = provider_http_client_builder(streaming)
-        .build()
-        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let client = provider_http_client(streaming)?;
     let url = providers::transport::http::endpoint_url(provider, ollama_chat::CHAT_ENDPOINT_PATH)?;
     let request = ollama_chat::apply_headers(client.post(url), provider)?;
     Ok(request.json(&body))
@@ -339,9 +352,7 @@ pub(crate) fn build_openai_compatible_request_async(
         tool_choice,
         ToolChoiceProtocol::OpenAiChat,
     )?;
-    let client = provider_http_client_builder_async(streaming)
-        .build()
-        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let client = provider_http_client_async(streaming)?;
     let route = providers::registry::require_route(&provider.route_id)?;
     let route_hook = providers::registry::hosted_openai_route_hook(&provider.route_id);
     if let Some(route_hook) = route_hook {
@@ -381,9 +392,7 @@ pub(crate) fn build_openai_responses_request_async(
         tool_choice,
         ToolChoiceProtocol::OpenAiResponses,
     )?;
-    let client = provider_http_client_builder_async(streaming)
-        .build()
-        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let client = provider_http_client_async(streaming)?;
     let url = providers::transport::http::endpoint_url(provider, openai_responses::ENDPOINT_PATH)?;
     let request = providers::transport::auth::apply_model_auth_async(client.post(url), provider)?;
     Ok(request.json(&body))
@@ -418,9 +427,7 @@ pub(crate) fn build_anthropic_messages_request_async(
         providers::routes::mimo::apply_mimo_model_parameters(&mut body, model, tool_calling);
     }
     apply_selected_reasoning_control(&mut body, provider, model);
-    let client = provider_http_client_builder_async(streaming)
-        .build()
-        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let client = provider_http_client_async(streaming)?;
     let url =
         providers::transport::http::endpoint_url(provider, anthropic_messages::ENDPOINT_PATH)?;
     let request = anthropic_messages::apply_headers_async(client.post(url), provider)?;
@@ -439,9 +446,7 @@ pub(crate) fn build_gemini_generate_content_request_async(
     let mut body = gemini_generate_content::build_request_body(messages, effective_tools)?;
     apply_model_tool_choice(&mut body, tools, tool_choice, ToolChoiceProtocol::Gemini)?;
     apply_selected_reasoning_control(&mut body, provider, model);
-    let client = provider_http_client_builder_async(streaming)
-        .build()
-        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let client = provider_http_client_async(streaming)?;
     let path = if streaming {
         gemini_generate_content::stream_generate_content_path(model)?
     } else {
@@ -463,9 +468,7 @@ pub(crate) fn build_ollama_chat_request_async(
     let effective_tools = effective_tools(tools, tool_choice);
     let mut body = ollama_chat::build_request_body(model, messages, effective_tools, streaming)?;
     apply_model_tool_choice(&mut body, tools, tool_choice, ToolChoiceProtocol::Ollama)?;
-    let client = provider_http_client_builder_async(streaming)
-        .build()
-        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let client = provider_http_client_async(streaming)?;
     let url = providers::transport::http::endpoint_url(provider, ollama_chat::CHAT_ENDPOINT_PATH)?;
     let request = ollama_chat::apply_headers_async(client.post(url), provider)?;
     Ok(request.json(&body))
@@ -793,7 +796,7 @@ pub(crate) fn parse_streaming_response_with_commit<R: BufRead>(
 ) -> AgentRuntimeResult<ModelReply> {
     let mut state = ProviderStreamState::default();
     let mut ui_message_id: Option<String> = None;
-    let mut delta_batcher = StreamDeltaBatcher::default();
+
     let buffer_assistant_text = false;
     let allowed_tool_names = openai_chat::tool_name_set(tools);
     let started_at = Instant::now();
@@ -838,7 +841,6 @@ pub(crate) fn parse_streaming_response_with_commit<R: BufRead>(
             &value,
             &mut state,
             &mut ui_message_id,
-            &mut delta_batcher,
             buffer_assistant_text,
             session_id,
             turn_id,
@@ -868,30 +870,34 @@ pub(crate) fn parse_streaming_response_with_commit<R: BufRead>(
             .reasoning_chars
             .saturating_add(flushed.reasoning.chars().count());
         state.reasoning_content.push_str(&flushed.reasoning);
-        if delta_batcher.push_reasoning(
-            &flushed.reasoning,
-            &mut ui_message_id,
-            session_id,
-            turn_id,
-        )? {
+        if emit_reasoning_delta(&flushed.reasoning, &mut ui_message_id, session_id, turn_id)? {
             state.committed_any = true;
         }
     }
     if !flushed.visible.is_empty() {
-        if !buffer_assistant_text {
-            if delta_batcher.push_visible(
-                &flushed.visible,
-                &mut ui_message_id,
-                session_id,
-                turn_id,
-            )? {
+        let visible = crate::native_backend::tool_protocol::drain_textual_tool_markup(
+            &mut state.visible_markup_hold,
+            &flushed.visible,
+        );
+        if !visible.is_empty() {
+            if !buffer_assistant_text
+                && emit_visible_delta(&visible, &mut ui_message_id, session_id, turn_id)?
+            {
                 state.committed_any = true;
             }
+            state.content.push_str(&visible);
         }
-        state.content.push_str(&flushed.visible);
     }
-    if delta_batcher.flush(&mut ui_message_id, session_id, turn_id)? {
-        state.committed_any = true;
+    let markup_tail = crate::native_backend::tool_protocol::finish_textual_tool_markup(
+        &mut state.visible_markup_hold,
+    );
+    if !markup_tail.is_empty() {
+        if !buffer_assistant_text
+            && emit_visible_delta(&markup_tail, &mut ui_message_id, session_id, turn_id)?
+        {
+            state.committed_any = true;
+        }
+        state.content.push_str(&markup_tail);
     }
     *committed_any = state.committed_any;
 
@@ -972,7 +978,7 @@ pub(crate) async fn parse_streaming_response_with_commit_async(
 ) -> AgentRuntimeResult<ModelReply> {
     let mut state = ProviderStreamState::default();
     let mut ui_message_id: Option<String> = None;
-    let mut delta_batcher = StreamDeltaBatcher::default();
+
     let buffer_assistant_text = false;
     let allowed_tool_names = openai_chat::tool_name_set(tools);
     let started_at = Instant::now();
@@ -1016,7 +1022,6 @@ pub(crate) async fn parse_streaming_response_with_commit_async(
             &value,
             &mut state,
             &mut ui_message_id,
-            &mut delta_batcher,
             buffer_assistant_text,
             session_id,
             turn_id,
@@ -1040,30 +1045,34 @@ pub(crate) async fn parse_streaming_response_with_commit_async(
             .reasoning_chars
             .saturating_add(flushed.reasoning.chars().count());
         state.reasoning_content.push_str(&flushed.reasoning);
-        if delta_batcher.push_reasoning(
-            &flushed.reasoning,
-            &mut ui_message_id,
-            session_id,
-            turn_id,
-        )? {
+        if emit_reasoning_delta(&flushed.reasoning, &mut ui_message_id, session_id, turn_id)? {
             state.committed_any = true;
         }
     }
     if !flushed.visible.is_empty() {
-        if !buffer_assistant_text {
-            if delta_batcher.push_visible(
-                &flushed.visible,
-                &mut ui_message_id,
-                session_id,
-                turn_id,
-            )? {
+        let visible = crate::native_backend::tool_protocol::drain_textual_tool_markup(
+            &mut state.visible_markup_hold,
+            &flushed.visible,
+        );
+        if !visible.is_empty() {
+            if !buffer_assistant_text
+                && emit_visible_delta(&visible, &mut ui_message_id, session_id, turn_id)?
+            {
                 state.committed_any = true;
             }
+            state.content.push_str(&visible);
         }
-        state.content.push_str(&flushed.visible);
     }
-    if delta_batcher.flush(&mut ui_message_id, session_id, turn_id)? {
-        state.committed_any = true;
+    let markup_tail = crate::native_backend::tool_protocol::finish_textual_tool_markup(
+        &mut state.visible_markup_hold,
+    );
+    if !markup_tail.is_empty() {
+        if !buffer_assistant_text
+            && emit_visible_delta(&markup_tail, &mut ui_message_id, session_id, turn_id)?
+        {
+            state.committed_any = true;
+        }
+        state.content.push_str(&markup_tail);
     }
     *committed_any = state.committed_any;
 
@@ -1147,11 +1156,52 @@ pub(crate) fn provider_streaming_total_timeout_error() -> AgentRuntimeError {
     }
 }
 
+/// One structured tool call is one id. A missing index does not mean "slot 0",
+/// and a second id is not a name fragment of the call already in that slot.
+fn streaming_tool_slot(state: &mut ProviderStreamState, chunk: &Value) -> usize {
+    let index = chunk
+        .get("index")
+        .and_then(Value::as_u64)
+        .map(|value| value as usize);
+    let id = chunk
+        .get("id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|id| openai_chat::is_valid_tool_call_id(id));
+    if let Some(id) = id {
+        if let Some(&slot) = state.tool_call_ids.get(id) {
+            return slot;
+        }
+        if let Some(index) = index {
+            let occupied_by_other = state
+                .tool_calls
+                .get(&index)
+                .is_some_and(|call| call.id.as_deref().is_some_and(|current| current != id));
+            if !occupied_by_other {
+                state.tool_call_ids.insert(id.to_string(), index);
+                return index;
+            }
+        }
+        let slot = state
+            .tool_calls
+            .keys()
+            .copied()
+            .max()
+            .map(|value| value.saturating_add(1))
+            .unwrap_or(0);
+        state.tool_call_ids.insert(id.to_string(), slot);
+        return slot;
+    }
+    if let Some(index) = index {
+        return index;
+    }
+    state.tool_calls.keys().copied().max().unwrap_or(0)
+}
+
 pub(crate) fn map_provider_stream_chunk(
     value: &Value,
     state: &mut ProviderStreamState,
     ui_message_id: &mut Option<String>,
-    delta_batcher: &mut StreamDeltaBatcher,
     buffer_assistant_text: bool,
     session_id: &str,
     turn_id: &str,
@@ -1197,36 +1247,32 @@ pub(crate) fn map_provider_stream_chunk(
                     .reasoning_chars
                     .saturating_add(scrubbed.reasoning.chars().count());
                 state.reasoning_content.push_str(&scrubbed.reasoning);
-                if delta_batcher.push_reasoning(
-                    &scrubbed.reasoning,
-                    ui_message_id,
-                    session_id,
-                    turn_id,
-                )? {
+                if emit_reasoning_delta(&scrubbed.reasoning, ui_message_id, session_id, turn_id)? {
                     state.committed_any = true;
                 }
             }
             if !scrubbed.visible.is_empty() {
-                let candidate = format!("{}{}", state.content, scrubbed.visible);
-                if contains_leaked_internal_protocol_markers(&candidate) {
-                    return Err(AgentRuntimeError::ProviderProtocol {
-                        kind: ProviderProtocolFailureKind::TextualToolProtocolLeak,
-                        detail:
+                let visible = crate::native_backend::tool_protocol::drain_textual_tool_markup(
+                    &mut state.visible_markup_hold,
+                    &scrubbed.visible,
+                );
+                if !visible.is_empty() {
+                    let candidate = format!("{}{}", state.content, visible);
+                    if contains_leaked_internal_protocol_markers(&candidate) {
+                        return Err(AgentRuntimeError::ProviderProtocol {
+                            kind: ProviderProtocolFailureKind::TextualToolProtocolLeak,
+                            detail:
                             "provider emitted textual tool protocol syntax instead of a structured tool call"
                                 .to_string(),
-                    });
+                        });
+                    }
+                    if !buffer_assistant_text
+                        && emit_visible_delta(&visible, ui_message_id, session_id, turn_id)?
+                    {
+                        state.committed_any = true;
+                    }
+                    state.content.push_str(&visible);
                 }
-                if !buffer_assistant_text
-                    && delta_batcher.push_visible(
-                        &scrubbed.visible,
-                        ui_message_id,
-                        session_id,
-                        turn_id,
-                    )?
-                {
-                    state.committed_any = true;
-                }
-                state.content.push_str(&scrubbed.visible);
             }
         }
         state.reasoning_replay.push(delta);
@@ -1235,16 +1281,13 @@ pub(crate) fn map_provider_stream_chunk(
                 .reasoning_chars
                 .saturating_add(reasoning.chars().count());
             state.reasoning_content.push_str(&reasoning);
-            if delta_batcher.push_reasoning(&reasoning, ui_message_id, session_id, turn_id)? {
+            if emit_reasoning_delta(&reasoning, ui_message_id, session_id, turn_id)? {
                 state.committed_any = true;
             }
         }
         if let Some(chunks) = delta.get("tool_calls").and_then(Value::as_array) {
-            if delta_batcher.flush(ui_message_id, session_id, turn_id)? {
-                state.committed_any = true;
-            }
             for chunk in chunks {
-                let index = chunk.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
+                let index = streaming_tool_slot(state, chunk);
                 let accumulator = state.tool_calls.entry(index).or_default();
                 if let Some(id) = chunk.get("id").and_then(Value::as_str)
                     && openai_chat::is_valid_tool_call_id(id)

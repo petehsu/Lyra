@@ -182,6 +182,15 @@ export const useSoftwareCapabilitiesRegistry = ({
     return desktopApi.softwareCapabilities.registerHandler(handleBridgeQuery);
   }, [desktopApi, handleBridgeQuery]);
 
+  useEffect(() => {
+    const bridge = desktopApi?.softwareCapabilities;
+    if (!bridge) return;
+    void bridge.publish(publishedSoftware).catch((error: unknown) => {
+      setError(error instanceof Error ? error.message : String(error));
+    });
+    return () => { void bridge.publish([]).catch(() => undefined); };
+  }, [desktopApi, publishedSoftware]);
+
   return {
     software: publishedSoftware,
     loading,

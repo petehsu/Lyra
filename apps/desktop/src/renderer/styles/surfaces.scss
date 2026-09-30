@@ -742,6 +742,17 @@
   gap: var(--lyra-space-16);
 }
 
+.lyra-settings-projects {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: var(--lyra-space-16);
+}
+
+.lyra-settings-projects-tabs {
+  justify-self: start;
+}
+
 .lyra-settings-import-source-title {
   min-width: 0;
   display: inline-flex;

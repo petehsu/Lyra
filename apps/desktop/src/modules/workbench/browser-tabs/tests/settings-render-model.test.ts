@@ -31,6 +31,7 @@ describe("createSettingsSurfaceModel", () => {
       "models",
       "skills",
       "mcp",
+      "projects",
       "importSettings",
       "experimental"
     ]);
@@ -47,6 +48,7 @@ describe("createSettingsSurfaceModel", () => {
       buildSettingsCategoryDomId("models"),
       buildSettingsCategoryDomId("skills"),
       buildSettingsCategoryDomId("mcp"),
+      buildSettingsCategoryDomId("projects"),
       buildSettingsCategoryDomId("importSettings"),
       buildSettingsCategoryDomId("experimental")
     ]);
