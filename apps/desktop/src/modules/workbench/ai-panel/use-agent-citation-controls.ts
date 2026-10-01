@@ -21,7 +21,6 @@ export const useAgentCitationControls = ({
   composerCitationSinkRef,
   setPendingCitation,
   setPendingCitationNonce,
-  setRenderBudgetCount,
   setCitationScrollTarget,
   setCitationHighlightMessageId
 }: {
@@ -29,7 +28,6 @@ export const useAgentCitationControls = ({
   readonly composerCitationSinkRef?: MutableRefObject<ComposerCitationSink | null> | undefined;
   readonly setPendingCitation: Dispatch<SetStateAction<ComposerInsertableCitation | null>>;
   readonly setPendingCitationNonce: Dispatch<SetStateAction<number>>;
-  readonly setRenderBudgetCount: Dispatch<SetStateAction<number>>;
   readonly setCitationScrollTarget: Dispatch<SetStateAction<CitationScrollTarget | null>>;
   readonly setCitationHighlightMessageId: Dispatch<SetStateAction<string | null>>;
 }) => {
@@ -63,12 +61,8 @@ export const useAgentCitationControls = ({
   const ensureMessageVisible = useCallback((messageId: string): boolean => {
     const s = sessionRef.current;
     if (s === null) return false;
-    const index = s.messages.findIndex((message) => message.id === messageId);
-    if (index < 0) return false;
-    const neededFromEnd = s.messages.length - index;
-    setRenderBudgetCount((current) => Math.max(current, neededFromEnd));
-    return true;
-  }, [setRenderBudgetCount]);
+    return s.messages.some((message) => message.id === messageId);
+  }, []);
 
   const reportCitationScrollFinished = useCallback((messageId: string): void => {
     setCitationScrollTarget((current) =>

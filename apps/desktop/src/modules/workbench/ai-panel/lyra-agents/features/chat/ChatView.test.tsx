@@ -96,39 +96,6 @@ function DecisionChatHarness() {
   );
 }
 
-/**
- * Stamps each `[data-chat-message-id]` slot with sequential offsetTop/offsetHeight
- * so the DOM-based sticky anchor logic can resolve positions without a real layout engine.
- */
-const layoutMessageSlots = (container: HTMLElement, slotHeight = SLOT_HEIGHT_PX): void => {
-  const scroll = container.querySelector(".lyra-agents-chat-scroll") as HTMLDivElement;
-  const slots = container.querySelectorAll<HTMLElement>("[data-chat-message-id]");
-  slots.forEach((slot, index) => {
-    Object.defineProperty(slot, "offsetTop", {
-      configurable: true,
-      value: index * slotHeight
-    });
-    Object.defineProperty(slot, "offsetHeight", {
-      configurable: true,
-      value: slotHeight
-    });
-    Object.defineProperty(slot, "getBoundingClientRect", {
-      configurable: true,
-      value: () => ({
-        bottom: (index + 1) * slotHeight - scroll.scrollTop,
-        height: slotHeight,
-        left: 0,
-        right: 0,
-        top: index * slotHeight - scroll.scrollTop,
-        width: 0,
-        x: 0,
-        y: index * slotHeight - scroll.scrollTop,
-        toJSON: () => undefined
-      })
-    });
-  });
-};
-
 const primeScroll = (
   scroll: HTMLDivElement,
   options: { readonly clientHeight?: number; readonly scrollHeight?: number; readonly scrollTop?: number } = {}
@@ -141,10 +108,7 @@ const primeScroll = (
   fireEvent.scroll(scroll);
 };
 
-const waitForMessageMeasurements = (): Promise<void> =>
-  new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
-
-describe("ChatView render-budget message window", () => {
+describe("ChatView virtual message window", () => {
   beforeEach(() => {
     resetStreamStore();
     vi.stubGlobal("ResizeObserver", class {
@@ -285,49 +249,9 @@ describe("ChatView render-budget message window", () => {
     expect(container.querySelector(".lyra-agents-oma")).toBeNull();
   });
 
-  test("shows Show earlier button when earlier messages exist", () => {
+  test("does not offer a show-earlier control", () => {
     const { container } = render(<RenderBudgetChatHarness initialBudget={12} />);
-    const button = container.querySelector(".lyra-agents-chat-load-earlier button");
-    expect(button).not.toBeNull();
-  });
-
-  test("hides Show earlier button when all messages are visible", () => {
-    const { container } = render(<RenderBudgetChatHarness initialBudget={30} />);
-    const button = container.querySelector(".lyra-agents-chat-load-earlier button");
-    expect(button).toBeNull();
-  });
-
-  test("loads earlier messages on Show earlier button click", async () => {
-    const onLoadEarlier = vi.fn();
-    const { container } = render(
-      <RenderBudgetChatHarness initialBudget={12} onLoadEarlier={onLoadEarlier} />
-    );
-    const button = container.querySelector(
-      ".lyra-agents-chat-load-earlier button"
-    ) as HTMLButtonElement;
-    expect(button).not.toBeNull();
-    fireEvent.click(button);
-    await waitFor(() => {
-      expect(onLoadEarlier).toHaveBeenCalled();
-      expect(screen.getByText("Message 1")).toBeInTheDocument();
-    });
-  });
-
-  test("loads earlier messages when scrolled near the top", async () => {
-    const onLoadEarlier = vi.fn();
-    const { container } = render(
-      <RenderBudgetChatHarness initialBudget={12} onLoadEarlier={onLoadEarlier} />
-    );
-    const scroll = container.querySelector(".lyra-agents-chat-scroll") as HTMLDivElement;
-    expect(scroll).not.toBeNull();
-    primeScroll(scroll, { clientHeight: 300, scrollHeight: 600, scrollTop: 600 });
-    await waitFor(() => {
-      expect(screen.getByText("Message 30")).toBeInTheDocument();
-    });
-    primeScroll(scroll, { clientHeight: 300, scrollHeight: 600, scrollTop: 0 });
-    await waitFor(() => {
-      expect(onLoadEarlier).toHaveBeenCalled();
-    });
+    expect(container.querySelector(".lyra-agents-chat-load-earlier")).toBeNull();
   });
 
   test("mounts every message in the current window", async () => {
@@ -340,20 +264,15 @@ describe("ChatView render-budget message window", () => {
     expect(mountedSlots).toBe(12);
   });
 
-  test("bounds long-thread DOM to the data-provider window", async () => {
-    const visibleCount = Math.min(
-      longThreadMessages.length,
-      APP_CONFIG.messageWindow.initialRenderCount
-    );
-    const hiddenBefore = longThreadMessages.length - visibleCount;
+  test("mounts a window of a long thread, not every message", async () => {
     const data = createDataProviderValue({
       session,
-      messages: longThreadMessages.slice(-visibleCount),
+      messages: longThreadMessages,
       messageWindow: {
-        visibleCount,
-        hiddenBefore,
+        visibleCount: longThreadMessages.length,
+        hiddenBefore: 0,
         totalCount: longThreadMessages.length,
-        canLoadEarlier: hiddenBefore > 0
+        canLoadEarlier: false
       }
     });
     const { container } = render(
@@ -365,7 +284,8 @@ describe("ChatView render-budget message window", () => {
     await waitFor(() => {
       const mountedSlots = container.querySelectorAll("[data-chat-message-id]").length;
       expect(mountedSlots).toBeGreaterThan(0);
-      expect(mountedSlots).toBe(visibleCount);
+      expect(mountedSlots).toBeLessThan(longThreadMessages.length);
+      expect(screen.getByText("Message 200")).toBeInTheDocument();
     });
   });
 
@@ -373,16 +293,10 @@ describe("ChatView render-budget message window", () => {
     const { container } = render(<RenderBudgetChatHarness initialBudget={12} />);
     const scroll = container.querySelector(".lyra-agents-chat-scroll") as HTMLDivElement;
     expect(scroll).not.toBeNull();
-    layoutMessageSlots(container);
-    await waitForMessageMeasurements();
-    primeScroll(scroll, { clientHeight: 300, scrollHeight: 240, scrollTop: 50 });
+    primeScroll(scroll, { clientHeight: 300, scrollHeight: 960, scrollTop: 230 });
     await waitFor(() => {
-      // scrollTop=50, anchorLine=50+18=68.
-      // message-19 (user): bottom=20  <= 68 → candidate
-      // message-20 (agent): bottom=40 <= 68, not user
-      // message-21 (user): bottom=60  <= 68 → candidate
-      // message-22 (agent): top=60    <= 68, bottom=80 > 68 → continue
-      // message-23 (user): top=80    > 68  → break
+      // Rows are estimated at 80px. scrollTop 230, anchor line 248.
+      // message-21 is the user row ending at 240.
       expect(container.querySelector(".lyra-agents-chat-thread-anchor-text")).toHaveTextContent(
         "Message 21"
       );
@@ -393,9 +307,7 @@ describe("ChatView render-budget message window", () => {
     const { container } = render(<RenderBudgetChatHarness initialBudget={12} />);
     const scroll = container.querySelector(".lyra-agents-chat-scroll") as HTMLDivElement;
     expect(scroll).not.toBeNull();
-    layoutMessageSlots(container);
-    await waitForMessageMeasurements();
-    primeScroll(scroll, { clientHeight: 300, scrollHeight: 240, scrollTop: 50 });
+    primeScroll(scroll, { clientHeight: 300, scrollHeight: 960, scrollTop: 230 });
     await waitFor(() => {
       expect(container.querySelector(".lyra-agents-chat-thread-anchor-text")).toBeInTheDocument();
     });
@@ -409,9 +321,7 @@ describe("ChatView render-budget message window", () => {
     const { container } = render(<RenderBudgetChatHarness initialBudget={12} />);
     const scroll = container.querySelector(".lyra-agents-chat-scroll") as HTMLDivElement;
     expect(scroll).not.toBeNull();
-    layoutMessageSlots(container);
-    await waitForMessageMeasurements();
-    primeScroll(scroll, { clientHeight: 300, scrollHeight: 240, scrollTop: 50 });
+    primeScroll(scroll, { clientHeight: 300, scrollHeight: 960, scrollTop: 230 });
     await waitFor(() => {
       expect(container.querySelector(".lyra-agents-chat-thread-anchor-text")).toHaveTextContent(
         "Message 21"

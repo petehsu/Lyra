@@ -5,8 +5,7 @@ import {
   BROWSER_SHELL_LAYOUT_COORDINATE_SPACE,
   toWorkbenchLayoutBounds
 } from "../../../shared/browser-shell-api";
-import { getIsLayoutResizing } from "./use-panel-layout";
-import { subscribeLayoutResizeEnd } from "./layout-resize-end";
+import { subscribeLayoutDragFrame, subscribeLayoutResizeEnd } from "./layout-resize-end";
 
 export type BrowserLayoutSyncOptions = {
   readonly force?: boolean;
@@ -57,7 +56,14 @@ const toSnapshot = (
 
 const DEFAULT_ANIMATED_LAYOUT_SYNC_INTERVAL_MS = 33;
 const ANIMATED_LAYOUT_FINAL_SYNC_DELAY_MS = 32;
-/** Panel-splitter drags rely on RAF coalescing only (no extra throttle). */
+/**
+ * Splitter drags re-arm the paced-sync window on every drag frame so the
+ * native view follows continuously at most once per interval, while the
+ * cheap renderer-side grid reflows 1:1 with the pointer. Resize end still
+ * flushes the exact bounds immediately.
+ */
+const PANEL_DRAG_SYNC_WINDOW_MS = 200;
+const PANEL_DRAG_SYNC_INTERVAL_MS = 100;
 
 export const useWorkbenchBrowserLayoutSync = ({
   desktopApi,
@@ -192,19 +198,29 @@ export const useWorkbenchBrowserLayoutSync = ({
   }, [desktopApi]);
 
   const requestLayoutSync = useCallback((): void => {
-    // One sync per frame while the sash moves, so the native page stays in
-    // the pane. Skipping this leaves the page painted over the shell.
-    scheduleSync(getIsLayoutResizing() ? { force: true } : undefined);
+    scheduleSync();
   }, [scheduleSync]);
 
   useEffect(() => {
+    // The divider already wrote the pane size. Re-arm the paced-sync window
+    // per drag frame: snapshot reads and native-view syncs stay continuous
+    // but paced to PANEL_DRAG_SYNC_INTERVAL_MS instead of one per frame.
+    const unsubscribeFrame = subscribeLayoutDragFrame(() => {
+      scheduleSync({
+        animatedLayoutDurationMs: PANEL_DRAG_SYNC_WINDOW_MS,
+        animatedLayoutSyncIntervalMs: PANEL_DRAG_SYNC_INTERVAL_MS
+      });
+    });
     const unsubscribeResizeEnd = subscribeLayoutResizeEnd(() => {
       scheduleSync({
         force: true,
         followUpFrames: 2
       });
     });
-    return unsubscribeResizeEnd;
+    return () => {
+      unsubscribeFrame();
+      unsubscribeResizeEnd();
+    };
   }, [scheduleSync]);
 
   useEffect(() => {

@@ -59,7 +59,7 @@ import {
   useWorkbenchActionApi
 } from "./use-workbench-action-api";
 import { applyPanelLayoutCssVars } from "./panel-layout-shell-vars";
-import { getIsLayoutResizing, usePanelLayoutModel } from "./use-panel-layout";
+import { usePanelLayoutModel } from "./use-panel-layout";
 import { useOpenTerminalLiveSession } from "./use-open-terminal-live-session";
 import { useSoftwareStoreBuiltinAppOpener } from "./use-software-store-builtin-app-opener";
 import { useScrollbarVisibilityGuard } from "./use-scrollbar-visibility-guard";
@@ -766,9 +766,6 @@ resolvedThemeId,
   const rootStyle = rootVars as CSSProperties;
 
   useLayoutEffect(() => {
-    if (getIsLayoutResizing()) {
-      return;
-    }
     applyPanelLayoutCssVars(rootRef.current, panelLayoutModel.cssVars);
   }, [panelLayoutModel.cssVars]);
 

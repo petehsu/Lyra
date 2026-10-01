@@ -1,10 +1,7 @@
 import { useMemo } from "react";
 
 import { CLASSIC_WORKBENCH_INTERACTION_POLICIES } from "../interaction-policy";
-import {
-  useChromeTabStripCloseLock,
-  useChromeTabStripLayout
-} from "../ui-primitives";
+import { useChromeTabStripCloseLock } from "../ui-primitives";
 import type { BrowserTabStripProps } from "./tab-strip-types";
 import { createBrowserTabStripRenderModel } from "./tab-strip-render-model";
 import { BrowserTabStripView } from "./tab-strip-view";
@@ -52,18 +49,9 @@ export const BrowserTabStrip = ({
     onSplitTabs,
     onDetachTabFromSplit
   });
-  const tabTitles = useMemo(() => tabs.map((tab) => tab.title), [tabs]);
   const closeLock = useChromeTabStripCloseLock({
     tabCount: tabs.length,
     onCloseTab
-  });
-  const layout = useChromeTabStripLayout({
-    titles: tabTitles,
-    hostRef: runtime.navRef,
-    stripSelector: ".lyra-browser-tab-strip",
-    addButtonSelector: ".lyra-browser-tab-add",
-    titleSelector: ".lyra-browser-tab-title",
-    closeLockedTabWidth: closeLock.closeLockedTabWidth
   });
   const renderModel = useMemo(
     () => createBrowserTabStripRenderModel({
@@ -79,7 +67,6 @@ export const BrowserTabStrip = ({
       splitDropTargetTabId: runtime.state.splitDropTargetTabId,
       workspaceDragTabId: runtime.state.workspaceDragTabId,
       rightDragPreview: runtime.state.rightDragPreview,
-      layout,
       closeLockedTabWidth: closeLock.closeLockedTabWidth
     }),
     [
@@ -87,7 +74,6 @@ export const BrowserTabStrip = ({
       agentActiveTabId,
       closeTabLabel,
       closeLock.closeLockedTabWidth,
-      layout,
       isTabInSplit,
       runtime.state.dropIndicatorX,
       runtime.state.isSplitDropActive,

@@ -26,7 +26,6 @@ import type {
 } from "../../../shared/desktop-bridge";
 import { isLyraSensitiveValueRef } from "../../../shared/sensitive-value";
 import type { SettingsAiModel } from "../settings-ai";
-import { APP_CONFIG } from "./lyra-agents/core/config";
 import type {
   AgentImageAttachment,
   ChatMessage,
@@ -155,12 +154,6 @@ export const useLyraAgentDataProvider = (
   const [pendingClarifications, setPendingClarifications] = useState<DecisionQuestion[]>([]);
   const [pendingPermissions, setPendingPermissions] = useState<PermissionRequest[]>([]);
   const [pendingPlanReview, setPendingPlanReview] = useState<(AgentPlanSnapshot & { sessionId: string }) | null>(null);
-  // Render budget: number of most-recent messages to render as DOM.
-  // Per-session budget preserved across tab switches via a ref Map.
-  const renderBudgetBySessionRef = useRef<Map<string, number>>(new Map());
-  const [renderBudgetCount, setRenderBudgetCount] = useState<number>(
-    APP_CONFIG.messageWindow.initialRenderCount
-  );
   const [pendingCitation, setPendingCitation] = useState<ComposerInsertableCitation | null>(null);
   const [pendingCitationNonce, setPendingCitationNonce] = useState(0);
   const [pendingImages, setPendingImages] = useState<readonly AgentImageAttachment[]>([]);
@@ -170,7 +163,6 @@ export const useLyraAgentDataProvider = (
   const [citationHighlightMessageId, setCitationHighlightMessageId] = useState<string | null>(null);
   const [citationScrollTarget, setCitationScrollTarget] = useState<CitationScrollTarget | null>(null);
   const currentSessionIdRef = useRef<string | null>(activeSessionId ?? null);
-  const previousSessionIdRef = useRef<string | null>(activeSessionId ?? null);
   const handleRuntimeEventRef = useRef<(event: AgentRuntimeEvent) => void>(() => undefined);
   const materializedImagePathsRef = useRef<Map<string, string>>(new Map());
   // Session snapshot cache — LRU. Keep enough entries that a typical
@@ -226,21 +218,6 @@ export const useLyraAgentDataProvider = (
       cachePut(state.session.id, state.session);
     }
   }, [state.session]);
-
-  useEffect(() => {
-    const nextSessionId = state.session?.id ?? null;
-    if (previousSessionIdRef.current !== nextSessionId) {
-      const prevId = previousSessionIdRef.current;
-      if (prevId !== null) {
-        renderBudgetBySessionRef.current.set(prevId, renderBudgetCount);
-      }
-      const saved = nextSessionId !== null
-        ? renderBudgetBySessionRef.current.get(nextSessionId)
-        : undefined;
-      setRenderBudgetCount(saved ?? APP_CONFIG.messageWindow.initialRenderCount);
-      previousSessionIdRef.current = nextSessionId;
-    }
-  }, [state.session?.id, renderBudgetCount]);
 
   handleRuntimeEventRef.current = (event: AgentRuntimeEvent) => {
     const eventSessionId = runtimeEventSessionId(event);
@@ -684,7 +661,6 @@ export const useLyraAgentDataProvider = (
     composerCitationSinkRef,
     setPendingCitation,
     setPendingCitationNonce,
-    setRenderBudgetCount,
     setCitationScrollTarget,
     setCitationHighlightMessageId
   });
@@ -1776,8 +1752,7 @@ export const useLyraAgentDataProvider = (
     updateReasoningEffort,
     updateVerbosity,
     updateServiceTier,
-    switchPermissionMode,
-    setRenderBudgetCount
+    switchPermissionMode
   });
 
   const openSubagent = useCallback((subagentId: string, title?: string): void => {
@@ -1797,10 +1772,7 @@ export const useLyraAgentDataProvider = (
   const data = useMemo(() => {
     const messageSession = state.session;
     const totalMessageCount = messageSession?.messages.length ?? 0;
-    const visibleMessageCount = Math.min(totalMessageCount, renderBudgetCount);
-    const chatMessages = agentSessionToChatMessages(messageSession, {
-      messageLimitFromEnd: renderBudgetCount
-    });
+    const chatMessages = agentSessionToChatMessages(messageSession);
     const turnRunning = state.session?.follow.running ?? state.loading;
     const lastChatMessage = chatMessages.at(-1);
     // While a turn is running but the agent has not yet emitted its own message
@@ -1831,10 +1803,10 @@ export const useLyraAgentDataProvider = (
       session: agentSessionMetaWithDraftWorkingDir(agentSessionToSessionMeta(state.session), state.session === null ? activeDraftWorkingDir : null),
       messages,
       messageWindow: {
-        visibleCount: visibleMessageCount,
-        hiddenBefore: Math.max(0, totalMessageCount - visibleMessageCount),
+        visibleCount: totalMessageCount,
+        hiddenBefore: 0,
         totalCount: totalMessageCount,
-        canLoadEarlier: visibleMessageCount < totalMessageCount
+        canLoadEarlier: false
       },
       todos: agentSessionToTodos(state.session),
       projectTodo: state.session?.projectTodo ?? null,
@@ -1966,7 +1938,6 @@ export const useLyraAgentDataProvider = (
     activeDraftWorkingDir,
     state.session,
     state.loading,
-    renderBudgetCount,
     renameSession,
     archiveSession,
     deleteSession,

@@ -3,7 +3,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { readWorkbenchStateSync, resetWorkbenchStateStorageForTests } from "../../state-storage";
-import { getIsLayoutResizing, usePanelLayoutModel } from "../use-panel-layout";
+import { usePanelLayoutModel } from "../use-panel-layout";
 
 describe("usePanelLayoutModel", () => {
   beforeEach(() => {
@@ -52,6 +52,25 @@ describe("usePanelLayoutModel", () => {
     });
 
     expect(result.current.bottomHeight).toBeGreaterThan(initialHeight);
+  });
+
+  test("toggles the panel-resizing body class across a divider drag", () => {
+    const { result } = renderHook(() => usePanelLayoutModel());
+
+    act(() => {
+      result.current.onLeftResizeMouseDown({
+        clientX: 100,
+        preventDefault: vi.fn()
+      } as unknown as ReactMouseEvent<HTMLDivElement>);
+    });
+    expect(document.body.classList.contains("lyra-panel-resizing")).toBe(true);
+
+    act(() => {
+      window.dispatchEvent(new MouseEvent("mousemove", { clientX: 180 }));
+      window.dispatchEvent(new MouseEvent("mouseup"));
+    });
+
+    expect(document.body.classList.contains("lyra-panel-resizing")).toBe(false);
   });
 
   test("persists panel sizes when a drag ends", () => {
@@ -126,15 +145,14 @@ describe("usePanelLayoutModel", () => {
     act(() => result.current.onLeftResizeMouseDown({
       clientX: 100, button: 0, preventDefault: vi.fn()
     } as unknown as ReactMouseEvent<HTMLDivElement>));
-    expect(getIsLayoutResizing()).toBe(true);
     expect(frame).toHaveClass("lyra-pointer-events-disabled");
+    expect(document.body).not.toHaveClass("lyra-layout-resizing");
     act(() => {
       window.dispatchEvent(new MouseEvent("mousemove", { clientX: 150 }));
       if (reason === "unmount") unmount();
       else window.dispatchEvent(reason === "Escape"
         ? new KeyboardEvent("keydown", { key: "Escape" }) : new Event("blur"));
     });
-    expect(getIsLayoutResizing()).toBe(false);
     expect(document.body).not.toHaveClass("lyra-layout-resizing");
     expect(document.body.style.cursor).toBe(cursor);
     expect(document.body.style.userSelect).toBe(selection);
@@ -149,10 +167,20 @@ describe("usePanelLayoutModel", () => {
   });
 
   test("ignores secondary-button drags", () => {
+    const frame = document.createElement("iframe");
+    document.body.append(frame);
     const { result } = renderHook(() => usePanelLayoutModel());
+    const width = result.current.leftWidth;
     act(() => result.current.onLeftResizeMouseDown({
       clientX: 100, button: 2, preventDefault: vi.fn()
     } as unknown as ReactMouseEvent<HTMLDivElement>));
-    expect(getIsLayoutResizing()).toBe(false);
+    act(() => {
+      window.dispatchEvent(new MouseEvent("mousemove", { clientX: 400 }));
+      window.dispatchEvent(new MouseEvent("mouseup"));
+    });
+    expect(result.current.leftWidth).toBe(width);
+    expect(frame).not.toHaveClass("lyra-pointer-events-disabled");
+    expect(document.body).not.toHaveClass("lyra-layout-resizing");
+    frame.remove();
   });
 });

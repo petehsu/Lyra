@@ -1,7 +1,6 @@
 import { Plus, X } from "@lyra/icons";
 import {
   useCallback,
-  useMemo,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent
@@ -30,15 +29,14 @@ import type { AiPanelSessionTab } from "./session-tabs";
 import type { AiPanelSurfaceProps } from "./types";
 import { useLyraAgentDataProvider } from "./use-lyra-agent-data-provider";
 import {
-  closestChromeTabLayoutIndex,
   handleChromeTabCloseClick,
   handleChromeTabClosePointerDown,
   isMiddleClick,
-  useChromeTabStripCloseLock,
-  useChromeTabStripLayout
+  useChromeTabStripCloseLock
 } from "../ui-primitives";
 
 const AI_SESSION_TAB_DRAG_THRESHOLD_PX = 4;
+const AI_SESSION_TAB_FLEX_MIN_PX = 60;
 
 const EMPTY_TAB_REFERENCES: AiPanelSessionTabReferences = {
   inlineImages: [],
@@ -51,15 +49,15 @@ type AiSessionTabDragState = {
   readonly tabId: string;
   readonly pointerId: number;
   readonly startClientX: number;
-  readonly startX: number;
-  readonly positions: readonly number[];
+  readonly originIndex: number;
+  readonly tabWidth: number;
   readonly lastTargetIndex: number;
   readonly moved: boolean;
 };
 
 type AiSessionTabDragVisualState = {
   readonly tabId: string;
-  readonly x: number;
+  readonly dx: number;
 };
 
 const SessionTabIdentityIcon = ({
@@ -107,7 +105,6 @@ const AiPanelTabsHeader = ({
   readonly movePanelToRightLabel?: string;
 }) => {
   const { session, messages, isTurnRunning, createSession } = useData();
-  const headerRef = useRef<HTMLElement | null>(null);
   const rememberedReferences = useRef(new Map<string, AiPanelSessionTabReferences>());
   const dragRef = useRef<AiSessionTabDragState | null>(null);
   const suppressNextClickRef = useRef<string | null>(null);
@@ -163,34 +160,12 @@ const AiPanelTabsHeader = ({
             title: t("aiPanel.defaultSessionTitle"),
             lastKnownStatus: null
           } satisfies AiPanelSessionTab];
-  const activeIndex = Math.max(
-    0,
-    visibleTabs.findIndex((tab) => tab.tabId === effectiveActiveTabId)
-  );
-  const visibleTabTitlesKey = visibleTabs
-    .map((tab) => `${tab.tabId}:${tab.title}`)
-    .join("\n");
-  const visibleTabTitles = useMemo(
-    () => visibleTabs.map((tab) => tab.title),
-    [visibleTabTitlesKey]
-  );
   const closeLock = useChromeTabStripCloseLock({
     tabCount: visibleTabs.length,
     onCloseTab: (tabId) => {
       onCloseSessionTab?.(tabId);
     }
   });
-  const layout = useChromeTabStripLayout({
-    titles: visibleTabTitles,
-    hostRef: headerRef,
-    stripSelector: ".lyra-agents-session-tab-strip",
-    addButtonSelector: ".lyra-agents-session-tab-add",
-    titleSelector: ".lyra-agents-session-tab-title",
-    closeLockedTabWidth: closeLock.closeLockedTabWidth
-  });
-  const listSpacerStyle = {
-    width: `${Math.ceil(layout.contentWidth)}px`
-  };
 
   const onTabPointerDown = useCallback((
     tab: AiPanelSessionTab,
@@ -198,19 +173,18 @@ const AiPanelTabsHeader = ({
     event: ReactPointerEvent<HTMLElement>
   ): void => {
     if (event.button !== 0 || onReorderSessionTabs === undefined) return;
-    const item = layout.items[index];
-    if (item === undefined) return;
+    const tabWidth = Math.max(event.currentTarget.offsetWidth, AI_SESSION_TAB_FLEX_MIN_PX);
     dragRef.current = {
       tabId: tab.tabId,
       pointerId: event.pointerId,
       startClientX: event.clientX,
-      startX: item.x,
-      positions: layout.items.map((layoutItem) => layoutItem.x),
+      originIndex: index,
+      tabWidth,
       lastTargetIndex: index,
       moved: false
     };
     event.currentTarget.setPointerCapture(event.pointerId);
-  }, [layout.items, onReorderSessionTabs]);
+  }, [onReorderSessionTabs]);
 
   const onTabPointerMove = useCallback((
     event: ReactPointerEvent<HTMLElement>
@@ -219,32 +193,20 @@ const AiPanelTabsHeader = ({
     if (drag === null || drag.pointerId !== event.pointerId) return;
     const deltaX = event.clientX - drag.startClientX;
     if (!drag.moved && Math.abs(deltaX) < AI_SESSION_TAB_DRAG_THRESHOLD_PX) return;
-    const nextX = drag.startX + deltaX;
     setDraggingTabId(drag.tabId);
-    setDragVisual({ tabId: drag.tabId, x: nextX });
+    setDragVisual({ tabId: drag.tabId, dx: deltaX });
     event.preventDefault();
-
-    const currentIndex = visibleTabs.findIndex((tab) => tab.tabId === drag.tabId);
-    const destinationIndex = closestChromeTabLayoutIndex(
-      nextX,
-      drag.positions.map((x) => ({ x, width: 0, contentWidth: 0 }))
+    const steps = Math.round(deltaX / drag.tabWidth);
+    const destinationIndex = Math.min(
+      visibleTabs.length - 1,
+      Math.max(0, drag.originIndex + steps)
     );
-    const destination = visibleTabs[destinationIndex];
     dragRef.current = {
       ...drag,
       moved: true,
-      lastTargetIndex: destinationIndex === -1 ? drag.lastTargetIndex : destinationIndex
+      lastTargetIndex: destinationIndex
     };
-    if (
-      currentIndex !== -1 &&
-      destinationIndex !== -1 &&
-      destinationIndex !== drag.lastTargetIndex &&
-      currentIndex !== destinationIndex &&
-      destination !== undefined
-    ) {
-      onReorderSessionTabs?.(drag.tabId, destination.tabId);
-    }
-  }, [layout.items, onReorderSessionTabs, visibleTabs]);
+  }, [visibleTabs.length]);
 
   const onTabPointerUp = useCallback((
     event: ReactPointerEvent<HTMLElement>
@@ -255,6 +217,10 @@ const AiPanelTabsHeader = ({
     setDraggingTabId(null);
     setDragVisual(null);
     if (drag.moved) {
+      const destination = visibleTabs[drag.lastTargetIndex];
+      if (destination !== undefined && destination.tabId !== drag.tabId) {
+        onReorderSessionTabs?.(drag.tabId, destination.tabId);
+      }
       suppressNextClickRef.current = drag.tabId;
       window.setTimeout(() => {
         if (suppressNextClickRef.current === drag.tabId) {
@@ -265,11 +231,10 @@ const AiPanelTabsHeader = ({
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
-  }, []);
+  }, [onReorderSessionTabs, visibleTabs]);
 
   return (
     <header
-      ref={headerRef}
       className="lyra-agents-header lyra-agents-session-tabs-header"
       onPointerLeave={closeLock.onClearCloseLock}
     >
@@ -284,11 +249,6 @@ const AiPanelTabsHeader = ({
         aria-label={t("aiPanel.sessionTabsAriaLabel")}
       >
         <div className="lyra-agents-session-tab-list">
-          <div
-            className="lyra-agents-session-tab-list-spacer"
-            style={listSpacerStyle}
-            aria-hidden="true"
-          />
           {visibleTabs.map((tab, index) => {
             const active = tab.tabId === effectiveActiveTabId;
             const hasCurrentSnapshot =
@@ -314,19 +274,9 @@ const AiPanelTabsHeader = ({
             const workingDir = hasCurrentSnapshot
               ? session.workingDir
               : tab.workingDir ?? tab.draftWorkingDir ?? null;
-            const tabLayout = layout.items[index];
-            const tabStyle = tabLayout === undefined
-              ? undefined
-              : {
-                  width: `${Math.round(tabLayout.width)}px`,
-                  transform:
-                    dragVisual?.tabId === tab.tabId
-                      ? `translate3d(${Math.round(dragVisual.x)}px, 0, 0)`
-                      : `translate3d(${Math.round(tabLayout.x)}px, 0, 0)`
-                };
-            // Chrome-like: narrow tabs reuse the icon slot for close.
-            const isNarrowTab =
-              tabLayout !== undefined && tabLayout.width > 0 && tabLayout.width < 68;
+            const tabStyle = dragVisual?.tabId === tab.tabId
+              ? { transform: `translate3d(${Math.round(dragVisual.dx)}px, 0, 0)` }
+              : undefined;
             return (
               <div
                 key={tab.tabId}
@@ -336,17 +286,11 @@ const AiPanelTabsHeader = ({
                   active && "lyra-tab-item-active",
                   active && "lyra-agents-session-tab-item-active",
                   running && "lyra-agents-session-tab-item-running",
-                  isNarrowTab && "lyra-agents-session-tab-item-narrow",
                   draggingTabId === tab.tabId && "lyra-agents-session-tab-item-dragging"
                 )}
                 style={tabStyle}
                 data-lyra-tab-id={tab.tabId}
                 data-ai-session-tab-id={tab.tabId}
-                data-lyra-tab-width={
-                  tabStyle?.width === undefined
-                    ? undefined
-                    : String(tabStyle.width).replace(/px$/, "")
-                }
                 onPointerMove={onTabPointerMove}
                 onPointerUp={onTabPointerUp}
                 onPointerCancel={onTabPointerUp}

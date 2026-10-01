@@ -2,10 +2,8 @@
 // ChatView — scrollable message list + floating lyra-agents-composer stack
 // ============================================================================
 //
-// The DataProvider limits how many messages are materialized as DOM nodes
-// (render-budget system). This view renders all provided messages directly —
-// Native content visibility skips offscreen history layout without unmounting
-// text or the live tail. Browser anchoring owns the reader's position when paused.
+// The thread is a TanStack virtual list. Only the rows in the scrollport are
+// mounted. Offscreen history is not in the document.
 
 import {
   useCallback,
@@ -15,6 +13,7 @@ import {
   useState,
   type MouseEvent
 } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ArrowDown,
   BookText,
@@ -58,16 +57,17 @@ import { MessageCitationText } from "./MessageCitationText";
 import { queryCitationMessageElement } from "./scroll-to-citation";
 import { useAutoScroll } from "./use-auto-scroll";
 import { createRafCoalescer } from "../../../../shell/raf-coalesce";
+import {
+  CONTENT_WIDTH_RESIZE_SETTLE_MS,
+  MESSAGE_ROW_ESTIMATE_PX,
+  type MessageHeightMemory,
+  messageVirtualizerOptions,
+  shouldAdjustMessageScrollOnItemSizeChange
+} from "./virtual-message-window";
 
 // ponytail: sticky anchor offset from the top of the scroll viewport.
 const STICKY_ANCHOR_TOP_OFFSET_PX = 18;
 const STICKY_ANCHOR_PREVIEW_CHARS = 96;
-
-type StickySlot = {
-  readonly id: string;
-  readonly bottom: number;
-  readonly user: boolean;
-};
 const GIT_STATUS_POLL_MS = 5000;
 
 /** Keep the last message above the floating composer, including permission/decision popups. */
@@ -219,12 +219,10 @@ interface ChatViewProps {
 export function ChatView({ showDecisions, showPermission, desktopApi = null }: ChatViewProps) {
   const {
     messages,
-    messageWindow,
     decisions,
     permissions,
     planReview,
     sendMessage,
-    loadEarlierMessages,
     captureWorkspaceScreenshot,
     captureWindowScreenshot,
     pickFileFromFileManager,
@@ -311,15 +309,52 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const composerWrapRef = useRef<HTMLDivElement | null>(null);
+  const contentElRef = useRef<HTMLDivElement | null>(null);
+  // Splitter drags change the chat width every frame; rows rewrap in batches
+  // and per-row scroll compensation would fight itself (visible jitter).
+  const contentWidthChangingRef = useRef(false);
   const autoScroll = useAutoScroll({
     working: true,
-    overflowAnchor: "dynamic",
+    // The virtualizer owns scroll compensation; native anchoring would
+    // double-drive it while reading history during streaming or resizes.
+    overflowAnchor: "none",
     bottomThreshold: APP_CONFIG.scroll.atBottomThreshold
   });
   const bindScrollRef = useCallback((node: HTMLDivElement | null) => {
     scrollRef.current = node;
     autoScroll.setScrollElement(node);
   }, [autoScroll.setScrollElement]);
+  const bindContentRef = useCallback((node: HTMLDivElement | null) => {
+    contentElRef.current = node;
+    autoScroll.setContentElement(node);
+  }, [autoScroll.setContentElement]);
+
+  useEffect(() => {
+    const el = contentElRef.current;
+    if (el === null) {
+      return;
+    }
+    let lastWidth = el.clientWidth;
+    let settle = 0;
+    const observer = new ResizeObserver(() => {
+      const width = el.clientWidth;
+      if (width === lastWidth) {
+        return;
+      }
+      lastWidth = width;
+      contentWidthChangingRef.current = true;
+      window.clearTimeout(settle);
+      settle = window.setTimeout(() => {
+        settle = 0;
+        contentWidthChangingRef.current = false;
+      }, CONTENT_WIDTH_RESIZE_SETTLE_MS);
+    });
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(settle);
+    };
+  }, []);
 
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [stickyMessageId, setStickyMessageId] = useState<string | null>(null);
@@ -339,140 +374,89 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     : messages.find((message) => message.id === stickyMessageId) ?? null;
   const stickyMessagePreview = stickyMessage === null ? "" : textPreviewForMessage(stickyMessage);
 
-  const loadingEarlierRef = useRef(false);
-  const pendingEarlierAnchorRef = useRef(false);
-  const scrollAnchorDistanceRef = useRef(0);
   const citationScrollCompletedTokenRef = useRef<number | null>(null);
-  const stickyAnchorFrameRef = useRef<number | null>(null);
-  const scrollTopRef = useRef(0);
-  const stickySlotsRef = useRef<{ height: number; slots: readonly StickySlot[] } | null>(null);
+  // Last real height per message id: remounted rows estimate from it instead
+  // of the raw default, keeping offsets close during drag-churned remounts.
+  const messageHeightMemoryRef = useRef(new Map<string, number>());
+  useEffect(() => {
+    messageHeightMemoryRef.current.clear();
+  }, [session.id]);
+  const messageHeightMemory: MessageHeightMemory = {
+    estimateForKey: (key) =>
+      messageHeightMemoryRef.current.get(String(key)) ?? MESSAGE_ROW_ESTIMATE_PX,
+    recordHeight: (key, height) => {
+      messageHeightMemoryRef.current.set(String(key), height);
+    }
+  };
+  const virtualizer = useVirtualizer(messageVirtualizerOptions(
+    messages.length,
+    () => scrollRef.current,
+    (index) => messages[index]?.id ?? index,
+    messageHeightMemory
+  ));
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item) =>
+    shouldAdjustMessageScrollOnItemSizeChange({
+      contentWidthChanging: contentWidthChangingRef.current,
+      userScrolled: autoScroll.userScrolled(),
+      itemIndex: item.index,
+      rangeStartIndex: virtualizer.range?.startIndex
+    });
 
-  const updateStickyAnchor = useCallback(() => {
-    stickyAnchorFrameRef.current = null;
-    const el = scrollRef.current;
-    if (el === null) return;
-    if (el.scrollTop <= 0) {
+  // While the width moves (splitter drag), rows rewrap continuously and
+  // ResizeObserver-driven measurement lags a frame behind; offsets built from
+  // stale heights overlap neighbors. Re-measure every mounted row inside the
+  // commit, before paint, so offsets match the rewrapped DOM in the same frame.
+  useLayoutEffect(() => {
+    if (
+      !contentWidthChangingRef.current
+      && !document.body.classList.contains("lyra-panel-resizing")
+    ) {
+      return;
+    }
+    const content = contentElRef.current;
+    if (content === null) {
+      return;
+    }
+    for (const node of content.querySelectorAll<HTMLElement>("[data-index]")) {
+      virtualizer.measureElement(node);
+    }
+  });
+
+  const publishSticky = useCallback((scrollTop: number): void => {
+    if (scrollTop <= 0) {
       setStickyMessageId((current) => (current === null ? current : null));
       return;
     }
-    // Offscreen history uses content-visibility. Reading each slot's rect on
-    // scroll forces those rows to layout; cache offsets until the thread height changes.
-    const height = el.scrollHeight;
-    let cached = stickySlotsRef.current;
-    if (cached === null || cached.height !== height) {
-      const slots: StickySlot[] = [];
-      for (const slot of el.querySelectorAll<HTMLElement>("[data-chat-message-id]")) {
-        const id = slot.dataset.chatMessageId ?? "";
-        if (id.length === 0) continue;
-        slots.push({
-          id,
-          bottom: slot.offsetTop + slot.offsetHeight,
-          user: slot.dataset.chatMessageAuthor === "user"
-        });
-      }
-      cached = { height, slots };
-      stickySlotsRef.current = cached;
-    }
-    const line = el.scrollTop + STICKY_ANCHOR_TOP_OFFSET_PX;
+    const line = scrollTop + STICKY_ANCHOR_TOP_OFFSET_PX;
     let stickyId: string | null = null;
-    for (const slot of cached.slots) {
-      if (slot.bottom > line) break;
-      if (slot.user) stickyId = slot.id;
+    const measured = virtualizer.measurementsCache;
+    if (measured.length > 0) {
+      for (const item of measured) {
+        if (item.end > line) break;
+        const message = messages[item.index];
+        if (message?.author === "user") stickyId = message.id;
+      }
+    } else {
+      for (let index = 0; index < messages.length; index += 1) {
+        if ((index + 1) * MESSAGE_ROW_ESTIMATE_PX > line) break;
+        const message = messages[index];
+        if (message?.author === "user") stickyId = message.id;
+      }
     }
     setStickyMessageId((current) => (current === stickyId ? current : stickyId));
-  }, []);
+  }, [messages, virtualizer]);
 
-  const stickyMessageKey = messages.map((message) => message.id).join("\0");
-  useEffect(() => {
-    const root = scrollRef.current;
-    if (root === null || typeof IntersectionObserver !== "function") {
-      return undefined;
-    }
-    const slots = [...root.querySelectorAll<HTMLElement>("[data-chat-message-id]")];
-    const above = new Set<string>();
-    let frame = 0;
-    const publish = (): void => {
-      frame = 0;
-      if (scrollTopRef.current <= 0) {
-        setStickyMessageId((current) => (current === null ? current : null));
-        return;
-      }
-      let stickyId: string | null = null;
-      for (const slot of slots) {
-        const id = slot.dataset.chatMessageId ?? "";
-        if (!above.has(id)) break;
-        if (slot.dataset.chatMessageAuthor === "user" && id.length > 0) {
-          stickyId = id;
-        }
-      }
-      setStickyMessageId((current) => (current === stickyId ? current : stickyId));
-    };
-    const observer = new IntersectionObserver((entries) => {
-      for (const entry of entries) {
-        const slot = entry.target;
-        if (!(slot instanceof HTMLElement)) continue;
-        const id = slot.dataset.chatMessageId ?? "";
-        if (id.length === 0) continue;
-        const rootTop = entry.rootBounds?.top ?? 0;
-        const passed = entry.boundingClientRect.bottom <= rootTop + STICKY_ANCHOR_TOP_OFFSET_PX;
-        if (passed) above.add(id);
-        else above.delete(id);
-      }
-      if (frame !== 0) return;
-      frame = window.requestAnimationFrame(publish);
-    }, { root, threshold: 0 });
-    for (const slot of slots) observer.observe(slot);
-    return () => {
-      observer.disconnect();
-      if (frame !== 0) window.cancelAnimationFrame(frame);
-    };
-  }, [stickyMessageKey]);
-
-  const scheduleStickyAnchorUpdate = useCallback(() => {
-    if (stickyAnchorFrameRef.current !== null) return;
-    stickyAnchorFrameRef.current = window.requestAnimationFrame(updateStickyAnchor);
-  }, [updateStickyAnchor]);
-
-  // --- Scroll handler: follow lock, bottom detection, sticky anchor, history loading ---
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
 
     const scrollTop = el.scrollTop;
-    scrollTopRef.current = scrollTop;
     autoScroll.handleScroll();
     const atBottom =
       el.scrollHeight - scrollTop - el.clientHeight < APP_CONFIG.scroll.atBottomThreshold;
     setIsAtBottom((current) => (current === atBottom ? current : atBottom));
-    scrollAnchorDistanceRef.current = atBottom ? 0 : el.scrollHeight - scrollTop;
-    if (scrollTop <= 0) {
-      if (stickyAnchorFrameRef.current !== null) {
-        window.cancelAnimationFrame(stickyAnchorFrameRef.current);
-        stickyAnchorFrameRef.current = null;
-      }
-      setStickyMessageId(null);
-    } else if (typeof IntersectionObserver !== "function") {
-      scheduleStickyAnchorUpdate();
-    }
-
-    // Load earlier messages when scrolled near the top
-    if (
-      messageWindow.canLoadEarlier &&
-      !loadingEarlierRef.current &&
-      scrollTop <= APP_CONFIG.scroll.topLoadThreshold
-    ) {
-      loadingEarlierRef.current = true;
-      pendingEarlierAnchorRef.current = true;
-      void loadEarlierMessages().finally(() => {
-        loadingEarlierRef.current = false;
-      });
-    }
-  }, [
-    autoScroll.handleScroll,
-    loadEarlierMessages,
-    messageWindow.canLoadEarlier,
-    scheduleStickyAnchorUpdate
-  ]);
+    publishSticky(scrollTop);
+  }, [autoScroll.handleScroll, publishSticky]);
 
   useLayoutEffect(() => {
     const scroll = scrollRef.current;
@@ -503,29 +487,18 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     const el = scrollRef.current;
     if (!el) return;
 
-    if (pendingEarlierAnchorRef.current) {
-      pendingEarlierAnchorRef.current = false;
-      const nextScrollTop = Math.max(0, el.scrollHeight - scrollAnchorDistanceRef.current);
-      el.scrollTop = nextScrollTop;
-      const atBottom =
-        el.scrollHeight - nextScrollTop - el.clientHeight < APP_CONFIG.scroll.atBottomThreshold;
-      setIsAtBottom(atBottom);
-      scrollAnchorDistanceRef.current = atBottom ? 0 : el.scrollHeight - nextScrollTop;
-      return;
-    }
-
     if (autoScroll.userScrolled()) return;
     autoScroll.follow();
     setIsAtBottom(true);
   }, [autoScroll.follow, autoScroll.userScrolled, followKey]);
 
-  useEffect(() => () => {
-    if (stickyAnchorFrameRef.current !== null) {
-      window.cancelAnimationFrame(stickyAnchorFrameRef.current);
-    }
-  }, []);
+  useLayoutEffect(() => {
+    if (citationScrollTarget === null) return;
+    const index = messages.findIndex((message) => message.id === citationScrollTarget.messageId);
+    if (index < 0) return;
+    virtualizer.scrollToIndex(index, { align: "center" });
+  }, [citationScrollTarget, messages, virtualizer]);
 
-  // --- Citation scroll: scroll a specific message into view ---
   useLayoutEffect(() => {
     if (citationScrollTarget === null) return;
     if (citationScrollCompletedTokenRef.current === citationScrollTarget.token) return;
@@ -541,7 +514,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     requestAnimationFrame(() => {
       reportCitationScrollFinished(citationScrollTarget.messageId);
     });
-  }, [autoScroll.pause, citationScrollTarget, reportCitationScrollFinished]);
+  }, [autoScroll.pause, citationScrollTarget, messages, reportCitationScrollFinished]);
 
   useEffect(() => {
     if (stickyMessageId !== null && !messages.some((message) => message.id === stickyMessageId)) {
@@ -551,20 +524,21 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
 
   // Reset scroll anchor on session switch — start at bottom
   useEffect(() => {
-    scrollAnchorDistanceRef.current = 0;
     setStickyMessageId(null);
     autoScroll.resume();
   }, [autoScroll.resume, session.id]);
 
   const scrollToStickyMessage = () => {
     if (stickyMessageId === null) return;
+    const index = messages.findIndex((message) => message.id === stickyMessageId);
+    if (index < 0) return;
+    autoScroll.pause();
+    virtualizer.scrollToIndex(index, { align: "start" });
     const el = scrollRef.current;
-    if (el === null) return;
-    const target = el.querySelector<HTMLElement>(`[data-chat-message-id="${CSS.escape(stickyMessageId)}"]`);
-    if (target !== null) {
-      autoScroll.pause();
-      target.scrollIntoView({ behavior: "smooth" });
-    }
+    const target = el?.querySelector<HTMLElement>(
+      `[data-chat-message-id="${CSS.escape(stickyMessageId)}"]`
+    );
+    target?.scrollIntoView({ behavior: "smooth" });
   };
 
   const openMessageContextMenu = useCallback((
@@ -694,27 +668,9 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
 
         <div
           className="lyra-agents-chat-inner"
-          ref={autoScroll.setContentElement}
+          ref={bindContentRef}
           onClick={autoScroll.handleInteraction}
         >
-          {/* Show earlier button */}
-          {messageWindow.canLoadEarlier ? (
-            <div className="lyra-agents-chat-load-earlier">
-              <AppButton
-                variant="ghost"
-                size="sm"
-                type="button"
-                onClick={() => {
-                  pendingEarlierAnchorRef.current = true;
-                  void loadEarlierMessages();
-                }}
-                disabled={loadingEarlierRef.current}
-              >
-                {t("scroll.showEarlier")}
-              </AppButton>
-            </div>
-          ) : null}
-
           {messages.length === 0 ? (
             <ChatEmptyState
               key={session.id}
@@ -722,30 +678,61 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
               isHome={session.workingDirIsHome}
               onChooseProject={bindProject}
             />
-          ) : null}
-
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className="lyra-agents-chat-message-slot"
-              data-chat-message-id={message.id}
-              data-chat-message-author={message.author}
-            >
-              <Message
-                message={message}
-                showActivityIndicator={
-                  activityIndicatorHostMessageId === null ||
-                  message.id === activityIndicatorHostMessageId
-                }
-                activityIndicatorMessage={
-                  message.id === activityIndicatorHostMessageId ? activityIndicatorMessage : null
-                }
-                highlightCitationTarget={citationHighlightMessageId === message.id}
-                onContextMenu={openMessageContextMenu}
-                onCiteMessage={() => addCitationToComposer(buildFullMessageCitation(message))}
-              />
-            </div>
-          ))}
+          ) : (
+            (() => {
+              const virtualItems = virtualizer.getVirtualItems();
+              const firstItem = virtualItems[0];
+              const lastItem = virtualItems[virtualItems.length - 1];
+              return (
+                <div className="lyra-agents-chat-virtual" style={{ position: "relative" }}>
+                  {firstItem === undefined || lastItem === undefined ? null : (
+                    <>
+                      {/* Rows render in normal flow: the browser stacks real
+                          boxes, so rewrapped heights can never overlap or gap
+                          neighbors. The virtualizer only picks the window and
+                          sizes the spacers, so stale measurements degrade to
+                          scrollbar drift instead of mispositioned rows. */}
+                      <div aria-hidden style={{ height: Math.max(0, firstItem.start) }} />
+                      {virtualItems.map((item) => {
+                        const message = messages[item.index];
+                        if (message === undefined) return null;
+                        return (
+                          <div
+                            key={message.id}
+                            ref={virtualizer.measureElement}
+                            data-index={item.index}
+                            className="lyra-agents-chat-message-slot"
+                            data-chat-message-id={message.id}
+                            data-chat-message-author={message.author}
+                          >
+                            <Message
+                              message={message}
+                              showActivityIndicator={
+                                activityIndicatorHostMessageId === null ||
+                                message.id === activityIndicatorHostMessageId
+                              }
+                              activityIndicatorMessage={
+                                message.id === activityIndicatorHostMessageId ? activityIndicatorMessage : null
+                              }
+                              highlightCitationTarget={citationHighlightMessageId === message.id}
+                              onContextMenu={openMessageContextMenu}
+                              onCiteMessage={() => addCitationToComposer(buildFullMessageCitation(message))}
+                            />
+                          </div>
+                        );
+                      })}
+                      <div
+                        aria-hidden
+                        style={{
+                          height: Math.max(0, virtualizer.getTotalSize() - lastItem.end)
+                        }}
+                      />
+                    </>
+                  )}
+                </div>
+              );
+            })()
+          )}
         </div>
       </div>
 

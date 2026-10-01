@@ -10,7 +10,6 @@ export type {
   ChromeTabLayoutItem,
   ChromeTabStripLayout
 } from "./chrome-tab-layout";
-export { useChromeTabStripLayout } from "./use-chrome-tab-strip-layout";
 export {
   handleChromeTabCloseClick,
   handleChromeTabClosePointerDown,

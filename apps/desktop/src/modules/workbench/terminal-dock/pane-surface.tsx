@@ -5,8 +5,7 @@ import { Terminal } from "xterm";
 
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import { AppIconButton } from "@renderer/ui/components";
-import { subscribeLayoutResizeEnd } from "../shell/layout-resize-end";
-import { getIsLayoutResizing } from "../shell/use-panel-layout";
+import { subscribeLayoutDragFrame, subscribeLayoutResizeEnd } from "../shell/layout-resize-end";
 import { getIsWindowResizing } from "../shell/use-window-resize-class";
 import {
   wasBulkTerminalRestored,
@@ -325,8 +324,7 @@ const applyTerminalRendererOptions = (
 
 const TERMINAL_RESIZE_SETTLE_MS = 140;
 const TERMINAL_RESIZE_DRAG_THROTTLE_MS = 300;
-const TERMINAL_HORIZONTAL_RESIZE_DEBOUNCE_MS = 220;
-const TERMINAL_HORIZONTAL_RESIZE_BUFFER_THRESHOLD = 200;
+const TERMINAL_HORIZONTAL_RESIZE_BUFFER_THRESHOLD = 200
 const TERMINAL_INITIAL_RESIZE_RETRY_MS: readonly number[] = [32, 120, 320];
 const TERMINAL_MIN_FIT_COLS = 10;
 const TERMINAL_MIN_FIT_ROWS = 3;
@@ -490,11 +488,8 @@ export const TerminalPaneSurface = ({
       if (!host.isConnected) {
         return false;
       }
-      // ResizeObserver already reported the box. clientWidth forces a document layout.
       if (boxWidth <= 0 || boxHeight <= 0) {
-        if (host.clientWidth <= 0 || host.clientHeight <= 0) {
-          return false;
-        }
+        return false;
       }
       if (terminalWithElement.element === undefined || !terminalWithElement.element.isConnected) {
         return false;
@@ -521,7 +516,7 @@ export const TerminalPaneSurface = ({
         options?.deferColumns === true &&
         terminal.cols !== dimensions.cols &&
         (
-          getIsLayoutResizing() || getIsWindowResizing() ||
+          dragActive || getIsWindowResizing() ||
           readTerminalBufferLength(terminal) >= TERMINAL_HORIZONTAL_RESIZE_BUFFER_THRESHOLD
         );
       const nextCols = shouldDeferColumns ? terminal.cols : dimensions.cols;
@@ -596,28 +591,9 @@ export const TerminalPaneSurface = ({
       if (!activeRef.current && mode !== "immediate") {
         return;
       }
-      // While the sash moves, fit at most every 300ms. A fit on every frame
-      // forces layout and the divider stops following the pointer.
-      if (getIsLayoutResizing() && mode !== "immediate") {
-        if (resizeSettleTimerId !== null) {
-          return;
-        }
-        resizeSettleTimerId = window.setTimeout(() => {
-          resizeSettleTimerId = null;
-          scheduleResizeFrame();
-        }, TERMINAL_RESIZE_DRAG_THROTTLE_MS);
-        return;
-      }
-      const isLayoutResizing = getIsLayoutResizing();
-      if (mode === "immediate" || isLayoutResizing) {
+      if (mode === "immediate") {
         cancelResizeSettleTimer();
-        scheduleResizeFrame({ deferColumns: isLayoutResizing });
-        if (isLayoutResizing) {
-          resizeSettleTimerId = window.setTimeout(() => {
-            resizeSettleTimerId = null;
-            scheduleResizeFrame();
-          }, TERMINAL_HORIZONTAL_RESIZE_DEBOUNCE_MS);
-        }
+        scheduleResizeFrame();
         return;
       }
 
@@ -650,6 +626,7 @@ export const TerminalPaneSurface = ({
       resizeAndSync();
     });
 
+    let dragActive = false;
     let observedHostWidth = -1;
     let observedHostHeight = -1;
     let previousHostWidth = -1;
@@ -668,7 +645,7 @@ export const TerminalPaneSurface = ({
         return;
       }
       // Scrollbar show/hide returns the box to the size we just left.
-      const bounced = !getIsLayoutResizing()
+      const bounced = !dragActive
         && previousHostWidth >= 0
         && width === previousHostWidth
         && height === previousHostHeight
@@ -683,10 +660,27 @@ export const TerminalPaneSurface = ({
       observedHostHeight = height;
       boxWidth = width;
       boxHeight = height;
+      if (dragActive) {
+        return;
+      }
       scheduleResizeAndSync();
     });
     resizeObserver.observe(host);
+    const unsubscribeDragFrame = subscribeLayoutDragFrame(() => {
+      const starting = dragActive === false;
+      dragActive = true;
+      if (starting || resizeSettleTimerId !== null) {
+        return;
+      }
+      resizeSettleTimerId = window.setTimeout(() => {
+        resizeSettleTimerId = null;
+        if (dragActive) {
+          scheduleResizeFrame({ deferColumns: true });
+        }
+      }, TERMINAL_RESIZE_DRAG_THROTTLE_MS);
+    });
     const unsubscribeResizeEnd = subscribeLayoutResizeEnd(() => {
+      dragActive = false;
       scheduleResizeAndSync("immediate");
     });
 
@@ -791,6 +785,7 @@ export const TerminalPaneSurface = ({
       cancelResizeSettleTimer();
       cancelInitialResizeTimers();
       resizeObserver.disconnect();
+      unsubscribeDragFrame();
       unsubscribeResizeEnd();
       if (renderer.activeToken === rendererToken) {
         renderer.activeToken = null;

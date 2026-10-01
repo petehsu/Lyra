@@ -14,7 +14,7 @@ import {
   buildPanelLayoutCssVars,
   type PanelLayoutCssVars
 } from "./panel-layout-shell-vars";
-import { notifyLayoutResizeEnd, notifyLayoutResizeStart } from "./layout-resize-end";
+import { notifyLayoutDragFrame, notifyLayoutResizeEnd } from "./layout-resize-end";
 import { createRafCoalescer } from "./raf-coalesce";
 import {
   clamp,
@@ -23,21 +23,11 @@ import {
   resolvePanelSizeBounds
 } from "./service";
 
-export {
-  subscribeLayoutResizeEnd,
-  subscribeLayoutResizeStart
-} from "./layout-resize-end";
+export { subscribeLayoutDragFrame, subscribeLayoutResizeEnd } from "./layout-resize-end";
+export type { LayoutDragSize } from "./layout-resize-end";
 
 export type AiPanelSide = "left" | "right";
 export type TerminalPanelSide = "top" | "bottom";
-
-// Cached mirror of the `lyra-layout-resizing` body class. Lets hot resize paths
-// (e.g. the terminal pane ResizeObserver) check "is a splitter drag active?"
-// without a per-tick `classList.contains` read, which forces a style reflush.
-let layoutResizingActive = false;
-
-/** True while a panel-splitter drag is in progress. No DOM read. */
-export const getIsLayoutResizing = (): boolean => layoutResizingActive;
 
 export type PanelLayoutState = {
   readonly leftWidth: number;
@@ -65,6 +55,9 @@ export type PanelLayoutModel = PanelLayoutState &
 
 const WORKBENCH_LAYOUT_STATE_KEY = "layout" as const;
 const POINTER_EVENTS_DISABLED_CLASS = "lyra-pointer-events-disabled";
+// Grid-template transitions restart on every size write during a splitter
+// drag and lag the cursor behind their animation; drags must reflow directly.
+const PANEL_RESIZING_CLASS = "lyra-panel-resizing";
 const APP_SIDEBAR_RESIZE_SELECTOR = [
   ".lyra-app-sidebar-nav",
   ".lyra-settings-nav",
@@ -163,6 +156,7 @@ export const usePanelLayoutModel = (
     useState<TerminalPanelSide>(readInitialTerminalPanelSide);
 
   const dragDraftRef = useRef<PanelSizeState | null>(null);
+  const panelSizesRef = useRef(panelSizes);
   const endDragRef = useRef<(() => void) | null>(null);
   const appSidebarWidthDraftRef = useRef<number | null>(null);
   const appSidebarWidthRef = useRef(appSidebarWidth);
@@ -170,6 +164,7 @@ export const usePanelLayoutModel = (
     isLeftPanelVisible,
     isBottomPanelVisible
   });
+  panelSizesRef.current = panelSizes;
   appSidebarWidthRef.current = appSidebarWidth;
   visibilityRef.current = {
     isLeftPanelVisible,
@@ -205,9 +200,13 @@ export const usePanelLayoutModel = (
     const previousUserSelect = document.body.style.userSelect;
     document.body.style.cursor = cursor;
     document.body.style.userSelect = "none";
-    document.body.classList.add("lyra-layout-resizing");
-    layoutResizingActive = true;
-    notifyLayoutResizeStart();
+    document.body.classList.add(PANEL_RESIZING_CLASS);
+    const sizes = dragDraftRef.current ?? panelSizesRef.current;
+    notifyLayoutDragFrame({
+      leftWidth: sizes.leftWidth,
+      bottomHeight: sizes.bottomHeight,
+      appSidebarWidth: appSidebarWidthRef.current
+    });
 
     const pointerShieldTargets = Array.from(
       document.querySelectorAll("iframe, webview")
@@ -249,8 +248,7 @@ export const usePanelLayoutModel = (
 
       document.body.style.cursor = previousCursor;
       document.body.style.userSelect = previousUserSelect;
-      document.body.classList.remove("lyra-layout-resizing");
-      layoutResizingActive = false;
+      document.body.classList.remove(PANEL_RESIZING_CLASS);
 
       if (finalDraft !== null) {
         setPanelSizes(finalDraft);
@@ -296,6 +294,11 @@ export const usePanelLayoutModel = (
       );
       dragDraftRef.current = nextSizes;
       applyLiveShellLayout(nextSizes);
+      notifyLayoutDragFrame({
+        leftWidth: nextSizes.leftWidth,
+        bottomHeight: nextSizes.bottomHeight,
+        appSidebarWidth: appSidebarWidthRef.current
+      });
     });
   }, [aiPanelSide, applyLiveShellLayout, beginDrag, bottomHeight, leftWidth]);
 
@@ -319,6 +322,11 @@ export const usePanelLayoutModel = (
       );
       dragDraftRef.current = nextSizes;
       applyLiveShellLayout(nextSizes);
+      notifyLayoutDragFrame({
+        leftWidth: nextSizes.leftWidth,
+        bottomHeight: nextSizes.bottomHeight,
+        appSidebarWidth: appSidebarWidthRef.current
+      });
     });
   }, [applyLiveShellLayout, beginDrag, bottomHeight, leftWidth, terminalPanelSide]);
 
@@ -390,6 +398,12 @@ export const usePanelLayoutModel = (
           const nextWidth = resolveAppSidebarWidth(startWidth + moveEvent.clientX - startX);
           appSidebarWidthDraftRef.current = nextWidth;
           root.style.setProperty("--lyra-app-sidebar-rail-w", `${nextWidth}px`);
+          const sizes = dragDraftRef.current ?? panelSizesRef.current;
+          notifyLayoutDragFrame({
+            leftWidth: sizes.leftWidth,
+            bottomHeight: sizes.bottomHeight,
+            appSidebarWidth: nextWidth
+          });
         },
         () => {
           const finalWidth = appSidebarWidthDraftRef.current;

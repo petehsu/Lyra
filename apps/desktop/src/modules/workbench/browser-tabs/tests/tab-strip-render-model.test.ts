@@ -140,26 +140,18 @@ describe("browser tab strip render model", () => {
     });
   });
 
-  test("clips overflowing tabs instead of widening the strip into a scroller", () => {
+  test("does not absolutely position tabs from a measured strip", () => {
     const model = createBrowserTabStripRenderModel({
       ...baseInput,
       tabs: [
         createTab("a", "A"),
         createTab("b", "Very long page title")
       ],
-      activeTabId: "a",
-      layout: {
-        density: "regular",
-        contentWidth: 180,
-        totalTabsWidth: 260,
-        addButtonX: 180,
-        items: [
-          { width: 90, x: 0, contentWidth: 72 },
-          { width: 170, x: 90, contentWidth: 152 }
-        ]
-      }
+      activeTabId: "a"
     });
 
-    expect(model.listSpacerStyle).toEqual({ width: "180px" });
+    expect(model.tabs[0]?.tabStyle).toBeUndefined();
+    expect(model.tabs[1]?.tabStyle).toBeUndefined();
+    expect(model.listSpacerStyle).toBeUndefined();
   });
 });

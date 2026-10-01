@@ -1,7 +1,6 @@
 import type { CSSProperties } from "react";
 
 import { cx } from "../ui-primitives";
-import type { ChromeTabStripLayout } from "../ui-primitives";
 import type { WorkspaceTab } from "../workspace-tabs/types";
 import type { RightDragPreview } from "./tab-strip-types";
 
@@ -46,13 +45,8 @@ type CreateBrowserTabStripRenderModelInput = {
   readonly splitDropTargetTabId: string | null;
   readonly workspaceDragTabId: string | null;
   readonly rightDragPreview: RightDragPreview | null;
-  readonly layout?: ChromeTabStripLayout;
   readonly closeLockedTabWidth?: number | null;
 };
-
-// Chrome-like: when a tab shrinks to almost icon-only, reuse the icon slot
-// for the close affordance instead of keeping a separate close column.
-export const BROWSER_TAB_NARROW_WIDTH_PX = 68;
 
 export const createBrowserTabStripRenderModel = ({
   tabs,
@@ -67,7 +61,6 @@ export const createBrowserTabStripRenderModel = ({
   splitDropTargetTabId,
   workspaceDragTabId,
   rightDragPreview,
-  layout,
   closeLockedTabWidth = null
 }: CreateBrowserTabStripRenderModelInput): BrowserTabStripRenderModel => {
   const splitGroupLookup = new Set(splitGroupTabIds);
@@ -88,21 +81,11 @@ export const createBrowserTabStripRenderModel = ({
     const isFocusedTabInActiveSplitGroup =
       isSplitGroupActive && isCurrentTabInSplit && isActive;
     const isTabInDraggingSplitGroup = isDraggingSplitGroup && isCurrentTabInSplit;
-    const layoutWidth = layout?.items[index]?.width;
-    const isNarrow =
-      layoutWidth !== undefined && layoutWidth > 0 && layoutWidth < BROWSER_TAB_NARROW_WIDTH_PX;
-
     return {
       tab,
       isAgentActive,
       closeLabel: `${closeTabLabel}-${tab.title}`,
       showClose,
-      tabStyle: layout?.items[index] === undefined
-        ? undefined
-        : {
-            width: `${Math.round(layout.items[index]!.width)}px`,
-            transform: `translate3d(${Math.round(layout.items[index]!.x)}px, 0, 0)`
-          },
       tabClassName: cx(
         "lyra-tab-item",
         "lyra-browser-tab-item",
@@ -111,7 +94,6 @@ export const createBrowserTabStripRenderModel = ({
         isActive && "lyra-tab-item-active",
         isActive && "lyra-browser-tab-item-active",
         isAgentActive && "lyra-browser-tab-item-agent-active",
-        isNarrow && "lyra-browser-tab-item-narrow",
         splitDropTargetTabId === tab.id && "lyra-browser-tab-item-split-target",
         isCurrentTabInSplit && isSplitGroupActive
           && "lyra-browser-tab-item-split-group-active",
@@ -170,10 +152,6 @@ export const createBrowserTabStripRenderModel = ({
       workspaceDragTabId !== null && "lyra-browser-tab-strip-sorting",
       closeLockedTabWidth !== null && "lyra-tab-strip-close-lock"
     ),
-    addButtonStyle: undefined,
-    listSpacerStyle: layout === undefined
-      ? undefined
-      : { width: `${Math.ceil(layout.contentWidth)}px` },
     tabs: tabModels,
     preview
   };

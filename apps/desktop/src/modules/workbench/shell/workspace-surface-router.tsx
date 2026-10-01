@@ -170,6 +170,8 @@ type ScrollOffset = {
 
 // Page-index restore is lossy: the slide touching the top edge is often the
 // previous one, so scrolling back to that index jumps a page. Pixels round-trip.
+const SCROLLPORT_SELECTOR = "[data-scroller], .lyra-agents-chat-scroll, .lyra-agent-history-preview-chat";
+
 const snapshotScrollOffsets = (root: HTMLElement): readonly ScrollOffset[] => {
   const offsets: ScrollOffset[] = [];
   const visit = (element: HTMLElement) => {
@@ -183,7 +185,7 @@ const snapshotScrollOffsets = (root: HTMLElement): readonly ScrollOffset[] => {
     });
   };
   visit(root);
-  root.querySelectorAll<HTMLElement>("*").forEach(visit);
+  root.querySelectorAll<HTMLElement>(SCROLLPORT_SELECTOR).forEach(visit);
   return offsets;
 };
 

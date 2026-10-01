@@ -26,10 +26,8 @@ export const APP_CONFIG = {
   },
 
   /**
-   * Render-budget message window. Instead of virtual scrolling with height
-   * estimation, we render at most `maxRenderMessages` messages as DOM nodes.
-   * "Show earlier" increases the count by `loadBatchSize`. This trades memory
-   * for stability — no height-table jitter, no spacer jumps.
+   * Kept for callers that still describe a window. The chat timeline virtualizes
+   * the full list and does not slice by these counts.
    */
   messageWindow: {
     initialRenderCount: 50,

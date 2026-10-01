@@ -13,7 +13,7 @@ export const getIsWindowResizing = (): boolean => windowResizingActive;
  * temporarily drop expensive backdrop-filter blur (see shell.scss resize-drag
  * blur drop). The class is added on the first resize event and removed a short
  * debounce after the last one — at rest the class is absent, so nothing visual
- * changes. Panel-splitter drags use `lyra-layout-resizing` (use-panel-layout.ts)
+ * changes. Panel-splitter drags write CSS sizes and do not use this class.
  * instead; this covers the OS window frame, which fires window "resize" events.
  */
 export const useWindowResizeClass = (): void => {

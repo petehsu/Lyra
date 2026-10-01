@@ -1,11 +1,65 @@
+import { useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { AppEmptyState, AppLoadingState } from "@renderer/ui/components";
 
 import type { AgentSessionSnapshot } from "../../../shared/desktop-bridge";
 import { agentSessionToChatMessages } from "../agent-session-view-model";
-import { APP_CONFIG } from "../ai-panel/lyra-agents/core/config";
 import { inlineReferenceLabel } from "../ai-panel/lyra-agents/features/chat/message-citation";
+import { messageVirtualizerOptions } from "../ai-panel/lyra-agents/features/chat/virtual-message-window";
 import { DataContextProvider, Message, createDataProviderValue } from "../ai-panel/lyra-agents";
+import type { ChatMessage } from "../ai-panel/lyra-agents/core/types";
 import type { AgentSessionHistorySurfaceProps } from "./types";
+
+const PreviewTranscript = ({
+  messages,
+  label
+}: {
+  readonly messages: readonly ChatMessage[];
+  readonly label: string;
+}) => {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const virtualizer = useVirtualizer(messageVirtualizerOptions(
+    messages.length,
+    () => scrollRef.current,
+    (index) => messages[index]?.id ?? index
+  ));
+
+  return (
+    <div
+      ref={scrollRef}
+      className="lyra-agent-history-preview-chat lyra-agents-chat-scroll"
+      role="log"
+      aria-label={label}
+    >
+      <div
+        className="lyra-agent-history-preview-chat-inner lyra-agents-chat-inner"
+        style={{ height: virtualizer.getTotalSize(), position: "relative" }}
+      >
+        {virtualizer.getVirtualItems().map((item) => {
+          const message = messages[item.index];
+          if (message === undefined) return null;
+          return (
+            <div
+              key={message.id}
+              ref={virtualizer.measureElement}
+              data-index={item.index}
+              className="lyra-agents-chat-message-slot"
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                transform: `translateY(${item.start}px)`
+              }}
+            >
+              <Message message={message} />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
 
 export const projectFolderNameFromPath = (value: string): string => {
   const normalized = value.trim().replace(/[\\/]+$/u, "");
@@ -44,9 +98,7 @@ export const AgentSessionPreviewPane = ({
     );
   }
 
-  const messages = agentSessionToChatMessages(snapshot, {
-    messageLimitFromEnd: APP_CONFIG.messageWindow.initialRenderCount
-  }).map((message) => ({
+  const messages = agentSessionToChatMessages(snapshot).map((message) => ({
     ...message,
     rollback: null
   }));
@@ -79,17 +131,10 @@ export const AgentSessionPreviewPane = ({
         />
       ) : (
         <DataContextProvider value={dataValue}>
-          <div
-            className="lyra-agent-history-preview-chat lyra-agents-chat-scroll"
-            role="log"
-            aria-label={`${labels.previewTitle}: ${inlineReferenceLabel(snapshot.title)}`}
-          >
-            <div className="lyra-agent-history-preview-chat-inner lyra-agents-chat-inner">
-              {messages.map((message) => (
-                <Message key={message.id} message={message} />
-              ))}
-            </div>
-          </div>
+          <PreviewTranscript
+            messages={messages}
+            label={`${labels.previewTitle}: ${inlineReferenceLabel(snapshot.title)}`}
+          />
         </DataContextProvider>
       )}
     </aside>

@@ -1,20 +1,28 @@
+export type LayoutDragSize = {
+  readonly leftWidth: number;
+  readonly bottomHeight: number;
+  readonly appSidebarWidth: number;
+};
+
+type LayoutDragFrameListener = (size: LayoutDragSize) => void;
 type LayoutResizeListener = () => void;
 
-const layoutResizeStartListeners = new Set<LayoutResizeListener>();
+const layoutDragFrameListeners = new Set<LayoutDragFrameListener>();
 const layoutResizeEndListeners = new Set<LayoutResizeListener>();
 
-export const subscribeLayoutResizeStart = (
-  listener: LayoutResizeListener
+/** Drag frames carry the sizes the divider just wrote. Listeners do not remeasure. */
+export const subscribeLayoutDragFrame = (
+  listener: LayoutDragFrameListener
 ): (() => void) => {
-  layoutResizeStartListeners.add(listener);
+  layoutDragFrameListeners.add(listener);
   return () => {
-    layoutResizeStartListeners.delete(listener);
+    layoutDragFrameListeners.delete(listener);
   };
 };
 
-export const notifyLayoutResizeStart = (): void => {
-  for (const listener of layoutResizeStartListeners) {
-    listener();
+export const notifyLayoutDragFrame = (size: LayoutDragSize): void => {
+  for (const listener of layoutDragFrameListeners) {
+    listener(size);
   }
 };
 

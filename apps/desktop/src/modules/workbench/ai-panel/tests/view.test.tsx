@@ -422,11 +422,9 @@ describe("AiPanelSurface", () => {
 
     renderPanel(api);
 
-    // The render budget keeps the most recent 50 messages; the viewport layer
-    // then mounts only its visible portion in JSDOM.
-    expect(await screen.findByText("Show earlier")).toBeInTheDocument();
-    expect(screen.getByText("Message 6")).toBeInTheDocument();
-    expect(screen.queryByText("Message 5")).not.toBeInTheDocument();
+    expect(await screen.findByText("Message 55")).toBeInTheDocument();
+    expect(screen.queryByText("Message 1")).not.toBeInTheDocument();
+    expect(screen.queryByText("Show earlier")).not.toBeInTheDocument();
   });
 
   test("follows the selected Chinese locale for Agent chrome", async () => {
@@ -2223,12 +2221,10 @@ describe("AiPanelSurface", () => {
       );
 
       await screen.findByRole("tab", { name: "Session 1" });
-      await waitFor(() => {
-        expect(container.querySelector(".lyra-agents-session-tab-item-active"))
-          .toHaveStyle({ width: "35px", transform: "translate3d(0px, 0, 0)" });
-      });
-      expect(container.querySelector(".lyra-agents-session-tab-list-spacer"))
-        .toHaveStyle({ width: "140px" });
+      expect(container.querySelector(".lyra-agents-session-tab-list-spacer")).toBeNull();
+      expect(
+        container.querySelector(".lyra-agents-session-tab-item-active")?.getAttribute("style") ?? ""
+      ).not.toContain("translate3d");
       expect(container.querySelector(".lyra-agents-session-tab-item-active")
         ?.querySelector(".lyra-agents-session-tab-title"))
         .toHaveTextContent("Session 1");
@@ -2298,14 +2294,13 @@ describe("AiPanelSurface", () => {
       );
 
       await screen.findByRole("tab", { name: "Session 8" });
-      await waitFor(() => {
-        expect(container.querySelector(".lyra-agents-session-tab-item-active"))
-          .toHaveStyle({ width: "23px", transform: "translate3d(165px, 0, 0)" });
-      });
-      expect(container.querySelector(".lyra-agents-session-tab-list-spacer"))
-        .toHaveStyle({ width: "188px" });
-      expect(container.querySelector(".lyra-agents-session-tab-list"))
-        .toHaveProperty("scrollLeft", 0);
+      expect(container.querySelector(".lyra-agents-session-tab-list-spacer")).toBeNull();
+      expect(
+        container.querySelector(".lyra-agents-session-tab-item-active")?.getAttribute("style") ?? ""
+      ).not.toContain("translate3d");
+      expect(container.querySelector(".lyra-agents-session-tab-strip")).toContainElement(
+        screen.getByLabelText("New session")
+      );
     } finally {
       rectSpy.mockRestore();
     }

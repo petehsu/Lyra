@@ -1083,16 +1083,8 @@
   --lyra-resizer-line: color-mix(in srgb, var(--lyra-app-border) 44%, var(--lyra-text-secondary) 18%);
 }
 
-.lyra-layout-resizing .lyra-main,
-.lyra-layout-resizing .lyra-center-stack,
-.lyra-layout-resizing .lyra-panel,
-.lyra-layout-resizing .lyra-panel-content {
-  transition: none;
-}
-
-body.lyra-layout-resizing iframe,
-body.lyra-layout-resizing webview,
-body.lyra-layout-resizing .lyra-pointer-events-disabled {
+iframe.lyra-pointer-events-disabled,
+webview.lyra-pointer-events-disabled {
   pointer-events: none !important;
 }
 
@@ -1766,7 +1758,8 @@ body.lyra-layout-resizing .lyra-pointer-events-disabled {
 
 .lyra-browser-tab-strip {
   min-width: 0;
-  display: block;
+  display: flex;
+  align-items: stretch;
   grid-column: 4;
   padding-left: var(--lyra-unit-3);
   overflow: hidden;
@@ -1778,10 +1771,12 @@ body.lyra-layout-resizing .lyra-pointer-events-disabled {
 
 .lyra-browser-tab-list {
   min-width: 0;
-  width: calc(100% - var(--lyra-size-browser-nav-slot));
+  flex: 1 1 auto;
+  width: auto;
   height: 100%;
-  display: block;
-  overflow: hidden;
+  display: flex;
+  align-items: stretch;
+  overflow-x: auto;
   position: relative;
   z-index: 2;
   -webkit-mask-image: linear-gradient(
@@ -1895,8 +1890,10 @@ body.lyra-layout-resizing .lyra-pointer-events-disabled {
 
 .lyra-browser-tab-item {
   box-sizing: border-box;
-  min-width: 0;
-  max-width: none;
+  flex: 1 1 9.75rem;
+  width: auto;
+  min-width: 3.75rem;
+  max-width: 9.75rem;
   height: var(--lyra-browser-tab-control-h);
   margin-top: var(--lyra-browser-tab-control-y);
   margin-bottom: 0;
@@ -1907,9 +1904,7 @@ body.lyra-layout-resizing .lyra-pointer-events-disabled {
   border: 0;
   border-radius: var(--lyra-radius-8);
   background: transparent;
-  position: absolute;
-  left: 0;
-  top: 0;
+  position: relative;
   z-index: 2;
   isolation: isolate;
   transition:
@@ -2239,10 +2234,8 @@ body.lyra-layout-resizing .lyra-pointer-events-disabled {
   color: color-mix(in srgb, var(--lyra-text-muted) 72%, transparent);
   opacity: 1;
   cursor: pointer;
-  position: absolute;
-  left: auto;
-  right: 0;
-  top: 0;
+  position: relative;
+  flex: 0 0 auto;
   z-index: 9;
   display: grid;
   place-items: center;
@@ -2288,23 +2281,29 @@ body.lyra-layout-resizing .lyra-pointer-events-disabled {
 
 }
 
-/* -------- Resize-drag blur drop --------
-   While a panel splitter (body.lyra-layout-resizing) or the native window edge
-   (body.lyra-window-resizing) is being dragged, backdrop-filter blur forces a
-   full re-rasterization of the blurred region every frame — the dominant resize
-   paint cost. Dropping it only during the drag keeps frames cheap; at rest both
-   classes are absent so the visual is unchanged. Pairs the standard and
-   -webkit- properties so both engines drop the blur together. */
-body.lyra-layout-resizing .lyra-root,
+/* -------- Resize-time degradation --------
+   While the native window edge (body.lyra-window-resizing) or a panel
+   splitter (body.lyra-panel-resizing) is dragged, backdrop-filter blur
+   re-rasterizes the blurred region every frame. Splitter drags also write
+   the grid sizes directly each frame, so the grid-template transitions on
+   .lyra-main / .lyra-center-stack must step aside while one is active —
+   otherwise every size write restarts a 260ms animation and the panes lag
+   behind the cursor. */
 body.lyra-window-resizing .lyra-root,
-body.lyra-layout-resizing .lyra-titlebar,
 body.lyra-window-resizing .lyra-titlebar,
-body.lyra-layout-resizing .lyra-panel-left,
 body.lyra-window-resizing .lyra-panel-left,
-body.lyra-layout-resizing .lyra-browser-tabs,
 body.lyra-window-resizing .lyra-browser-tabs,
-body.lyra-layout-resizing .lyra-browser-tabs-toolbar,
-body.lyra-window-resizing .lyra-browser-tabs-toolbar {
+body.lyra-window-resizing .lyra-browser-tabs-toolbar,
+body.lyra-panel-resizing .lyra-root,
+body.lyra-panel-resizing .lyra-titlebar,
+body.lyra-panel-resizing .lyra-panel-left,
+body.lyra-panel-resizing .lyra-browser-tabs,
+body.lyra-panel-resizing .lyra-browser-tabs-toolbar {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+}
+
+body.lyra-panel-resizing .lyra-main,
+body.lyra-panel-resizing .lyra-center-stack {
+  transition: none;
 }

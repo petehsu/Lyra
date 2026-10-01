@@ -250,22 +250,12 @@ export const BrowserTabStripView = ({
         onPointerLeave={onClearTabCloseLock}
       >
         <div className="lyra-browser-tab-list">
-          <div
-            className="lyra-browser-tab-list-spacer"
-            style={renderModel.listSpacerStyle}
-            aria-hidden="true"
-          />
           {renderModel.tabs.map((tabModel) => (
             <div
               key={tabModel.tab.id}
               className={tabModel.tabClassName}
               style={tabModel.tabStyle}
               data-lyra-tab-id={tabModel.tab.id}
-              data-lyra-tab-width={
-                typeof tabModel.tabStyle?.width === "string"
-                  ? tabModel.tabStyle.width.replace(/px$/, "")
-                  : undefined
-              }
               data-agent-active={tabModel.isAgentActive ? "true" : "false"}
               data-lyra-allow-web-drag="true"
               draggable
@@ -361,7 +351,6 @@ export const BrowserTabStripView = ({
         </div>
         <AppIconButton
           className="lyra-tab-add lyra-browser-tab-add"
-          style={renderModel.addButtonStyle}
           aria-label={openNewTabLabel}
           onClick={onOpenNewTab}
         >

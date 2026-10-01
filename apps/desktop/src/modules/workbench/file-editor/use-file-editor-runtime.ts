@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type RefObject
 import type * as Monaco from "monaco-editor/esm/vs/editor/editor.api";
 
 import { createRafCoalescer } from "../shell/raf-coalesce";
-import { subscribeLayoutResizeEnd } from "../shell/layout-resize-end";
+import { subscribeLayoutDragFrame, subscribeLayoutResizeEnd } from "../shell/layout-resize-end";
 import { loadMonaco } from "./monaco";
 import {
   AUTO_SAVE_DELAY_MS,
@@ -798,21 +798,34 @@ export const useFileEditorRuntime = ({
       }
     };
 
+    let dragActive = false;
     const measure = (): void => {
+      if (dragActive) {
+        return;
+      }
+      layoutEditors();
+    };
+    const layoutOnCommit = (): void => {
+      dragActive = false;
+      lastHostWidth = -1;
+      lastHostHeight = -1;
+      lastDiffWidth = -1;
+      lastDiffHeight = -1;
       layoutEditors();
     };
 
     layoutEditors();
 
+    const unsubscribeDragFrame = subscribeLayoutDragFrame(() => {
+      dragActive = true;
+    });
+    const unsubscribeResizeEnd = subscribeLayoutResizeEnd(layoutOnCommit);
+
     if (typeof ResizeObserver === "undefined") {
-      const unsubscribeResizeEnd = subscribeLayoutResizeEnd(() => {
-        lastHostWidth = -1;
-        lastHostHeight = -1;
-        lastDiffWidth = -1;
-        lastDiffHeight = -1;
-        measure();
-      });
-      return unsubscribeResizeEnd;
+      return () => {
+        unsubscribeDragFrame();
+        unsubscribeResizeEnd();
+      };
     }
 
     const coalescer = createRafCoalescer(measure);
@@ -822,16 +835,10 @@ export const useFileEditorRuntime = ({
     if (diffHost !== null) {
       observer.observe(diffHost);
     }
-    const unsubscribeResizeEnd = subscribeLayoutResizeEnd(() => {
-      lastHostWidth = -1;
-      lastHostHeight = -1;
-      lastDiffWidth = -1;
-      lastDiffHeight = -1;
-      measure();
-    });
     return () => {
       observer.disconnect();
       coalescer.cancel();
+      unsubscribeDragFrame();
       unsubscribeResizeEnd();
     };
   }, [canShowEditor, editorReady, hostEpoch, isDiffMode]);

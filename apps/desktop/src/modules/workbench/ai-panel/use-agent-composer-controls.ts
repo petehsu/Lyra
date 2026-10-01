@@ -1,9 +1,4 @@
-import {
-  useCallback,
-  useMemo,
-  type Dispatch,
-  type SetStateAction
-} from "react";
+import { useMemo } from "react";
 
 import type {
   AgentModelCatalogSnapshot,
@@ -11,11 +6,12 @@ import type {
 } from "../../../shared/agent";
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import { agentModelsToModelOptions } from "../agent-session-view-model";
-import { APP_CONFIG } from "./lyra-agents/core/config";
 import type {
   ComposerModelControls,
   ComposerPermissionModeControls
 } from "./lyra-agents/core/types";
+
+const loadEarlierMessages = async (): Promise<void> => undefined;
 
 export const useAgentComposerControls = ({
   desktopApi,
@@ -29,8 +25,7 @@ export const useAgentComposerControls = ({
   updateReasoningEffort,
   updateVerbosity,
   updateServiceTier,
-  switchPermissionMode,
-  setRenderBudgetCount
+  switchPermissionMode
 }: {
   readonly desktopApi: LyraDesktopApi | null;
   readonly modelState: AgentModelCatalogSnapshot | null;
@@ -44,7 +39,6 @@ export const useAgentComposerControls = ({
   readonly updateVerbosity: ComposerModelControls["updateVerbosity"];
   readonly updateServiceTier: ComposerModelControls["updateServiceTier"];
   readonly switchPermissionMode: ComposerPermissionModeControls["switchMode"];
-  readonly setRenderBudgetCount: Dispatch<SetStateAction<number>>;
 }): {
   readonly modelControls: ComposerModelControls | null;
   readonly permissionModeControls: ComposerPermissionModeControls | null;
@@ -106,15 +100,6 @@ export const useAgentComposerControls = ({
     permissionPolicyBusy,
     switchPermissionMode
   ]);
-
-  const loadEarlierMessages = useCallback(async (): Promise<void> => {
-    setRenderBudgetCount((current) =>
-      Math.min(
-        current + APP_CONFIG.messageWindow.loadBatchSize,
-        APP_CONFIG.messageWindow.maxRenderMessages
-      )
-    );
-  }, [setRenderBudgetCount]);
 
   return {
     modelControls,
