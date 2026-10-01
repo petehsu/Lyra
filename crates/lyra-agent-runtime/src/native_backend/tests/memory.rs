@@ -721,6 +721,7 @@ fn memory_candidate_events_record_to_session_ledger() {
         dirty: true,
         dialog_dirty_from: Some(0),
         persisted_dialog_len: 0,
+        dialog_loaded: true,
         ephemeral: false,
     };
     save_session(temp.path(), &session).expect("save session");

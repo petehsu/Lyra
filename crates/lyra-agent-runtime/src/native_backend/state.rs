@@ -319,7 +319,7 @@ impl NativeRuntimeState {
         let mut sessions = HashMap::new();
         let mut startup_cancelled_background_children = Vec::new();
         for session_id in list_session_ids(&root).unwrap_or_default() {
-            if let Ok(Some(mut session)) = load_session(&root, &session_id) {
+            if let Ok(Some(mut session)) = load_session_for_startup(&root, &session_id) {
                 let resumed_trim =
                     resume_pending_trim_journal(&mut session, &root).is_ok() && session.dirty;
                 let migrated_legacy_auth = fail_legacy_auth_tools(&mut session, &legacy_auth_tools);
@@ -514,6 +514,22 @@ impl NativeRuntimeState {
             .retain(|_, request| is_live_pending_clarification(&self.sessions, request));
         before_permissions != self.pending_permissions.len()
             || before_clarifications != self.pending_clarifications.len()
+    }
+
+    pub(crate) fn ensure_dialog(&mut self, session_id: &str) -> AgentRuntimeResult<()> {
+        let needs_dialog = self
+            .sessions
+            .get(session_id)
+            .is_some_and(|session| !session.dialog_loaded);
+        if !needs_dialog {
+            return Ok(());
+        }
+        let root = self.root.clone();
+        let session = self
+            .sessions
+            .get_mut(session_id)
+            .ok_or_else(|| AgentRuntimeError::Core(format!("session not found: {session_id}")))?;
+        fill_dialog(&root, session)
     }
 
     pub(crate) fn resolve_session_id(

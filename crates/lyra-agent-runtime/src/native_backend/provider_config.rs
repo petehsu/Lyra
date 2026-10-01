@@ -407,6 +407,10 @@ fn model_catalog_for_config_with_capabilities(
             // 避免同名模型跨 provider 时下拉 value 撞车导致路由错误（对齐 opencode/zed 的 (provider,model) 身份）。
             // `model`/`provider` 等字段仍保留 bare 值，wire 协议与持久化不变。
             let uid = format!("{}:{}", provider.id, model.id);
+            let account = config
+                .accounts
+                .iter()
+                .find(|account| account.provider == provider.id);
             models.push(json!({
                 "id": uid,
                 "label": model.label.clone().unwrap_or_else(|| model.id.clone()),
@@ -414,6 +418,9 @@ fn model_catalog_for_config_with_capabilities(
                 "provider": provider.id,
                 "providerId": provider.id,
                 "providerLabel": provider.label,
+                "accountEmail": account.and_then(|account| account.email.clone()),
+                "accountName": account.and_then(|account| account.display_name.clone()),
+                "accountAvatarUrl": account.and_then(|account| account.avatar_url.clone()),
                 "providerKey": provider.id,
                 "routeId": provider.route_id,
                 "protocolId": effective_protocol_id,
@@ -769,31 +776,35 @@ pub(crate) fn update_model_capabilities(payload: Value) -> AgentRuntimeResult<Va
 pub(crate) fn delete_model(payload: Value) -> AgentRuntimeResult<Value> {
     let provider_id = string_opt(&payload, "provider")
         .ok_or_else(|| AgentRuntimeError::Core("provider is required".to_string()))?;
+    if payload.get("scope").and_then(Value::as_str) == Some("provider")
+        || string_opt(&payload, "model").is_none()
+    {
+        return delete_provider(&provider_id);
+    }
     let model_id = string_opt(&payload, "model")
         .ok_or_else(|| AgentRuntimeError::Core("model is required".to_string()))?;
     let mut state = state()
         .lock()
         .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-    let next_provider_default = {
-        let provider = state
-            .config
-            .providers
-            .get_mut(&provider_id)
-            .ok_or_else(|| {
-                AgentRuntimeError::Core(format!("provider {provider_id} is not configured"))
-            })?;
-        let previous_len = provider.models.len();
-        provider.models.retain(|entry| entry.id != model_id);
-        if provider.models.len() == previous_len {
-            return Err(AgentRuntimeError::Core(format!(
-                "model {model_id} is not configured"
-            )));
-        }
-        if provider.default_model.as_deref() == Some(model_id.as_str()) {
-            provider.default_model = provider.models.first().map(|entry| entry.id.clone());
-        }
-        provider.default_model.clone()
+    let present = state
+        .config
+        .providers
+        .get(&provider_id)
+        .is_some_and(|provider| provider.models.iter().any(|entry| entry.id == model_id));
+    if !present {
+        drop(state);
+        return list_models(payload);
+    }
+    let Some(provider) = state.config.providers.get_mut(&provider_id) else {
+        drop(state);
+        return list_models(payload);
     };
+    provider.models.retain(|entry| entry.id != model_id);
+    if provider.default_model.as_deref() == Some(model_id.as_str()) {
+        provider.default_model = provider.models.first().map(|entry| entry.id.clone());
+    }
+    let next_default = provider.default_model.clone();
+    drop(provider);
     if let Some(records) = state.model_capabilities.get_mut(&provider_id) {
         records.remove(&model_id);
     }
@@ -803,14 +814,61 @@ pub(crate) fn delete_model(payload: Value) -> AgentRuntimeResult<Value> {
     if state.config.default_provider.as_deref() == Some(provider_id.as_str())
         && state.config.default_model.as_deref() == Some(model_id.as_str())
     {
-        state.config.default_model = next_provider_default;
+        state.config.default_model = next_default;
     }
     state.save_state()?;
     drop(state);
     list_models(payload)
 }
 
+fn delete_provider(provider_id: &str) -> AgentRuntimeResult<Value> {
+    let mut state = state()
+        .lock()
+        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+    state.config.providers.remove(provider_id);
+    state.model_capabilities.remove(provider_id);
+    state
+        .media_model_defaults
+        .retain(|_, model| model.provider_id != provider_id);
+    state
+        .config
+        .accounts
+        .retain(|account| account.provider != provider_id);
+    if state.config.default_provider.as_deref() == Some(provider_id) {
+        let next = state
+            .config
+            .providers
+            .iter()
+            .find(|(_, profile)| !profile.models.is_empty())
+            .map(|(id, profile)| {
+                (
+                    id.clone(),
+                    profile
+                        .default_model
+                        .clone()
+                        .or_else(|| profile.models.first().map(|model| model.id.clone())),
+                )
+            });
+        match next {
+            Some((id, model)) => {
+                state.config.default_provider = Some(id);
+                state.config.default_model = model;
+            }
+            None => {
+                state.config.default_provider = None;
+                state.config.default_model = None;
+            }
+        }
+    }
+    state.save_state()?;
+    drop(state);
+    list_models(json!({}))
+}
+
 pub(crate) fn refresh_models(payload: Value) -> AgentRuntimeResult<Value> {
+    if payload.get("listOnly").and_then(Value::as_bool) == Some(true) {
+        return list_models(payload);
+    }
     let provider_id = string_opt(&payload, "provider").or_else(|| {
         state()
             .lock()
@@ -837,6 +895,11 @@ pub(crate) fn refresh_models(payload: Value) -> AgentRuntimeResult<Value> {
         provider,
         host_dispatcher.as_ref(),
     )?;
+    if providers::subscription::is_subscription_route(&provider.route_id) {
+        if let Some(secret) = provider.api_key.as_deref() {
+            let _ = remember_account_identity(&provider_id, &provider.route_id, secret);
+        }
+    }
     let route = providers::registry::require_route(&provider.route_id)?;
     if !route.model_discovery_supported {
         return list_models(payload);
@@ -955,7 +1018,34 @@ fn save_refreshed_models(
             )?;
         }
         let existing = profile.models.clone();
-        profile.models = providers::model_capabilities::merge_discovered_models(&existing, models);
+        let subscription = providers::subscription::is_subscription_route(&profile.route_id);
+        let discovered_ids = models
+            .iter()
+            .map(|model| model.id.clone())
+            .collect::<std::collections::HashSet<_>>();
+        let existing_for_merge = if subscription {
+            existing
+                .iter()
+                .filter(|model| discovered_ids.contains(&model.id))
+                .cloned()
+                .collect::<Vec<_>>()
+        } else {
+            existing
+        };
+        profile.models =
+            providers::model_capabilities::merge_discovered_models(&existing_for_merge, models);
+        if subscription
+            && profile
+                .default_model
+                .as_ref()
+                .is_some_and(|model| !discovered_ids.contains(model))
+        {
+            profile.default_model = profile
+                .models
+                .iter()
+                .find(|model| model.enabled)
+                .map(|model| model.id.clone());
+        }
         providers::models_dev::enrich_models_with_catalog(
             &mut profile.models,
             capability_catalog_provider_id,
@@ -966,6 +1056,30 @@ fn save_refreshed_models(
     } else {
         None
     };
+    if state.config.default_provider.as_deref() == Some(provider_id)
+        && state
+            .config
+            .providers
+            .get(provider_id)
+            .is_some_and(|profile| {
+                providers::subscription::is_subscription_route(&profile.route_id)
+            })
+    {
+        let default_still_listed = state.config.default_model.as_ref().is_some_and(|model_id| {
+            state
+                .config
+                .providers
+                .get(provider_id)
+                .is_some_and(|profile| profile.models.iter().any(|model| &model.id == model_id))
+        });
+        if !default_still_listed {
+            state.config.default_model = state
+                .config
+                .providers
+                .get(provider_id)
+                .and_then(|profile| profile.default_model.clone());
+        }
+    }
     if let Some(refreshed_models) = refreshed_models {
         let records = state
             .model_capabilities
@@ -1030,10 +1144,15 @@ pub(crate) fn login_account(payload: Value) -> AgentRuntimeResult<Value> {
     state.config.accounts.push(NativeAccount {
         provider: provider.clone(),
         label,
-        kind: "apiKey".to_string(),
+        kind: string_opt(&payload, "kind").unwrap_or_else(|| "apiKey".to_string()),
         active: true,
         configured: true,
-        detail: Some("Configured in Lyra native runtime".to_string()),
+        detail: string_opt(&payload, "detail")
+            .or_else(|| string_opt(&payload, "email"))
+            .or_else(|| Some("Configured in Lyra native runtime".to_string())),
+        email: string_opt(&payload, "email"),
+        display_name: string_opt(&payload, "displayName"),
+        avatar_url: string_opt(&payload, "avatarUrl"),
     });
     state.config.default_provider = Some(provider);
     state.save_state()?;
@@ -1071,11 +1190,27 @@ pub(crate) fn login_providers() -> AgentRuntimeResult<Value> {
         ),
         login_provider("mimo", "MiMo", "apiKey", true, false, &state.config),
     ];
+    let mut providers = providers;
+    providers.extend(providers::subscription::login_provider_rows(|id| {
+        state
+            .config
+            .providers
+            .get(id)
+            .is_some_and(|profile| profile.api_key.is_some() || profile.api_key_ref.is_some())
+            || state
+                .config
+                .accounts
+                .iter()
+                .any(|account| account.provider == id && account.configured)
+    }));
     Ok(json!({ "providers": providers, "authStatus": auth_status(&state.config) }))
 }
 
 pub(crate) fn start_account_login(payload: Value) -> AgentRuntimeResult<Value> {
     let provider = string_opt(&payload, "provider").unwrap_or_else(|| "openai".to_string());
+    if providers::subscription::is_subscription_route(&provider) {
+        return providers::subscription::start_login(&payload);
+    }
     let label = string_opt(&payload, "label");
     Ok(json!({
         "provider": provider,
@@ -1090,8 +1225,136 @@ pub(crate) fn start_account_login(payload: Value) -> AgentRuntimeResult<Value> {
     }))
 }
 
+fn complete_subscription_login(payload: Value, provider: String) -> AgentRuntimeResult<Value> {
+    let token = providers::subscription::complete_login(&payload)?;
+    let secret = token.to_secret();
+    let api_key_ref = host_dispatcher().and_then(|dispatcher| {
+        providers::subscription::store_secret(&dispatcher, &provider, &secret).ok()
+    });
+    let route_label = providers::registry::route_descriptor(&provider)
+        .map(|route| route.label.clone())
+        .unwrap_or_else(|| provider.clone());
+    let base_url = string_opt(&payload, "baseUrl").or_else(|| {
+        providers::registry::route_descriptor(&provider).and_then(|route| route.default_base_url)
+    });
+    let _ = save_provider_profile(json!({
+        "profileName": provider,
+        "routeId": provider,
+        "label": string_opt(&payload, "label").unwrap_or_else(|| route_label.clone()),
+        "baseUrl": base_url,
+        "apiKey": if api_key_ref.is_some() { Value::Null } else { Value::String(secret.clone()) },
+        "apiKeyRef": api_key_ref.unwrap_or(Value::Null),
+        "setDefault": payload.get("setDefault").and_then(Value::as_bool).unwrap_or(true),
+    }));
+    let who = token
+        .email
+        .clone()
+        .or_else(|| token.display_name.clone())
+        .unwrap_or_else(|| route_label.clone());
+    let accounts = login_account(json!({
+        "provider": provider,
+        "label": route_label,
+        "kind": "subscription",
+        "email": token.email,
+        "displayName": token.display_name,
+        "avatarUrl": token.avatar_url,
+        "detail": who,
+    }))?;
+    let discovered = refresh_models(json!({ "provider": provider }));
+    let (message, catalog) = match discovered {
+        Ok(catalog) => (format!("Signed in as {who}"), catalog),
+        Err(error) => {
+            clear_provider_models(&provider)?;
+            (
+                format!("Signed in as {who}, but the live model list failed: {error}"),
+                list_models(json!({}))?,
+            )
+        }
+    };
+    Ok(json!({
+        "accounts": accounts,
+        "message": message,
+        "email": token.email,
+        "displayName": token.display_name,
+        "avatarUrl": token.avatar_url,
+        "catalog": catalog,
+    }))
+}
+
+fn remember_account_identity(
+    provider_id: &str,
+    route_id: &str,
+    secret: &str,
+) -> AgentRuntimeResult<()> {
+    let identity = providers::subscription::identity_from_secret(route_id, secret);
+    if identity.email.is_none() && identity.display_name.is_none() && identity.avatar_url.is_none()
+    {
+        return Ok(());
+    }
+    let route_label = providers::registry::route_descriptor(route_id)
+        .map(|route| route.label.clone())
+        .unwrap_or_else(|| provider_id.to_string());
+    let mut state = state()
+        .lock()
+        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+    if let Some(account) = state
+        .config
+        .accounts
+        .iter_mut()
+        .find(|account| account.provider == provider_id)
+    {
+        if identity.email.is_some() {
+            account.email = identity.email.clone();
+        }
+        if identity.display_name.is_some() {
+            account.display_name = identity.display_name.clone();
+        }
+        if identity.avatar_url.is_some() {
+            account.avatar_url = identity.avatar_url.clone();
+        }
+        account.detail = account
+            .email
+            .clone()
+            .or_else(|| account.display_name.clone())
+            .or(account.detail.clone());
+    } else {
+        state.config.accounts.push(NativeAccount {
+            provider: provider_id.to_string(),
+            label: route_label,
+            kind: "subscription".to_string(),
+            active: true,
+            configured: true,
+            detail: identity
+                .email
+                .clone()
+                .or_else(|| identity.display_name.clone()),
+            email: identity.email,
+            display_name: identity.display_name,
+            avatar_url: identity.avatar_url,
+        });
+    }
+    state.save_state()
+}
+
+fn clear_provider_models(provider_id: &str) -> AgentRuntimeResult<()> {
+    let mut state = state()
+        .lock()
+        .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+    if let Some(profile) = state.config.providers.get_mut(provider_id) {
+        profile.models.clear();
+        profile.default_model = None;
+    }
+    if state.config.default_provider.as_deref() == Some(provider_id) {
+        state.config.default_model = None;
+    }
+    state.save_state()
+}
+
 pub(crate) fn complete_account_login(payload: Value) -> AgentRuntimeResult<Value> {
     let provider = string_opt(&payload, "provider").unwrap_or_else(|| "openai".to_string());
+    if providers::subscription::is_subscription_route(&provider) {
+        return complete_subscription_login(payload, provider);
+    }
     let route_id =
         providers::registry::route_id_for_login_provider(&provider).ok_or_else(|| {
             AgentRuntimeError::Core(format!(

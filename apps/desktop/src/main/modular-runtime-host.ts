@@ -50,7 +50,7 @@ import {
   bindSearxngRuntimeEnv,
   startSearxngSupervisor
 } from "./search/searxng-supervisor";
-import { createSharedProcessClient } from "./shared-process/shared-process-client";
+import { createRoleRuntimeClient } from "./role-runtime-client";
 import type { LyraStorageRoots } from "./storage";
 import type { SignedComponentAppUpdater } from "./auto-update/service";
 import { createThirdPartyAppLifecycleService } from "./third-party-apps";
@@ -270,7 +270,7 @@ export const createModularRuntimeHost = async ({
     runtimeBinaryPath?: string,
     runtimeComponentVersion?: string
   ) =>
-    createSharedProcessClient({
+    createRoleRuntimeClient({
       modulePath: sharedProcessModulePath,
       storageRoot: storageRoots.modules.runtime,
       agentStorageRoot: storageRoots.modules.agent,

@@ -23,6 +23,41 @@ use semver::Version;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+pub(crate) fn install_host_role_from_args(args: &[String]) {
+    if let Some(role) = args
+        .windows(2)
+        .find(|pair| pair[0] == "--role")
+        .map(|pair| pair[1].clone())
+    {
+        std::env::set_var("LYRA_HOST_ROLE", role);
+    }
+}
+
+pub(crate) fn host_role() -> String {
+    std::env::var("LYRA_HOST_ROLE").unwrap_or_else(|_| "all".to_string())
+}
+
+pub(crate) fn role_allows(role: &str, method: &str) -> bool {
+    if method == HANDSHAKE_METHOD || method.starts_with("runtime.") {
+        return true;
+    }
+    match role {
+        "all" | "" => true,
+        "terminal" => method.starts_with("terminal."),
+        "files" => method.starts_with("files."),
+        "agent" => method.starts_with("agent.") && method != "agent.exec.run",
+        "exec" => method == "agent.exec.run",
+        "scheduler" => method.starts_with("scheduler."),
+        "services" => {
+            method.starts_with("search.")
+                || method.starts_with("lsp.")
+                || method.starts_with("download.")
+                || method.starts_with("performance.")
+        }
+        _ => false,
+    }
+}
+
 pub(crate) fn runtime_error(code: &str, message: impl Into<String>) -> RuntimeError {
     RuntimeError::new(code, message.into())
 }
@@ -171,10 +206,19 @@ fn validate_runtime_hello(request: &RuntimeHelloV2Request) -> Result<(), Runtime
 }
 
 pub(crate) fn handle_runtime_request(method: &str, payload: Value) -> Result<Value, RuntimeError> {
-    if !is_known_runtime_family(method) {
+    if !is_known_runtime_family(method)
+        && method != "agent.exec.run"
+        && !method.starts_with("scheduler.")
+    {
         return Err(runtime_error(
             "METHOD_NOT_FOUND",
             format!("unknown runtime method: {method}"),
+        ));
+    }
+    if !role_allows(&host_role(), method) {
+        return Err(runtime_error(
+            "METHOD_NOT_FOUND",
+            format!("{method} is served by another host"),
         ));
     }
     match method {
@@ -307,4 +351,22 @@ fn unknown_method(scope: &str, method: &str) -> Result<Value, RuntimeError> {
         "METHOD_NOT_FOUND",
         format!("unknown {scope} runtime method: {method}"),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::role_allows;
+
+    #[test]
+    fn each_host_only_answers_its_own_methods() {
+        assert!(role_allows("terminal", "terminal.session.create"));
+        assert!(!role_allows("terminal", "files.list"));
+        assert!(role_allows("files", "files.list"));
+        assert!(!role_allows("agent", "agent.exec.run"));
+        assert!(role_allows("exec", "agent.exec.run"));
+        assert!(role_allows("services", "download.list"));
+        assert!(!role_allows("services", "agent.turn"));
+        assert!(role_allows("all", "agent.turn"));
+        assert!(role_allows("scheduler", "runtime.identity"));
+    }
 }

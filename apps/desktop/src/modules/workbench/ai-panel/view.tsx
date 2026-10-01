@@ -424,7 +424,6 @@ const AiPanelTabsHeader = ({
         </div>
         <AppIconButton
           className="lyra-tab-add lyra-agents-session-tab-add"
-          style={{ transform: `translate3d(${Math.round(layout.addButtonX)}px, 0, 0)` }}
           aria-label={t("header.newSession")}
           title={t("header.newSession")}
           onClick={() => {

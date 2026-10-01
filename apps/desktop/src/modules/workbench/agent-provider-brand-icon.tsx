@@ -46,6 +46,7 @@ type AgentProviderBrandIconProps = {
   readonly provider?: string | null | undefined;
   readonly providerId?: string | null | undefined;
   readonly routeId?: string | null | undefined;
+  readonly imageUrl?: string | null | undefined;
   readonly size?: number;
 };
 
@@ -245,6 +246,7 @@ export const AgentProviderBrandIcon = ({
   provider,
   providerId,
   routeId,
+  imageUrl,
   size = 16,
 }: AgentProviderBrandIconProps) => {
   const [siteIconUrl, setSiteIconUrl] = useState<string | null>(null);
@@ -294,6 +296,19 @@ export const AgentProviderBrandIcon = ({
     routeId,
   });
   const classNames = ["lyra-agent-provider-brand-icon", className ?? ""].filter(Boolean).join(" ");
+  const accountImage = imageUrl?.trim() ?? "";
+  if (accountImage.length > 0) {
+    return (
+      <span className={classNames} title={label ?? provider ?? providerId ?? undefined}>
+        <img
+          alt=""
+          aria-hidden="true"
+          className="lyra-agent-provider-brand-icon-image lyra-agent-provider-brand-icon-avatar"
+          src={accountImage}
+        />
+      </span>
+    );
+  }
 
   if (builtInOpenCodeProvider) {
     return (

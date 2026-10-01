@@ -25,6 +25,7 @@ import type {
   WorkbenchBrowserPublishEvent
 } from "../types";
 import { liveAgentTarget } from "./agent-target-runtime";
+import { registerGuestRenderer } from "../../process-roles";
 import {
   areNavigationAddressesEquivalent,
   isSupportedWebUrl,
@@ -386,6 +387,9 @@ export const createPageRegistryController = (host: PageRegistryHost) => {
       }
     });
     const { webContents } = view;
+    webContents.once("did-finish-load", () => {
+      registerGuestRenderer(webContents.getOSProcessId());
+    });
     ensureBrowserPageListenerBudget(webContents);
     const disposeDownloadTracking = host.onWebContentsCreated?.(spec.tabId, webContents) ?? (() => undefined);
     const entry: BrowserPageEntry = {

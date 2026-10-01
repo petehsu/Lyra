@@ -33,6 +33,18 @@ use thiserror::Error;
 
 pub use native_backend::LyraAgentBackend;
 
+pub async fn run_exec_tool(payload: Value) -> Value {
+    native_backend::tools::run_exec_tool(payload).await
+}
+
+pub fn call_registered_host_capability(method: &str, payload: Value) -> Result<Value, String> {
+    runtime_backend().call_host_capability(method, payload)
+}
+
+pub fn relay_runtime_event(event_json: String) {
+    native_backend::relay_runtime_event(event_json);
+}
+
 pub type EventCallback = dyn Fn(String) + Send + Sync + 'static;
 pub type HostCapabilityDispatcher =
     dyn Fn(String, String) -> Result<String, String> + Send + Sync + 'static;

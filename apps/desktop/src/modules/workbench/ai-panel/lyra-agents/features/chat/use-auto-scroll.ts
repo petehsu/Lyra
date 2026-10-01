@@ -189,21 +189,31 @@ export function useAutoScroll(options: AutoScrollOptions): AutoScrollHandle {
 
   useEffect(() => {
     if (contentEl === null) return;
+    let settle = 0;
     const observer = new ResizeObserver(() => {
-      const el = scrollRef.current;
-      if (el !== null && !canScroll(el)) {
-        if (userScrolledRef.current) {
-          userScrolledRef.current = false;
-          updateOverflowAnchor(el);
+      window.clearTimeout(settle);
+      // Width and streaming growth remeasure for several frames. Sticking on
+      // each frame reads scrollHeight and writes scrollTop, which measures again.
+      settle = window.setTimeout(() => {
+        settle = 0;
+        const el = scrollRef.current;
+        if (el !== null && !canScroll(el)) {
+          if (userScrolledRef.current) {
+            userScrolledRef.current = false;
+            updateOverflowAnchor(el);
+          }
+          return;
         }
-        return;
-      }
-      if (!active()) return;
-      if (userScrolledRef.current) return;
-      scrollToBottom(false);
+        if (!active()) return;
+        if (userScrolledRef.current) return;
+        scrollToBottom(false);
+      }, SETTLE_MS);
     });
     observer.observe(contentEl);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(settle);
+    };
   }, [active, contentEl, scrollToBottom, updateOverflowAnchor]);
 
   useEffect(() => {

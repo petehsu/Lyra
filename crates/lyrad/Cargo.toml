@@ -57,3 +57,19 @@ windows-sys = { version = "0.61.2", features = [
 
 [dev-dependencies]
 tempfile = "3.23.0"
+
+[[bin]]
+name = "lyra-terminal-host"
+path = "src/bin/lyra-terminal-host.rs"
+
+[[bin]]
+name = "lyra-files-host"
+path = "src/bin/lyra-files-host.rs"
+
+[[bin]]
+name = "lyra-agent-host"
+path = "src/bin/lyra-agent-host.rs"
+
+[[bin]]
+name = "lyra-scheduler-host"
+path = "src/bin/lyra-scheduler-host.rs"

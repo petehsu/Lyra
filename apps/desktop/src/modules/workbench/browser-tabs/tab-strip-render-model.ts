@@ -170,9 +170,7 @@ export const createBrowserTabStripRenderModel = ({
       workspaceDragTabId !== null && "lyra-browser-tab-strip-sorting",
       closeLockedTabWidth !== null && "lyra-tab-strip-close-lock"
     ),
-    addButtonStyle: layout === undefined
-      ? undefined
-      : { transform: `translate3d(${Math.round(layout.addButtonX)}px, 0, 0)` },
+    addButtonStyle: undefined,
     listSpacerStyle: layout === undefined
       ? undefined
       : { width: `${Math.ceil(layout.contentWidth)}px` },

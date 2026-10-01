@@ -18,6 +18,17 @@ pub(crate) fn load_session(
     persist::load_session(root, session_id)
 }
 
+pub(crate) fn load_session_for_startup(
+    root: &Path,
+    session_id: &str,
+) -> AgentRuntimeResult<Option<NativeSession>> {
+    persist::load_session_for_startup(root, session_id)
+}
+
+pub(crate) fn fill_dialog(root: &Path, session: &mut NativeSession) -> AgentRuntimeResult<()> {
+    persist::fill_dialog(root, session)
+}
+
 pub(crate) fn save_session(root: &Path, session: &NativeSession) -> AgentRuntimeResult<()> {
     persist::save_session(root, session)
 }

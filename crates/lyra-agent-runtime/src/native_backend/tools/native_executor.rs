@@ -56,6 +56,21 @@ pub(crate) async fn execute_native_tool_adapter(
     arguments: Value,
     started_at: &str,
 ) -> Value {
+    if !cancellation.is_cancelled()
+        && let Some(forwarded) = forward_tool_to_exec(
+            session_id,
+            turn_id,
+            tool_call_id,
+            tool_name,
+            display_name,
+            action,
+            &arguments,
+            started_at,
+        )
+        .await
+    {
+        return forwarded;
+    }
     execute_native_tool_adapter_with_dispatcher(
         session_id,
         turn_id,
@@ -69,6 +84,241 @@ pub(crate) async fn execute_native_tool_adapter(
         None,
     )
     .await
+}
+
+async fn forward_tool_to_exec(
+    session_id: &str,
+    turn_id: &str,
+    tool_call_id: &str,
+    tool_name: &str,
+    display_name: &str,
+    action: &str,
+    arguments: &Value,
+    started_at: &str,
+) -> Option<Value> {
+    let socket = std::env::var("LYRA_EXEC_SOCKET").ok()?;
+    if socket.is_empty() || std::env::var("LYRA_HOST_ROLE").ok().as_deref() == Some("exec") {
+        return None;
+    }
+    let payload = json!({
+        "sessionId": session_id,
+        "turnId": turn_id,
+        "toolCallId": tool_call_id,
+        "toolName": tool_name,
+        "displayName": display_name,
+        "action": action,
+        "arguments": arguments,
+        "startedAt": started_at,
+    });
+    let joined = tokio::task::spawn_blocking(move || submit_exec_job(socket, payload)).await;
+    Some(joined.unwrap_or_else(|error| {
+        serde_json::json!({
+            "error": format!("exec host failed: {error}")
+        })
+    }))
+}
+
+struct ExecJob {
+    socket: String,
+    payload: Value,
+    reply: std::sync::mpsc::Sender<Value>,
+}
+
+fn submit_exec_job(socket: String, payload: Value) -> Value {
+    #[cfg(unix)]
+    {
+        let (reply, receiver) = std::sync::mpsc::channel();
+        if exec_jobs()
+            .send(ExecJob {
+                socket,
+                payload,
+                reply,
+            })
+            .is_err()
+        {
+            return serde_json::json!({"error": "exec host worker stopped"});
+        }
+        // ponytail: one connection answers host callbacks, so tool calls queue.
+        // A host callback that itself waits on another tool deadlocks this queue.
+        return receiver
+            .recv()
+            .unwrap_or_else(|_| serde_json::json!({"error": "exec host worker stopped"}));
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (socket, payload);
+        serde_json::json!({"error": "exec host forwarding is only available on unix"})
+    }
+}
+
+#[cfg(unix)]
+fn exec_jobs() -> &'static std::sync::mpsc::Sender<ExecJob> {
+    use std::sync::OnceLock;
+    static JOBS: OnceLock<std::sync::mpsc::Sender<ExecJob>> = OnceLock::new();
+    JOBS.get_or_init(|| {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || exec_client_loop(receiver));
+        sender
+    })
+}
+
+#[cfg(unix)]
+fn exec_client_loop(jobs: std::sync::mpsc::Receiver<ExecJob>) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+    let mut connection: Option<(
+        std::io::BufReader<std::os::unix::net::UnixStream>,
+        std::os::unix::net::UnixStream,
+        String,
+    )> = None;
+    while let Ok(job) = jobs.recv() {
+        if connection.as_ref().is_none_or(|open| open.2 != job.socket) {
+            connection = connect_exec(&job.socket).ok();
+        }
+        let id = format!("exec-run-{}", NEXT_ID.fetch_add(1, Ordering::Relaxed));
+        let result = run_exec_job(&mut connection, &job, &id);
+        if result.get("error").and_then(Value::as_str) == Some("exec host closed the connection")
+            || result.get("error").and_then(Value::as_str) == Some("exec host request failed")
+        {
+            connection = None;
+        }
+        let _ = job.reply.send(result);
+    }
+}
+
+#[cfg(unix)]
+fn run_exec_job(
+    connection: &mut Option<(
+        std::io::BufReader<std::os::unix::net::UnixStream>,
+        std::os::unix::net::UnixStream,
+        String,
+    )>,
+    job: &ExecJob,
+    id: &str,
+) -> Value {
+    use std::io::{BufRead, Write};
+    use std::time::Duration;
+
+    let Some((reader, writer, _)) = connection.as_mut() else {
+        return serde_json::json!({"error": "exec host is not available"});
+    };
+    let request = serde_json::json!({
+        "kind": "request",
+        "id": id,
+        "method": "agent.exec.run",
+        "payload": job.payload
+    });
+    let _ = writer.set_write_timeout(Some(Duration::from_secs(5)));
+    if writeln!(writer, "{request}").is_err() || writer.flush().is_err() {
+        return serde_json::json!({"error": "exec host request failed"});
+    }
+    loop {
+        let mut line = String::new();
+        if reader.read_line(&mut line).is_err() || line.is_empty() {
+            return serde_json::json!({"error": "exec host closed the connection"});
+        }
+        let envelope: Value = serde_json::from_str(line.trim()).unwrap_or(Value::Null);
+        match envelope.get("kind").and_then(Value::as_str) {
+            Some("event") => {
+                if let Some(payload) = envelope.get("payload") {
+                    crate::relay_runtime_event(payload.to_string());
+                }
+            }
+            Some("request") => {
+                let request_id = envelope
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                let method = envelope
+                    .get("method")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
+                let response = match crate::call_registered_host_capability(&method, payload) {
+                    Ok(result) => serde_json::json!({
+                        "kind": "response",
+                        "id": request_id,
+                        "ok": true,
+                        "result": result
+                    }),
+                    Err(error) => serde_json::json!({
+                        "kind": "response",
+                        "id": request_id,
+                        "ok": false,
+                        "error": {"code": "RUNTIME_HOST_REQUEST_FAILED", "message": error}
+                    }),
+                };
+                if writeln!(writer, "{response}").is_err() || writer.flush().is_err() {
+                    return serde_json::json!({"error": "exec host request failed"});
+                }
+            }
+            Some("response") if envelope.get("id").and_then(Value::as_str) == Some(id) => {
+                if envelope.get("ok").and_then(Value::as_bool) == Some(true) {
+                    return envelope.get("result").cloned().unwrap_or(Value::Null);
+                }
+                return serde_json::json!({
+                    "error": envelope
+                        .pointer("/error/message")
+                        .and_then(Value::as_str)
+                        .unwrap_or("exec host rejected the tool")
+                });
+            }
+            _ => {}
+        }
+    }
+}
+
+#[cfg(unix)]
+fn connect_exec(
+    socket: &str,
+) -> std::io::Result<(
+    std::io::BufReader<std::os::unix::net::UnixStream>,
+    std::os::unix::net::UnixStream,
+    String,
+)> {
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::net::UnixStream;
+    use std::sync::atomic::AtomicU64;
+    use std::time::Duration;
+    static NEXT_EXEC_LEASE: AtomicU64 = AtomicU64::new(1);
+    let stream = UnixStream::connect(socket)?;
+    let _ = stream.set_read_timeout(None);
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
+    let mut writer = stream.try_clone()?;
+    let hello = serde_json::json!({
+        "kind": "request",
+        "id": "exec-hello",
+        "method": "runtime.handshake",
+        "payload": {
+            "protocolMinVersion": 2,
+            "protocolMaxVersion": 2,
+            "clientName": "lyra-agent-host",
+            "componentVersion": "0.1.0",
+            "buildId": "agent-host",
+            "hostApiVersion": "1.0.0",
+            "capabilities": ["runtime.host.requests"],
+            "dataSchemas": {"lyra.desktop": 1},
+            "connectionRole": "primaryHost",
+            "connectionLeaseId": format!(
+                "agent-exec-{}-{}",
+                std::process::id(),
+                NEXT_EXEC_LEASE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            )
+        }
+    });
+    writeln!(writer, "{hello}")?;
+    writer.flush()?;
+    let mut reader = BufReader::new(stream);
+    let mut line = String::new();
+    reader.read_line(&mut line)?;
+    let envelope: Value = serde_json::from_str(line.trim()).unwrap_or(Value::Null);
+    if envelope.get("ok").and_then(Value::as_bool) != Some(true) {
+        return Err(std::io::Error::other("exec host rejected the handshake"));
+    }
+    Ok((reader, writer, socket.to_string()))
 }
 
 #[allow(clippy::too_many_arguments)]

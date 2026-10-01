@@ -11,17 +11,24 @@ const storageRoot = process.env.LYRA_SHARED_PROCESS_STORAGE_ROOT;
 const agentStorageRoot = process.env.LYRA_SHARED_PROCESS_AGENT_STORAGE_ROOT;
 const expectedRuntimeComponentVersion =
   process.env.LYRA_RUNTIME_EXPECTED_COMPONENT_VERSION;
+const hostRole = process.env.LYRA_HOST_ROLE;
 
 if (storageRoot === undefined || agentStorageRoot === undefined) {
   throw new Error("SharedProcess: storage roots not configured");
 }
+
+let reportRolePid = (_role: string, _pid: number): void => undefined;
 
 const client = createLyraRuntimeClient({
   storageRoot,
   agentStorageRoot,
   ...(expectedRuntimeComponentVersion === undefined
     ? {}
-    : { expectedComponentVersion: expectedRuntimeComponentVersion })
+    : { expectedComponentVersion: expectedRuntimeComponentVersion }),
+  ...(hostRole === undefined || hostRole.length === 0 ? {} : { hostRole }),
+  onRolePid: (role, pid) => {
+    reportRolePid(role, pid);
+  }
 });
 
 type PendingHostRequest = {
@@ -44,6 +51,10 @@ const parentPort = (process as unknown as { readonly parentPort: ParentPort }).p
 
 const post = (msg: SharedProcessMessage): void => {
   parentPort.postMessage(msg);
+};
+
+reportRolePid = (role, pid) => {
+  post({ type: "role-pid", role, pid });
 };
 
 const createHostRequestId = (): string =>
@@ -116,5 +127,11 @@ parentPort.on("message", (event: { readonly data: SharedProcessMessage }) => {
       post({ type: "disposed" });
       return;
     }
+    case "role-pid":
+    case "response":
+    case "host-request":
+    case "event":
+    case "disposed":
+      return;
   }
 });

@@ -1,21 +1,19 @@
 import { useLayoutEffect, useState, type RefObject } from "react";
 
 import { createRafCoalescer } from "../shell/raf-coalesce";
-import {
-  getIsLayoutResizing,
-  subscribeLayoutResizeEnd
-} from "../shell/use-panel-layout";
+import { subscribeLayoutResizeEnd } from "../shell/use-panel-layout";
 import {
   chromeTabStripLayoutsEqual,
   computeChromeTabStripLayout,
   type ChromeTabStripLayout
 } from "./chrome-tab-layout";
 
-const readTitleFont = (host: HTMLElement, titleSelector: string): string | undefined => {
-  const sample = host.querySelector<HTMLElement>(titleSelector);
-  if (sample === null) return undefined;
-  const font = getComputedStyle(sample).font;
-  return font.length > 0 ? font : undefined;
+const readObservedWidth = (entry: ResizeObserverEntry): number => {
+  const box = entry.borderBoxSize?.[0];
+  if (box !== undefined && Number.isFinite(box.inlineSize)) {
+    return Math.round(box.inlineSize);
+  }
+  return Math.round(entry.contentRect.width);
 };
 
 export const useChromeTabStripLayout = ({
@@ -23,7 +21,6 @@ export const useChromeTabStripLayout = ({
   hostRef,
   stripSelector,
   addButtonSelector,
-  titleSelector,
   closeLockedTabWidth = null
 }: {
   readonly titles: readonly string[];
@@ -59,16 +56,15 @@ export const useChromeTabStripLayout = ({
     const strip = host.querySelector<HTMLElement>(stripSelector);
     const addButton = host.querySelector<HTMLElement>(addButtonSelector);
 
+    let observedStripWidth = strip === null ? 0 : Math.round(strip.clientWidth);
+    let observedAddButtonWidth = addButton === null ? 0 : Math.round(addButton.clientWidth);
     let lastStripWidth = -1;
     let lastAddButtonWidth = -1;
     let lastTitlesKey = "";
     let lastCloseLockedTabWidth: number | null = null;
-    const measure = (): void => {
-      if (getIsLayoutResizing()) {
-        return;
-      }
-      const stripWidth = Math.round(strip?.getBoundingClientRect().width ?? 0);
-      const addButtonWidth = Math.round(addButton?.getBoundingClientRect().width ?? 0);
+    const publish = (): void => {
+      const stripWidth = observedStripWidth;
+      const addButtonWidth = observedAddButtonWidth;
       const titlesKey = titles.join("\0");
       if (
         stripWidth === lastStripWidth
@@ -82,36 +78,44 @@ export const useChromeTabStripLayout = ({
       lastAddButtonWidth = addButtonWidth;
       lastTitlesKey = titlesKey;
       lastCloseLockedTabWidth = closeLockedTabWidth;
-      const titleFont = readTitleFont(host, titleSelector);
       const nextLayout = computeChromeTabStripLayout({
         tabCount: titles.length,
         titles,
         stripWidth,
         addButtonWidth,
-        closeLockedTabWidth,
-        ...(titleFont === undefined ? {} : { titleFont })
+        closeLockedTabWidth
       });
       setLayout((current) => chromeTabStripLayoutsEqual(current, nextLayout) ? current : nextLayout);
     };
-    measure();
+    publish();
 
     if (typeof ResizeObserver === "undefined") {
-      return subscribeLayoutResizeEnd(measure);
+      return subscribeLayoutResizeEnd(() => {
+        observedStripWidth = strip === null ? 0 : Math.round(strip.clientWidth);
+        observedAddButtonWidth = addButton === null ? 0 : Math.round(addButton.clientWidth);
+        publish();
+      });
     }
 
-    const coalescer = createRafCoalescer(measure);
-    const observer = new ResizeObserver(() => coalescer.schedule());
+    const coalescer = createRafCoalescer(publish);
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const width = readObservedWidth(entry);
+        if (entry.target === strip) {
+          observedStripWidth = width;
+        } else if (entry.target === addButton) {
+          observedAddButtonWidth = width;
+        }
+      }
+      coalescer.schedule();
+    });
     if (strip !== null) {
       observer.observe(strip);
     }
     if (addButton !== null) {
       observer.observe(addButton);
     }
-    const unsubscribeResizeEnd = subscribeLayoutResizeEnd(() => {
-      lastStripWidth = -1;
-      lastAddButtonWidth = -1;
-      measure();
-    });
+    const unsubscribeResizeEnd = subscribeLayoutResizeEnd(publish);
     return () => {
       observer.disconnect();
       coalescer.cancel();
@@ -122,7 +126,6 @@ export const useChromeTabStripLayout = ({
     closeLockedTabWidth,
     hostRef,
     stripSelector,
-    titleSelector,
     titles
   ]);
 

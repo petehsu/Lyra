@@ -1,0 +1,153 @@
+import { useState } from "react";
+
+import { t } from "@workbench/i18n";
+import type { AgentModelCatalogSnapshot } from "../../../shared/agent";
+import { AppButton, AppInput, AppStatusMessage } from "@renderer/ui/components";
+
+import { getDesktopApi } from "../shell/service";
+
+export function SubscriptionRouteLogin({
+  routeId,
+  baseUrl,
+  onConnected,
+}: {
+  readonly routeId: string;
+  readonly baseUrl: string;
+  readonly onConnected: (catalog?: AgentModelCatalogSnapshot | null) => void;
+}) {
+  const desktopApi = getDesktopApi();
+  const [flowId, setFlowId] = useState<string | null>(null);
+  const [authUrl, setAuthUrl] = useState<string | null>(null);
+  const [userCode, setUserCode] = useState<string | null>(null);
+  const [loginBaseUrl, setLoginBaseUrl] = useState<string | null>(null);
+  const [account, setAccount] = useState("");
+  const [callback, setCallback] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [accountName, setAccountName] = useState<string | null>(null);
+  const [accountAvatar, setAccountAvatar] = useState<string | null>(null);
+
+  if (desktopApi === null) {
+    return null;
+  }
+
+  const start = () => {
+    setBusy(true);
+    setMessage("Opening sign-in…");
+    void desktopApi.agent.startAccountLogin({
+      provider: routeId,
+      ...(routeId === "snowflake_cortex" && account.trim().length > 0
+        ? { account: account.trim() }
+        : {}),
+    }).then((started) => {
+      setFlowId(started.flowId);
+      setAuthUrl(started.authUrl ?? null);
+      setUserCode(started.userCode ?? null);
+      setLoginBaseUrl(started.baseUrl ?? null);
+      setMessage(started.instructions);
+      if (started.authUrl) {
+        void desktopApi.openExternal(started.authUrl);
+      }
+    }).catch((error: unknown) => {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }).finally(() => setBusy(false));
+  };
+
+  const complete = (borrow: boolean) => {
+    if (flowId === null && !borrow) {
+      return;
+    }
+    setBusy(true);
+    setMessage(borrow ? "Checking the local login…" : "Finishing sign-in…");
+    void desktopApi.agent.completeAccountLogin({
+      provider: routeId,
+      flowId,
+      callbackInput: borrow ? "borrow" : callback,
+      baseUrl: loginBaseUrl ?? (baseUrl.trim().length > 0 ? baseUrl.trim() : null),
+      setDefault: false,
+    }).then((response) => {
+      const name = response.displayName ?? response.email ?? null;
+      setAccountName(name);
+      setAccountAvatar(response.avatarUrl ?? null);
+      setMessage(response.message);
+      setCallback("");
+      onConnected(response.catalog);
+    }).catch((error: unknown) => {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }).finally(() => setBusy(false));
+  };
+
+  return (
+    <div className="lyra-settings-ai-field lyra-settings-ai-field-span-2">
+      {accountName === null ? null : (
+        <span className="lyra-settings-ai-model-discovery-action-row">
+          {accountAvatar === null ? null : (
+            <img
+              alt=""
+              className="lyra-settings-ai-account-avatar"
+              src={accountAvatar}
+            />
+          )}
+          <span>{accountName}</span>
+        </span>
+      )}
+      {routeId === "snowflake_cortex" ? (
+        <AppInput
+          className="lyra-settings-ai-input"
+          aria-label={t("settings.aiSubscriptionAccount")}
+          placeholder={t("settings.aiSubscriptionAccount")}
+          value={account}
+          onChange={(event) => setAccount(event.target.value)}
+        />
+      ) : null}
+      <span className="lyra-settings-ai-model-discovery-action-row">
+        <AppButton
+          variant="outline"
+          size="sm"
+          type="button"
+          className="lyra-settings-ai-action"
+          disabled={busy}
+          onClick={start}
+        >
+          {t("settings.aiSubscriptionLogin")}
+        </AppButton>
+        <AppButton
+          variant="ghost"
+          size="sm"
+          type="button"
+          className="lyra-settings-ai-action"
+          disabled={busy}
+          onClick={() => complete(true)}
+        >
+          {t("settings.aiSubscriptionBorrow")}
+        </AppButton>
+      </span>
+      {userCode === null && authUrl === null && flowId === null ? null : (
+        <>
+          {userCode === null ? null : <strong>{userCode}</strong>}
+          {authUrl === null ? null : <span>{authUrl}</span>}
+          <AppInput
+            className="lyra-settings-ai-input"
+            aria-label={t("settings.aiSubscriptionCallback")}
+            placeholder={t("settings.aiSubscriptionCallback")}
+            value={callback}
+            onChange={(event) => setCallback(event.target.value)}
+          />
+          <AppButton
+            variant="default"
+            size="sm"
+            type="button"
+            className="lyra-settings-ai-action lyra-settings-ai-action-primary"
+            disabled={busy}
+            onClick={() => complete(false)}
+          >
+            {t("settings.aiSubscriptionConfirm")}
+          </AppButton>
+        </>
+      )}
+      {message === null ? null : (
+        <AppStatusMessage tone="neutral">{message}</AppStatusMessage>
+      )}
+    </div>
+  );
+}

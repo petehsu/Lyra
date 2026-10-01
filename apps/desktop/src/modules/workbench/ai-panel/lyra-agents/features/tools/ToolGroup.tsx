@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useRef } from "react";
 import type { ToolCall, ToolGroup } from "../../core/types";
 import {
   CheckCircleIcon,
@@ -26,6 +26,7 @@ import {
   shouldShowEditDiffStats
 } from "./InlineDiffStats";
 import { useToolAccordion } from "./tool-accordion";
+import { useFollowBottomUntilHover } from "./use-follow-bottom-until-hover";
 import { VirtualizedDiffView } from "./VirtualizedDiffView";
 import { parseUnifiedDiff } from "@workbench/agent-session-view-model/tool-parsing/diff";
 import { splitDisplayPath } from "../chat/changed-files";
@@ -181,11 +182,17 @@ function ToolCallRow({
   const isSubagent = subagentId.length > 0;
   const open = groupOpen && accordion.isEntryOpen(call.id, false);
   const anchorRef = useRef<HTMLSpanElement>(null);
+  const scrollerRef = useRef<HTMLDivElement>(null);
   const anchorVisible = useFoldAnchorVisible(anchorRef);
   const hasArtifacts =
     (call.artifactTargets?.length ?? 0) > 0 ||
     (call.artifactPreviews?.length ?? 0) > 0;
   const hasDetails = !!call.details || hasArtifacts;
+  const followBottom = useFollowBottomUntilHover(
+    scrollerRef,
+    open && hasDetails,
+    call.details ?? call.artifactPreviews ?? call.artifactTargets,
+  );
   const editStats = editDiffCounts(call.details);
   const showRowEditStats = shouldShowEditDiffStats(editStats);
   const canToggle = hasDetails;
@@ -257,7 +264,13 @@ function ToolCallRow({
               aria-label={t("tool.collapseCall")}
             />
           )}
-          <div className="lyra-agents-tool-call-body" data-scrollable="true">
+          <div
+            ref={scrollerRef}
+            className="lyra-agents-tool-call-body"
+            data-scrollable="true"
+            onMouseEnter={followBottom.onMouseEnter}
+            onMouseLeave={followBottom.onMouseLeave}
+          >
             {call.details ? (
               <ToolDetails details={call.details} running={call.status === "running"} />
             ) : null}
@@ -432,22 +445,11 @@ function ThinkingRow({
   const open = groupOpen && accordion.isEntryOpen(entry.id, false);
   const anchorRef = useRef<HTMLSpanElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
-  const [hovering, setHovering] = useState(false);
   const anchorVisible = useFoldAnchorVisible(anchorRef);
+  const followBottom = useFollowBottomUntilHover(scrollerRef, open, entry.body);
   const toggle = (): void => {
     accordion.toggleEntry(groupId, entry.id, open);
   };
-
-  useLayoutEffect(() => {
-    if (!open || hovering) {
-      return;
-    }
-    const scroller = scrollerRef.current;
-    if (scroller === null) {
-      return;
-    }
-    scroller.scrollTop = scroller.scrollHeight;
-  }, [entry.body, hovering, open]);
   return (
     <div className={`lyra-agents-tool-call ${open ? "open" : ""} lyra-agents-status-${entry.status}`}>
       <div className="lyra-agents-tool-call-head-row has-details">
@@ -501,8 +503,8 @@ function ThinkingRow({
           ref={scrollerRef}
           className="lyra-agents-tool-call-body"
           data-scrollable="true"
-          onMouseEnter={() => setHovering(true)}
-          onMouseLeave={() => setHovering(false)}
+          onMouseEnter={followBottom.onMouseEnter}
+          onMouseLeave={followBottom.onMouseLeave}
         >
           <div className="lyra-agents-thinking-body">{entry.body}</div>
         </div>

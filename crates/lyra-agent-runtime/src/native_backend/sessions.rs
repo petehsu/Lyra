@@ -169,6 +169,7 @@ pub(crate) fn new_session(
         dirty: true,
         dialog_dirty_from: Some(0),
         persisted_dialog_len: 0,
+        dialog_loaded: true,
         ephemeral: false,
     }
 }
@@ -229,6 +230,7 @@ fn new_ephemeral_session(
         dirty: false,
         dialog_dirty_from: None,
         persisted_dialog_len: 1,
+        dialog_loaded: true,
         ephemeral: true,
     }
 }
@@ -350,6 +352,7 @@ pub(crate) fn read_session(payload: Value) -> AgentRuntimeResult<Value> {
         Ok(mut state) => {
             let root = state.root.clone();
             let id = state.resolve_session_id(requested_session_id)?;
+            state.ensure_dialog(&id)?;
             let session = state
                 .sessions
                 .get(&id)
@@ -368,6 +371,7 @@ pub(crate) fn read_session(payload: Value) -> AgentRuntimeResult<Value> {
                     Ok(mut state) => {
                         let root = state.root.clone();
                         let id = state.resolve_session_id(requested_session_id.clone())?;
+                        state.ensure_dialog(&id)?;
                         let session = state.sessions.get(&id).ok_or_else(|| {
                             AgentRuntimeError::Core(format!("session not found: {id}"))
                         })?;

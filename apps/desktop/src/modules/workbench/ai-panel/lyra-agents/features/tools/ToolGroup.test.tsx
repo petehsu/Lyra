@@ -177,6 +177,59 @@ describe("ToolGroupBlock subagent cards", () => {
     expect(scroller.scrollTop).toBe(520);
   });
 
+  test("tool output follows the bottom until the pointer hovers it", () => {
+    const shellGroup = (output: string): ToolGroup => ({
+      id: "group-shell",
+      label: "Ran shell",
+      status: "running",
+      currentCallId: "shell-1",
+      calls: [{
+        id: "shell-1",
+        kind: "shell",
+        title: "Ran shell",
+        status: "running",
+        details: { type: "shell", command: "echo", output, exitCode: 0 }
+      }]
+    });
+    const data = createDataProviderValue({
+      session,
+      messages: [],
+      openSubagent: vi.fn()
+    });
+    const view = render(
+      <DataContextProvider value={data}>
+        <ToolGroupBlock group={shellGroup("line 1\nline 2")} />
+      </DataContextProvider>
+    );
+    fireEvent.click(view.container.querySelector(".lyra-agents-tool-group-head") as HTMLButtonElement);
+    fireEvent.click(view.container.querySelector(".lyra-agents-tool-call-twist") as HTMLButtonElement);
+    const scroller = view.container.querySelector(".lyra-agents-tool-call-body") as HTMLDivElement;
+    expect(scroller).not.toBeNull();
+    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 80 });
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 400 });
+    scroller.scrollTop = 0;
+
+    view.rerender(
+      <DataContextProvider value={data}>
+        <ToolGroupBlock group={shellGroup("line 1\nline 2\nline 3")} />
+      </DataContextProvider>
+    );
+    expect(scroller.scrollTop).toBe(400);
+
+    fireEvent.mouseEnter(scroller);
+    scroller.scrollTop = 40;
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 520 });
+    view.rerender(
+      <DataContextProvider value={data}>
+        <ToolGroupBlock group={shellGroup("line 1\nline 2\nline 3\nline 4")} />
+      </DataContextProvider>
+    );
+    expect(scroller.scrollTop).toBe(40);
+
+    fireEvent.mouseLeave(scroller);
+    expect(scroller.scrollTop).toBe(520);
+  });
+
   test("shimmer follows running status for every tool kind", () => {
     const cases: Array<{ name: string; group: ToolGroup; running: boolean }> = [
       {

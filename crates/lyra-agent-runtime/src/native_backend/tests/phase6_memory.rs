@@ -107,6 +107,7 @@ fn memory_projection_splits_shared_and_frozen_facts() {
         dirty: false,
         dialog_dirty_from: None,
         persisted_dialog_len: 0,
+        dialog_loaded: true,
         ephemeral: false,
         snapshot: json!({
             "title": "Projection",

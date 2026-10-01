@@ -55,6 +55,7 @@ pub(crate) fn route_catalog() -> Vec<ProviderRouteDescriptor> {
         routes::deepinfra::descriptor(),
         routes::venice::descriptor(),
     ]);
+    routes.extend(routes::subscription::descriptors());
     routes
 }
 
@@ -107,8 +108,34 @@ pub(crate) fn route_model_discovery_hook(
         }
         routes::atria::ROUTE_ID => Some(routes::atria::model_discovery_hook()),
         routes::poolside::ROUTE_ID => Some(routes::poolside::model_discovery_hook()),
+        route_id if routes::subscription::is_subscription_route(route_id) => {
+            Some(subscription_discovery())
+        }
         _ => None,
     }
+}
+
+struct SubscriptionDiscovery;
+
+impl routes::RouteModelDiscoveryHook for SubscriptionDiscovery {
+    fn descriptor(&self) -> super::types::ProviderRouteDescriptor {
+        routes::subscription::descriptors()
+            .into_iter()
+            .next()
+            .expect("subscription routes")
+    }
+
+    fn discover_models(
+        &self,
+        provider: &crate::native_backend::NativeProviderProfile,
+    ) -> crate::AgentRuntimeResult<Vec<crate::native_backend::NativeProviderModel>> {
+        super::subscription::discover_live_models(provider)
+    }
+}
+
+fn subscription_discovery() -> &'static dyn routes::RouteModelDiscoveryHook {
+    static HOOK: SubscriptionDiscovery = SubscriptionDiscovery;
+    &HOOK
 }
 
 pub(crate) fn route_id_for_login_provider(provider: &str) -> Option<&'static str> {
@@ -140,6 +167,20 @@ pub(crate) fn route_id_for_login_provider(provider: &str) -> Option<&'static str
         "alibaba" | "dashscope" | "qwen" => Some(routes::alibaba::ROUTE_ID),
         "deepinfra" => Some(routes::deepinfra::ROUTE_ID),
         "venice" => Some(routes::venice::ROUTE_ID),
+        routes::subscription::CLAUDE => Some(routes::subscription::CLAUDE),
+        routes::subscription::CHATGPT => Some(routes::subscription::CHATGPT),
+        routes::subscription::COPILOT => Some(routes::subscription::COPILOT),
+        routes::subscription::COPILOT_ACP => Some(routes::subscription::COPILOT_ACP),
+        routes::subscription::GEMINI_CODE_ASSIST => Some(routes::subscription::GEMINI_CODE_ASSIST),
+        routes::subscription::ANTIGRAVITY => Some(routes::subscription::ANTIGRAVITY),
+        routes::subscription::GROK_BUILD => Some(routes::subscription::GROK_BUILD),
+        routes::subscription::XAI_OAUTH => Some(routes::subscription::XAI_OAUTH),
+        routes::subscription::CURSOR => Some(routes::subscription::CURSOR),
+        routes::subscription::AZURE => Some(routes::subscription::AZURE),
+        routes::subscription::DIGITALOCEAN => Some(routes::subscription::DIGITALOCEAN),
+        routes::subscription::SNOWFLAKE => Some(routes::subscription::SNOWFLAKE),
+        routes::subscription::QWEN => Some(routes::subscription::QWEN),
+        routes::subscription::MINIMAX => Some(routes::subscription::MINIMAX),
         _ => None,
     }
 }

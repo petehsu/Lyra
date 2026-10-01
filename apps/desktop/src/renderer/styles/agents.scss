@@ -149,6 +149,8 @@
   height: 100%;
   position: relative;
   overflow: hidden;
+  container-type: inline-size;
+  container-name: lyra-conversation;
 }
 
 .lyra-agents-app-drag-host-content {
@@ -291,7 +293,8 @@
   background: transparent;
   color: color-mix(in srgb, var(--lyra-text-muted) 72%, transparent);
   position: absolute;
-  left: 0;
+  left: auto;
+  right: 0;
   top: 0;
   z-index: 9;
   display: grid;
@@ -973,7 +976,34 @@
 .lyra-agents-chat-inner {
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  margin-inline: auto;
   padding: var(--lyra-unit-24) var(--lyra-unit-24) var(--lyra-unit-32);
+}
+
+/* ZCode conversationLayout.ts: 864px → calc(100% - 6rem) / 56rem, 1280px → calc(100% - 24rem) / 72rem. */
+@container lyra-conversation (min-width: 864px) {
+  .lyra-agents-chat-inner,
+  .lyra-agents-composer-wrap {
+    width: calc(100% - 6rem);
+    max-width: 56rem;
+  }
+}
+
+@container lyra-conversation (min-width: 1280px) {
+  .lyra-agents-chat-inner,
+  .lyra-agents-composer-wrap {
+    width: calc(100% - 24rem);
+    max-width: 72rem;
+  }
+}
+
+.lyra-agents-app-drag-host:has(.lyra-agents-chat-empty) .lyra-agents-chat-inner,
+.lyra-agents-app-drag-host:has(.lyra-agents-chat-empty) .lyra-agents-composer-wrap {
+  width: 100%;
+  max-width: 42rem;
 }
 
 /* When the only content is the new-session empty state, fill the scroll area so
@@ -5511,12 +5541,13 @@
 
 .lyra-agents-composer-wrap {
   position: absolute;
-  right: 0;
   bottom: 0;
-  left: 0;
-  transform: none;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
   width: 100%;
-  max-width: none;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: var(--lyra-agents-composer-wrap-padding-top) var(--lyra-space-20) var(--lyra-agents-composer-wrap-padding-bottom);
   z-index: 90;
   pointer-events: none;

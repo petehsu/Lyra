@@ -45,6 +45,9 @@ pub(crate) fn resume_pending_trim_journal(
 ) -> AgentRuntimeResult<()> {
     let conn = open_session_connection(root, &session.id)?;
     let entries = list_incomplete_journals(&conn)?;
+    if !entries.is_empty() && !session.dialog_loaded {
+        crate::native_backend::fill_dialog(root, session)?;
+    }
     for entry in entries {
         resume_journal_entry(session, root, &conn, &entry)?;
     }
@@ -416,6 +419,7 @@ mod tests {
             dirty: true,
             dialog_dirty_from: Some(0),
             persisted_dialog_len: 0,
+            dialog_loaded: true,
             ephemeral: false,
         }
     }

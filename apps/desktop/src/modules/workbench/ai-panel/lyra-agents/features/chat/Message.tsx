@@ -1,5 +1,5 @@
 import { Check, ChevronDown, ChevronUp, Copy, Link2, Undo2 } from "@lyra/icons";
-import { memo, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { memo, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import {
   AGENT_FOLLOW_ACTIVITY_CONNECTING,
   type AgentRollbackPreviewResponse,
@@ -696,6 +696,42 @@ const MessageCopyAction = ({ message }: { message: ChatMessage }) => {
   );
 };
 
+const USER_BUBBLE_COLLAPSE_LINE_COUNT = 10;
+// Chat column is wide enough that a wrapped line is about this many characters.
+// ponytail: counting lines avoids scrollHeight, which would lay out history the
+// content-visibility rule is there to skip.
+const USER_BUBBLE_APPROX_CHARS_PER_LINE = 72;
+
+const userBubbleExceedsCollapsedLines = (blocks: readonly MessageBlock[]): boolean => {
+  let lines = 1;
+  let column = 0;
+  let seenText = false;
+  for (const block of blocks) {
+    if (block.type !== "text") continue;
+    if (seenText) {
+      lines += 1;
+      column = 0;
+      if (lines > USER_BUBBLE_COLLAPSE_LINE_COUNT) return true;
+    }
+    seenText = true;
+    const text = block.body;
+    for (let index = 0; index < text.length; index += 1) {
+      if (text.charCodeAt(index) === 10) {
+        lines += 1;
+        column = 0;
+      } else {
+        column += 1;
+        if (column > USER_BUBBLE_APPROX_CHARS_PER_LINE) {
+          lines += 1;
+          column = 1;
+        }
+      }
+      if (lines > USER_BUBBLE_COLLAPSE_LINE_COUNT) return true;
+    }
+  }
+  return false;
+};
+
 const messageBlocksToMediaTokens = (blocks: readonly MessageBlock[]): MediaToken[] => {
   const tokens: MediaToken[] = [];
   for (const block of blocks) {
@@ -750,30 +786,8 @@ export function Message({
   const [rollbackBusy, setRollbackBusy] = useState(false);
   const [rollbackError, setRollbackError] = useState<string | null>(null);
   const [userBubbleExpanded, setUserBubbleExpanded] = useState(false);
-  const [userBubbleOverflowing, setUserBubbleOverflowing] = useState(false);
-  const userBubbleRef = useRef<HTMLDivElement>(null);
-  // Signature of the user message's text so overflow is re-measured only when
-  // the rendered content changes (user messages are immutable once sent).
-  // ponytail: does not re-measure on live panel-width changes — acceptable
-  // because the bubble content never reflows after send.
-  const userTextSignature =
-    message.author === "user"
-      ? message.blocks.map((b) => (b.type === "text" ? b.body : b.type)).join("\u0001")
-      : "";
-  useLayoutEffect(() => {
-    if (message.author !== "user") return;
-    const el = userBubbleRef.current;
-    if (el === null) return;
-    const cs = getComputedStyle(el);
-    const fontSize = parseFloat(cs.fontSize) || 14;
-    const lineHeight = cs.lineHeight.endsWith("px")
-      ? parseFloat(cs.lineHeight)
-      : fontSize * 1.5;
-    // ~10 lines of text plus the bubble's vertical padding (8px each side).
-    // scrollHeight reports full content height even while max-height clips it.
-    const collapsedMax = lineHeight * 10 + 16;
-    setUserBubbleOverflowing(el.scrollHeight > collapsedMax + lineHeight * 0.5);
-  }, [message.author, userTextSignature]);
+  const userBubbleOverflowing = message.author === "user"
+    && userBubbleExceedsCollapsedLines(message.blocks);
 
   const canRollback =
     message.rollback?.available === true &&
@@ -829,7 +843,6 @@ export function Message({
       >
         <div className="lyra-agents-message-content-user">
           <div
-            ref={userBubbleRef}
             className={`lyra-agents-message-bubble${highlightCitationTarget ? " lyra-agents-message-citation-target" : ""}${userBubbleOverflowing && !userBubbleExpanded ? " lyra-agents-message-bubble-collapsed" : ""}`}
             onContextMenu={(event) => onContextMenu?.(event, message)}
           >

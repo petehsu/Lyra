@@ -28,6 +28,7 @@ const labels: SettingsAiLabels = {
   modelsDeleteLabel: "Delete model",
   modelsDeleteConfirmTitle: "Delete model?",
   modelsDeleteConfirmDescription: "Remove {model} from this provider.",
+  modelsDeleteProviderDescription: "Remove {model} from Lyra, including its saved login and model list.",
   modelsDeleteConfirmAction: "Delete model",
   skillsTitle: "Skills",
   skillsSearchPlaceholder: "Paste a GitHub URL or local path, or search skills",

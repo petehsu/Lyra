@@ -202,11 +202,17 @@ export const useSettingsAiModel = ({
     }
   }, [desktopApi, refreshAgent, onProviderRouteAdjusted]);
 
-  const refreshAgentModels = useCallback(async (providerId: string) => {
+  const refreshAgentModels = useCallback(async (
+    providerId: string,
+    options?: { readonly listOnly?: boolean },
+  ) => {
     if (desktopApi?.agent === undefined) return null;
     setIsSaving(true);
     try {
-      const catalog = await desktopApi.agent.refreshAgentModels({ provider: providerId });
+      const catalog = await desktopApi.agent.refreshAgentModels({
+        provider: providerId,
+        ...(options?.listOnly === true ? { listOnly: true } : {}),
+      });
       setAgentModelCatalog(catalog);
       if (catalog.routeAdjustment) onProviderRouteAdjusted?.(catalog.routeAdjustment);
       await refreshAgent();
@@ -224,7 +230,7 @@ export const useSettingsAiModel = ({
     if (desktopApi?.agent === undefined) return;
     setIsSaving(true);
     try {
-      const catalog = await desktopApi.agent.refreshAgentModels();
+      const catalog = await desktopApi.agent.refreshAgentModels({ listOnly: true });
       setAgentModelCatalog(catalog);
       if (catalog.routeAdjustment) onProviderRouteAdjusted?.(catalog.routeAdjustment);
       await refreshAgent();
@@ -235,6 +241,11 @@ export const useSettingsAiModel = ({
       setIsSaving(false);
     }
   }, [desktopApi, refreshAgent, onProviderRouteAdjusted]);
+
+  const adoptAgentModelCatalog = useCallback((catalog: AgentModelCatalogSnapshot) => {
+    setAgentModelCatalog(catalog);
+    void refreshAgent();
+  }, [refreshAgent]);
 
   const switchAgentModel = useCallback(async (request: AgentModelSwitchRequest) => {
     if (desktopApi?.agent === undefined) return;
@@ -668,6 +679,7 @@ export const useSettingsAiModel = ({
     saveAndDiscoverAgentProviderProfile,
     refreshAgentModels,
     refreshAgentModelCatalog,
+    adoptAgentModelCatalog,
     setAgentModelEnabled,
     updateAgentModelCapabilities,
     deleteAgentModel,

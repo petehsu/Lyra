@@ -529,6 +529,7 @@ fn session_for_memory_event(root: &Path, session_id: &str) -> NativeSession {
                 dirty: false,
                 dialog_dirty_from: None,
                 persisted_dialog_len: 0,
+                dialog_loaded: true,
                 ephemeral: false,
             }
         })
@@ -603,6 +604,7 @@ mod tests {
             dirty: true,
             dialog_dirty_from: Some(0),
             persisted_dialog_len: 0,
+            dialog_loaded: true,
             ephemeral: false,
         }
     }

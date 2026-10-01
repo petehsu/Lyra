@@ -78,24 +78,25 @@ pub(crate) fn provider_with_resolved_api_key(
     provider: NativeProviderProfile,
     dispatcher: Option<&Arc<HostCapabilityDispatcher>>,
 ) -> AgentRuntimeResult<NativeProviderProfile> {
-    if resolve_api_key(&provider).is_some() || provider.api_key_ref.is_none() {
-        return Ok(provider);
-    }
     let mut resolved = provider;
-    resolved.api_key = resolve_api_key_with_host(&resolved, dispatcher)?;
-    Ok(resolved)
+    if resolved.api_key.is_none() && resolved.api_key_ref.is_some() {
+        resolved.api_key = resolve_api_key_with_host(&resolved, dispatcher)?;
+    }
+    super::super::subscription::refresh_if_needed(&resolved, dispatcher)
 }
 
 pub(crate) fn apply_model_auth(
     builder: RequestBuilder,
     provider: &NativeProviderProfile,
 ) -> AgentRuntimeResult<RequestBuilder> {
-    let api_key = resolve_api_key(provider).ok_or_else(|| {
+    let secret = resolve_api_key(provider).ok_or_else(|| {
         errors::configuration_error(
             provider,
             format!("API key is not configured for provider {}", provider.label),
         )
     })?;
+    let api_key = super::super::subscription::bearer_secret(&provider.route_id, &secret);
+    let builder = apply_subscription_headers(builder, provider, &secret);
     let Some(header_name) = provider
         .auth_header
         .as_deref()
@@ -108,6 +109,17 @@ pub(crate) fn apply_model_auth(
         AgentRuntimeError::Core(format!("invalid auth header `{header_name}`: {error}"))
     })?;
     Ok(builder.header(header_name, api_key))
+}
+
+fn apply_subscription_headers(
+    mut builder: RequestBuilder,
+    provider: &NativeProviderProfile,
+    secret: &str,
+) -> RequestBuilder {
+    for (name, value) in super::super::subscription::extra_headers(&provider.route_id, secret) {
+        builder = builder.header(name, value);
+    }
+    builder
 }
 
 /// Async counterpart of `apply_model_auth` for the streaming hot path.
@@ -115,12 +127,14 @@ pub(crate) fn apply_model_auth_async(
     builder: AsyncRequestBuilder,
     provider: &NativeProviderProfile,
 ) -> AgentRuntimeResult<AsyncRequestBuilder> {
-    let api_key = resolve_api_key(provider).ok_or_else(|| {
+    let secret = resolve_api_key(provider).ok_or_else(|| {
         errors::configuration_error(
             provider,
             format!("API key is not configured for provider {}", provider.label),
         )
     })?;
+    let api_key = super::super::subscription::bearer_secret(&provider.route_id, &secret);
+    let builder = apply_subscription_headers_async(builder, provider, &secret);
     let Some(header_name) = provider
         .auth_header
         .as_deref()
@@ -133,6 +147,17 @@ pub(crate) fn apply_model_auth_async(
         AgentRuntimeError::Core(format!("invalid auth header `{header_name}`: {error}"))
     })?;
     Ok(builder.header(header_name, api_key))
+}
+
+fn apply_subscription_headers_async(
+    mut builder: AsyncRequestBuilder,
+    provider: &NativeProviderProfile,
+    secret: &str,
+) -> AsyncRequestBuilder {
+    for (name, value) in super::super::subscription::extra_headers(&provider.route_id, secret) {
+        builder = builder.header(name, value);
+    }
+    builder
 }
 
 #[cfg(test)]

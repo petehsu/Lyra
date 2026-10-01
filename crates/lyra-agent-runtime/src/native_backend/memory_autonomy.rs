@@ -330,16 +330,10 @@ pub(crate) fn proactive_trigger_registry() -> Value {
 }
 
 pub(crate) fn proactive_list(payload: Value) -> AgentRuntimeResult<Value> {
-    let (root, enabled, disabled) = {
-        let state = state()
-            .lock()
-            .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
-        (
-            state.root.clone(),
-            state.config.proactive_enabled,
-            state.config.proactive_disabled_triggers.clone(),
-        )
-    };
+    // Do not call state() here. That hydrates every transcript, so the
+    // scheduler's first wake timed out and both host processes sat on ~1GB.
+    let root = runtime_root();
+    let (enabled, disabled) = proactive_flags_from_disk(&root);
     let status = string_opt(&payload, "status").or_else(|| Some("pending".to_string()));
     let limit = payload
         .get("limit")
@@ -698,6 +692,16 @@ fn create_memory_conflict_clarification(
         );
         let _ = state.save_state();
     }
+}
+
+fn proactive_flags_from_disk(root: &Path) -> (bool, HashSet<String>) {
+    let Some(state) = read_json::<NativeStateFile>(&root.join("state.json")) else {
+        return (true, HashSet::new());
+    };
+    (
+        state.config.proactive_enabled,
+        state.config.proactive_disabled_triggers,
+    )
 }
 
 fn proactive_enabled_for(trigger_type: &str) -> bool {

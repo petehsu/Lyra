@@ -2,6 +2,7 @@ import { AppEmptyState, AppLoadingState } from "@renderer/ui/components";
 
 import type { AgentSessionSnapshot } from "../../../shared/desktop-bridge";
 import { agentSessionToChatMessages } from "../agent-session-view-model";
+import { APP_CONFIG } from "../ai-panel/lyra-agents/core/config";
 import { inlineReferenceLabel } from "../ai-panel/lyra-agents/features/chat/message-citation";
 import { DataContextProvider, Message, createDataProviderValue } from "../ai-panel/lyra-agents";
 import type { AgentSessionHistorySurfaceProps } from "./types";
@@ -43,7 +44,9 @@ export const AgentSessionPreviewPane = ({
     );
   }
 
-  const messages = agentSessionToChatMessages(snapshot).map((message) => ({
+  const messages = agentSessionToChatMessages(snapshot, {
+    messageLimitFromEnd: APP_CONFIG.messageWindow.initialRenderCount
+  }).map((message) => ({
     ...message,
     rollback: null
   }));

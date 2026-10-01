@@ -182,8 +182,28 @@ const artifactDirs = (options: CliOptions): readonly string[] => {
 
 const executableNames = (target: DesktopTarget): readonly string[] =>
   target.platform === "win32"
-    ? ["lyrad.exe", "lyra.exe", "lyra-performance-helper.exe", "lyra-bootstrap.exe", "lyra-wasi-runner.exe"]
-    : ["lyrad", "lyra", "lyra-performance-helper", "lyra-bootstrap", "lyra-wasi-runner"];
+    ? [
+        "lyrad.exe",
+        "lyra-agent-host.exe",
+        "lyra-terminal-host.exe",
+        "lyra-files-host.exe",
+        "lyra-scheduler-host.exe",
+        "lyra.exe",
+        "lyra-performance-helper.exe",
+        "lyra-bootstrap.exe",
+        "lyra-wasi-runner.exe"
+      ]
+    : [
+        "lyrad",
+        "lyra-agent-host",
+        "lyra-terminal-host",
+        "lyra-files-host",
+        "lyra-scheduler-host",
+        "lyra",
+        "lyra-performance-helper",
+        "lyra-bootstrap",
+        "lyra-wasi-runner"
+      ];
 
 const libraryNames = (stem: string, target: DesktopTarget): readonly string[] => {
   if (target.platform === "win32") {

@@ -266,6 +266,9 @@ pub(crate) struct NativeSession {
     pub(crate) dialog_dirty_from: Option<usize>,
     #[serde(default, skip)]
     pub(crate) persisted_dialog_len: usize,
+    /// False means `snapshot.messages` was not read. Saving must not rewrite dialog rows.
+    #[serde(default, skip)]
+    pub(crate) dialog_loaded: bool,
     /// Ephemeral sessions back the temporary plan-chat capsule: they are seeded
     /// with plan context, never persisted to disk, never shown in the session
     /// list, and are discarded when the capsule closes. They must never become
@@ -413,6 +416,12 @@ pub(crate) struct NativeAccount {
     pub(crate) active: bool,
     pub(crate) configured: bool,
     pub(crate) detail: Option<String>,
+    #[serde(default)]
+    pub(crate) email: Option<String>,
+    #[serde(default)]
+    pub(crate) display_name: Option<String>,
+    #[serde(default)]
+    pub(crate) avatar_url: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

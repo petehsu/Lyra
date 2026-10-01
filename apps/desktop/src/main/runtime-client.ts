@@ -103,6 +103,8 @@ export type LyraRuntimeClientOptions = {
   readonly agentStorageRoot: string;
   readonly expectedComponentVersion?: string;
   readonly maxRuntimeFrameBytes?: number;
+  readonly hostRole?: string;
+  readonly onRolePid?: (role: string, pid: number) => void;
 };
 
 export type LyraRuntimeClient = {
@@ -117,12 +119,13 @@ const sleep = async (ms: number): Promise<void> => {
   await new Promise((resolve) => setTimeout(resolve, ms));
 };
 
-const resolveSocketPath = (storageRoot: string): string => {
+const resolveSocketPath = (storageRoot: string, hostRole?: string): string => {
   if (process.platform === "win32") {
-    const key = storageRoot.replace(/[^a-zA-Z0-9]/g, "_");
+    const key = `${storageRoot}-${hostRole ?? "legacy"}`.replace(/[^a-zA-Z0-9]/g, "_");
     return `\\\\.\\pipe\\lyra-runtime-${key}`;
   }
-  return path.join(storageRoot, "runtime", "lyrad.sock");
+  const file = hostRole === undefined ? "lyrad.sock" : `${hostRole}.sock`;
+  return path.join(storageRoot, "runtime", file);
 };
 
 const resolveRuntimeBinaryName = (): string =>
@@ -424,16 +427,23 @@ const waitForPidsToExit = async (pids: readonly number[], timeoutMs: number): Pr
 };
 
 export const stopRuntimeDaemon = async (storageRoot: string): Promise<void> => {
-  const socketPath = resolveSocketPath(storageRoot);
-  if (process.platform === "win32") {
-    try {
-      fs.unlinkSync(socketPath);
-    } catch {
-      // pipe already gone
+  const sockets = [
+    resolveSocketPath(storageRoot),
+    ...["agent", "terminal", "files", "scheduler", "services", "exec"].map((role) =>
+      resolveSocketPath(storageRoot, role)
+    )
+  ];
+  for (const socketPath of sockets) {
+    if (process.platform === "win32") {
+      try {
+        fs.unlinkSync(socketPath);
+      } catch {
+        // pipe already gone
+      }
+      continue;
     }
-    return;
+    await stopStaleUnixRuntime(socketPath);
   }
-  await stopStaleUnixRuntime(socketPath);
 };
 
 const stopStaleUnixRuntime = async (socketPath: string): Promise<void> => {
@@ -460,7 +470,7 @@ const stopStaleUnixRuntime = async (socketPath: string): Promise<void> => {
 export const createLyraRuntimeClient = (
   options: LyraRuntimeClientOptions
 ): LyraRuntimeClient => {
-  const socketPath = resolveSocketPath(options.storageRoot);
+  const socketPath = resolveSocketPath(options.storageRoot, options.hostRole);
   ensureSocketParent(socketPath);
   ensureAgentStoragePaths(options);
   const binaryPath = resolveRuntimeBinaryPath();
@@ -696,15 +706,35 @@ export const createLyraRuntimeClient = (
       return;
     }
 
-    child = spawn(binaryPath, ["--socket", socketPath], {
+    const hostBinaryName =
+      options.hostRole === undefined || options.hostRole === "services" || options.hostRole === "exec"
+        ? undefined
+        : process.platform === "win32"
+          ? `lyra-${options.hostRole}-host.exe`
+          : `lyra-${options.hostRole}-host`;
+    const hostBinaryPath =
+      hostBinaryName === undefined
+        ? undefined
+        : path.join(path.dirname(binaryPath), hostBinaryName);
+    const program =
+      hostBinaryPath !== undefined && fs.existsSync(hostBinaryPath) ? hostBinaryPath : binaryPath;
+    const args =
+      program === binaryPath && options.hostRole !== undefined
+        ? ["--role", options.hostRole, "--socket", socketPath]
+        : ["--socket", socketPath];
+    child = spawn(program, args, {
       cwd: resolveRuntimeWorkingDirectory(),
       stdio: "pipe",
       windowsHide: true,
       env: {
         ...buildRuntimeDaemonEnv(process.env, options, process.execPath),
-        LYRA_DAEMON_WATCHER_BIN: binaryPath
+        LYRA_DAEMON_WATCHER_BIN: binaryPath,
+        ...(options.hostRole === undefined ? {} : { LYRA_HOST_ROLE: options.hostRole })
       }
     });
+    if (child.pid !== undefined && options.hostRole !== undefined) {
+      options.onRolePid?.(options.hostRole, child.pid);
+    }
     child.stdout.on("data", (chunk) => {
       const text = chunk.toString().trim();
       if (text.length > 0) {
@@ -714,6 +744,10 @@ export const createLyraRuntimeClient = (
     child.stderr.on("data", (chunk) => {
       const text = chunk.toString().trim();
       if (text.length > 0) {
+        const execPid = /exec pid (\d+)/.exec(text);
+        if (execPid?.[1] !== undefined) {
+          options.onRolePid?.("exec", Number(execPid[1]));
+        }
         console.warn(`[lyrad] ${text}`);
       }
     });

@@ -192,8 +192,8 @@ export const useWorkbenchBrowserLayoutSync = ({
   }, [desktopApi]);
 
   const requestLayoutSync = useCallback((): void => {
-    // During splitter drags, coalesce to one sync per animation frame so the
-    // embedded BrowserView tracks the sash without the old ~48ms throttle lag.
+    // One sync per frame while the sash moves, so the native page stays in
+    // the pane. Skipping this leaves the page painted over the shell.
     scheduleSync(getIsLayoutResizing() ? { force: true } : undefined);
   }, [scheduleSync]);
 

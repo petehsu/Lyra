@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
 
 import type { DiffHunk } from "../../core/types";
@@ -46,6 +46,30 @@ describe("VirtualizedDiffView", () => {
     ).toBe(3);
     expect(screen.getByText("added line")).toBeTruthy();
     expect(screen.getAllByText("removed line").length).toBeGreaterThanOrEqual(1);
+  });
+
+  test("running diff follows the bottom until the pointer hovers it", () => {
+    const hunk = (text: string): DiffHunk => ({
+      startLine: 1,
+      lines: [{ kind: "add", text }]
+    });
+    const view = render(<VirtualizedDiffView hunks={[hunk("one")]} running />);
+    const scroller = document.querySelector(".lyra-agents-diff-viewport") as HTMLDivElement;
+    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 40 });
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 200 });
+    scroller.scrollTop = 0;
+
+    view.rerender(<VirtualizedDiffView hunks={[hunk("one"), hunk("two")]} running />);
+    expect(scroller.scrollTop).toBe(200);
+
+    fireEvent.mouseEnter(scroller);
+    scroller.scrollTop = 10;
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 280 });
+    view.rerender(<VirtualizedDiffView hunks={[hunk("one"), hunk("two"), hunk("three")]} running />);
+    expect(scroller.scrollTop).toBe(10);
+
+    fireEvent.mouseLeave(scroller);
+    expect(scroller.scrollTop).toBe(280);
   });
 
   test("returns null when there are no diff lines", () => {

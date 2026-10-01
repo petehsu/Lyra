@@ -24,6 +24,30 @@ pub(crate) fn risk_identifier_mutates(risk: &str) -> bool {
     !risk.trim().eq_ignore_ascii_case("read")
 }
 
+pub(crate) async fn run_exec_tool(payload: Value) -> Value {
+    let text = |key: &str| {
+        payload
+            .get(key)
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string()
+    };
+    let arguments = payload.get("arguments").cloned().unwrap_or(Value::Null);
+    native_executor::execute_native_tool_adapter_with_dispatcher(
+        &text("sessionId"),
+        &text("turnId"),
+        &CancellationToken::new(),
+        &text("toolCallId"),
+        &text("toolName"),
+        &text("displayName"),
+        &text("action"),
+        arguments,
+        &text("startedAt"),
+        None,
+    )
+    .await
+}
+
 mod artifact;
 mod artifacts;
 mod browser_adapter;

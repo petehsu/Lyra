@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { DiffHunk } from "../../core/types";
+import { useFollowBottomUntilHover } from "./use-follow-bottom-until-hover";
 
 /** Matches `.lyra-agents-diff-line` single-line row height in agents.scss. */
 export const DIFF_LINE_HEIGHT_PX = 20;
@@ -94,13 +95,15 @@ export function VirtualizedDiffView({
     };
   }, [fill, lines.length]);
 
-  useEffect(() => {
-    if (!running) return;
-    const viewport = viewportRef.current;
-    if (viewport === null) return;
-    viewport.scrollTop = viewport.scrollHeight;
-    setScrollTop(viewport.scrollTop);
-  }, [lines.length, running]);
+  const pinVirtualWindow = useCallback((scroller: HTMLElement) => {
+    setScrollTop(scroller.scrollTop);
+  }, []);
+  const followBottom = useFollowBottomUntilHover(
+    viewportRef,
+    running,
+    lines.length,
+    pinVirtualWindow,
+  );
 
   if (lines.length === 0) {
     return null;
@@ -120,6 +123,8 @@ export function VirtualizedDiffView({
         .join(" ")}
       data-scrollable="true"
       style={fill ? { height: "100%", maxHeight: "none" } : { maxHeight: DIFF_VIEWPORT_MAX_HEIGHT_PX }}
+      onMouseEnter={followBottom.onMouseEnter}
+      onMouseLeave={followBottom.onMouseLeave}
       onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
     >
       <div className="lyra-agents-diff-viewport-track" style={{ minHeight: contentHeight }}>

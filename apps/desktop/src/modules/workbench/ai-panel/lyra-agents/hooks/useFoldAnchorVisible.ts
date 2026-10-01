@@ -36,26 +36,27 @@ export function useFoldAnchorVisible(anchorRef: RefObject<HTMLElement | null>): 
   const [visible, setVisible] = useState(true);
 
   useEffect(() => {
-    let raf = 0;
-
-    const update = () => {
-      if (raf) return;
-      raf = window.requestAnimationFrame(() => {
-        raf = 0;
-        const anchor = anchorRef.current;
-        setVisible(anchor ? isFoldAnchorVisuallyAvailable(anchor) : true);
-      });
-    };
-
-    update();
-    window.addEventListener("scroll", update, true);
-    window.addEventListener("resize", update);
-
-    return () => {
-      if (raf) window.cancelAnimationFrame(raf);
-      window.removeEventListener("scroll", update, true);
-      window.removeEventListener("resize", update);
-    };
+    const anchor = anchorRef.current;
+    if (anchor === null || typeof IntersectionObserver !== "function") {
+      return undefined;
+    }
+    const target = foldControl(anchor);
+    const scroller = target.closest(FOLD_SCROLL_ROOT);
+    const observer = new IntersectionObserver((entries) => {
+      const entry = entries[entries.length - 1];
+      if (entry === undefined) {
+        return;
+      }
+      const next = entry.isIntersecting
+        && entry.intersectionRect.width > 0
+        && entry.intersectionRect.height > 0;
+      setVisible((current) => (current === next ? current : next));
+    }, {
+      root: scroller instanceof HTMLElement ? scroller : null,
+      threshold: 0
+    });
+    observer.observe(target);
+    return () => observer.disconnect();
   }, [anchorRef]);
 
   return visible;

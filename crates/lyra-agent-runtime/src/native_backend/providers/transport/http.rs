@@ -55,7 +55,10 @@ fn ensure_url_scheme(value: &str) -> String {
 }
 
 fn should_append_v1(provider: &NativeProviderProfile, path: &str, base_url: &str) -> bool {
-    if has_api_version_segment(base_url) {
+    if has_api_version_segment(base_url)
+        || provider.route_id == super::super::routes::subscription::CHATGPT
+        || provider.route_id == super::super::routes::subscription::COPILOT
+    {
         return false;
     }
     if !matches!(

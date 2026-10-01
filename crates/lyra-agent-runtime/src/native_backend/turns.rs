@@ -80,6 +80,7 @@ pub(crate) fn send_turn(payload: Value) -> AgentRuntimeResult<Value> {
             .lock()
             .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
         let session_id = state.resolve_session_id(requested_session)?;
+        state.ensure_dialog(&session_id)?;
         if only_if_idle {
             let turn_status = state
                 .sessions

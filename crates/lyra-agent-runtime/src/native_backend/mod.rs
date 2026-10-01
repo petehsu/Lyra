@@ -28,6 +28,12 @@ use crate::{
     recovering_mutex::RecoveringMutex as Mutex,
 };
 
+pub(crate) fn relay_runtime_event(event_json: String) {
+    if let Some(callback) = state::event_callback() {
+        callback(event_json);
+    }
+}
+
 const DEFAULT_TOOL_CONTENT_CHARS: usize = 16_000;
 const DEFAULT_FILE_READ_BYTES: usize = 96_000;
 const MAX_FILE_READ_BYTES: usize = 1_000_000;

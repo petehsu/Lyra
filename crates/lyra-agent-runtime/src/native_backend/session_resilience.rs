@@ -294,6 +294,7 @@ mod tests {
             dirty: false,
             dialog_dirty_from: None,
             persisted_dialog_len: 0,
+            dialog_loaded: true,
             ephemeral: false,
         }
     }

@@ -41,9 +41,13 @@ pub(crate) fn read_usage_stats(payload: Value) -> AgentRuntimeResult<Value> {
         .clamp(MIN_RANGE_DAYS, MAX_RANGE_DAYS);
     let generated_at = Utc::now();
     let today = generated_at.with_timezone(&tz).date_naive();
-    let runtime_state = state()
+    let mut runtime_state = state()
         .lock()
         .map_err(|_| AgentRuntimeError::Core("agent runtime state lock failed".to_string()))?;
+    let ids = runtime_state.sessions.keys().cloned().collect::<Vec<_>>();
+    for id in ids {
+        runtime_state.ensure_dialog(&id)?;
+    }
     let sessions = runtime_state.sessions.values().collect::<Vec<_>>();
     Ok(aggregate_usage_stats(
         &sessions,
@@ -338,6 +342,7 @@ mod tests {
             dirty: false,
             dialog_dirty_from: None,
             persisted_dialog_len: 0,
+            dialog_loaded: true,
             ephemeral: false,
         }
     }

@@ -72,6 +72,9 @@ import {
   ensureLyraStorageRoots,
   resolveLyraStorageRoots
 } from "./storage";
+import { registerMainWindowRenderer } from "./process-roles";
+import { logProcessRoleSample } from "./process-role-sampler";
+import { traceRendererCpu } from "./renderer-cpu-trace";
 import {
   notifyOpenUninstaller,
   readForceUninstaller,
@@ -706,6 +709,7 @@ const attachDevelopmentLogging = (window: BrowserWindow): void => {
 
   window.webContents.once("did-finish-load", () => {
     window.setTitle(LYRA_APP_NAME);
+    traceRendererCpu(window);
 
     setTimeout(() => {
       void window.webContents
@@ -995,6 +999,8 @@ const createMainWindow = (): BrowserWindow => {
   window.webContents.once("did-finish-load", () => {
     didFinishLoad = true;
     linuxCompatBridge.markWindowReady();
+    registerMainWindowRenderer(window.webContents.getOSProcessId());
+    logProcessRoleSample();
   });
   window.webContents.on("render-process-gone", (_event, details) => {
     linuxCompatBridge.recordRendererGone(details);
@@ -1530,6 +1536,10 @@ app.whenReady().then(async () => {
   }
   mainWindow = createMainWindow();
   publishWindowState(mainWindow);
+  const processRoleSample = setInterval(logProcessRoleSample, 60_000);
+  app.once("before-quit", () => {
+    clearInterval(processRoleSample);
+  });
   const initialCallbackUrl = readAuthCallbackUrl(process.argv);
   if (initialCallbackUrl !== undefined) {
     dispatchAuthCallbackUrl(initialCallbackUrl);

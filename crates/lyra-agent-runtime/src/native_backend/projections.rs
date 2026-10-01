@@ -413,6 +413,9 @@ mod tests {
                 active: true,
                 configured: true,
                 detail: None,
+                email: None,
+                display_name: None,
+                avatar_url: None,
             }],
             ..NativeConfig::default()
         };

@@ -62,11 +62,17 @@ import { createRafCoalescer } from "../../../../shell/raf-coalesce";
 // ponytail: sticky anchor offset from the top of the scroll viewport.
 const STICKY_ANCHOR_TOP_OFFSET_PX = 18;
 const STICKY_ANCHOR_PREVIEW_CHARS = 96;
+
+type StickySlot = {
+  readonly id: string;
+  readonly bottom: number;
+  readonly user: boolean;
+};
 const GIT_STATUS_POLL_MS = 5000;
 
 /** Keep the last message above the floating composer, including permission/decision popups. */
 export const syncComposerStackHeight = (scroll: HTMLElement, wrap: HTMLElement): number => {
-  const height = Math.max(wrap.getBoundingClientRect().height, wrap.offsetHeight);
+  const height = wrap.offsetHeight;
   if (height <= 0) {
     return 0;
   }
@@ -338,26 +344,89 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
   const scrollAnchorDistanceRef = useRef(0);
   const citationScrollCompletedTokenRef = useRef<number | null>(null);
   const stickyAnchorFrameRef = useRef<number | null>(null);
+  const scrollTopRef = useRef(0);
+  const stickySlotsRef = useRef<{ height: number; slots: readonly StickySlot[] } | null>(null);
 
   const updateStickyAnchor = useCallback(() => {
     stickyAnchorFrameRef.current = null;
     const el = scrollRef.current;
     if (el === null) return;
     if (el.scrollTop <= 0) {
-      setStickyMessageId(null);
+      setStickyMessageId((current) => (current === null ? current : null));
       return;
     }
-    const anchorY = el.getBoundingClientRect().top + STICKY_ANCHOR_TOP_OFFSET_PX;
-    let stickyId: string | null = null;
-    for (const slot of el.querySelectorAll<HTMLElement>("[data-chat-message-id]")) {
-      const slotBottom = slot.getBoundingClientRect().bottom;
-      if (slotBottom > anchorY) break;
-      if (slot.dataset.chatMessageAuthor === "user") {
-        stickyId = slot.dataset.chatMessageId ?? null;
+    // Offscreen history uses content-visibility. Reading each slot's rect on
+    // scroll forces those rows to layout; cache offsets until the thread height changes.
+    const height = el.scrollHeight;
+    let cached = stickySlotsRef.current;
+    if (cached === null || cached.height !== height) {
+      const slots: StickySlot[] = [];
+      for (const slot of el.querySelectorAll<HTMLElement>("[data-chat-message-id]")) {
+        const id = slot.dataset.chatMessageId ?? "";
+        if (id.length === 0) continue;
+        slots.push({
+          id,
+          bottom: slot.offsetTop + slot.offsetHeight,
+          user: slot.dataset.chatMessageAuthor === "user"
+        });
       }
+      cached = { height, slots };
+      stickySlotsRef.current = cached;
     }
-    setStickyMessageId(stickyId);
+    const line = el.scrollTop + STICKY_ANCHOR_TOP_OFFSET_PX;
+    let stickyId: string | null = null;
+    for (const slot of cached.slots) {
+      if (slot.bottom > line) break;
+      if (slot.user) stickyId = slot.id;
+    }
+    setStickyMessageId((current) => (current === stickyId ? current : stickyId));
   }, []);
+
+  const stickyMessageKey = messages.map((message) => message.id).join("\0");
+  useEffect(() => {
+    const root = scrollRef.current;
+    if (root === null || typeof IntersectionObserver !== "function") {
+      return undefined;
+    }
+    const slots = [...root.querySelectorAll<HTMLElement>("[data-chat-message-id]")];
+    const above = new Set<string>();
+    let frame = 0;
+    const publish = (): void => {
+      frame = 0;
+      if (scrollTopRef.current <= 0) {
+        setStickyMessageId((current) => (current === null ? current : null));
+        return;
+      }
+      let stickyId: string | null = null;
+      for (const slot of slots) {
+        const id = slot.dataset.chatMessageId ?? "";
+        if (!above.has(id)) break;
+        if (slot.dataset.chatMessageAuthor === "user" && id.length > 0) {
+          stickyId = id;
+        }
+      }
+      setStickyMessageId((current) => (current === stickyId ? current : stickyId));
+    };
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        const slot = entry.target;
+        if (!(slot instanceof HTMLElement)) continue;
+        const id = slot.dataset.chatMessageId ?? "";
+        if (id.length === 0) continue;
+        const rootTop = entry.rootBounds?.top ?? 0;
+        const passed = entry.boundingClientRect.bottom <= rootTop + STICKY_ANCHOR_TOP_OFFSET_PX;
+        if (passed) above.add(id);
+        else above.delete(id);
+      }
+      if (frame !== 0) return;
+      frame = window.requestAnimationFrame(publish);
+    }, { root, threshold: 0 });
+    for (const slot of slots) observer.observe(slot);
+    return () => {
+      observer.disconnect();
+      if (frame !== 0) window.cancelAnimationFrame(frame);
+    };
+  }, [stickyMessageKey]);
 
   const scheduleStickyAnchorUpdate = useCallback(() => {
     if (stickyAnchorFrameRef.current !== null) return;
@@ -369,18 +438,20 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     const el = scrollRef.current;
     if (!el) return;
 
+    const scrollTop = el.scrollTop;
+    scrollTopRef.current = scrollTop;
     autoScroll.handleScroll();
     const atBottom =
-      el.scrollHeight - el.scrollTop - el.clientHeight < APP_CONFIG.scroll.atBottomThreshold;
-    setIsAtBottom(atBottom);
-    scrollAnchorDistanceRef.current = atBottom ? 0 : el.scrollHeight - el.scrollTop;
-    if (el.scrollTop <= 0) {
+      el.scrollHeight - scrollTop - el.clientHeight < APP_CONFIG.scroll.atBottomThreshold;
+    setIsAtBottom((current) => (current === atBottom ? current : atBottom));
+    scrollAnchorDistanceRef.current = atBottom ? 0 : el.scrollHeight - scrollTop;
+    if (scrollTop <= 0) {
       if (stickyAnchorFrameRef.current !== null) {
         window.cancelAnimationFrame(stickyAnchorFrameRef.current);
         stickyAnchorFrameRef.current = null;
       }
       setStickyMessageId(null);
-    } else {
+    } else if (typeof IntersectionObserver !== "function") {
       scheduleStickyAnchorUpdate();
     }
 
@@ -388,7 +459,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     if (
       messageWindow.canLoadEarlier &&
       !loadingEarlierRef.current &&
-      el.scrollTop <= APP_CONFIG.scroll.topLoadThreshold
+      scrollTop <= APP_CONFIG.scroll.topLoadThreshold
     ) {
       loadingEarlierRef.current = true;
       pendingEarlierAnchorRef.current = true;
@@ -425,20 +496,12 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     };
   }, []);
 
-  // Following: pin to bottom as content grows. Unlocked: only restore position
-  // when older messages were prepended; appended stream must not drag the viewport.
+  // New messages pin once. Streaming height is handled after resize settles.
+  // Reading scrollHeight on every commit forces the whole thread to layout.
+  const followKey = `${messages.length}:${messages[messages.length - 1]?.id ?? ""}:${composerStackHeight}`;
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-
-    if (!autoScroll.userScrolled()) {
-      autoScroll.follow();
-      const atBottom =
-        el.scrollHeight - el.scrollTop - el.clientHeight < APP_CONFIG.scroll.atBottomThreshold;
-      setIsAtBottom(atBottom);
-      scrollAnchorDistanceRef.current = atBottom ? 0 : el.scrollHeight - el.scrollTop;
-      return;
-    }
 
     if (pendingEarlierAnchorRef.current) {
       pendingEarlierAnchorRef.current = false;
@@ -451,11 +514,10 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
       return;
     }
 
-    const atBottom =
-      el.scrollHeight - el.scrollTop - el.clientHeight < APP_CONFIG.scroll.atBottomThreshold;
-    setIsAtBottom(atBottom);
-    scrollAnchorDistanceRef.current = atBottom ? 0 : el.scrollHeight - el.scrollTop;
-  }, [autoScroll.follow, autoScroll.userScrolled, composerStackHeight, messages]);
+    if (autoScroll.userScrolled()) return;
+    autoScroll.follow();
+    setIsAtBottom(true);
+  }, [autoScroll.follow, autoScroll.userScrolled, followKey]);
 
   useEffect(() => () => {
     if (stickyAnchorFrameRef.current !== null) {

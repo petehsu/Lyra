@@ -235,8 +235,8 @@ const createLyraAgentCliLaunch = (
   const runtimeRoot = join(modulesRoot, "runtime");
   const agentRoot = join(modulesRoot, "agent");
   const runtimeSocket = process.platform === "win32"
-    ? `\\\\.\\pipe\\lyra-runtime-${runtimeRoot.replace(/[^a-zA-Z0-9]/g, "_")}`
-    : join(runtimeRoot, "runtime", "lyrad.sock");
+    ? `\\\\.\\pipe\\lyra-runtime-${`${runtimeRoot}-agent`.replace(/[^a-zA-Z0-9]/g, "_")}`
+    : join(runtimeRoot, "runtime", "agent.sock");
   const env = terminalEnvPairsToMap(request.env);
   if (request.sessionId !== undefined && request.sessionId.trim().length > 0) {
     env.set("LYRA_TERMINAL_SESSION_ID", request.sessionId.trim());

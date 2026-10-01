@@ -371,7 +371,8 @@ export function Composer({
     label: model.label,
     icon: (
       <AgentProviderBrandIcon
-        label={model.provider ?? model.label}
+        imageUrl={model.accountAvatarUrl}
+        label={model.accountName ?? model.accountEmail ?? model.provider ?? model.label}
         modelId={model.model}
         provider={model.provider}
         providerId={model.providerId}

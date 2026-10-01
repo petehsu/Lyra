@@ -48,6 +48,7 @@ export type SettingsAiLabels = {
   readonly modelsDeleteLabel: string;
   readonly modelsDeleteConfirmTitle: string;
   readonly modelsDeleteConfirmDescription: string;
+  readonly modelsDeleteProviderDescription: string;
   readonly modelsDeleteConfirmAction: string;
   readonly skillsTitle: string;
   readonly skillsSearchPlaceholder: string;
@@ -239,8 +240,12 @@ export type SettingsAiModel = {
   readonly saveAndDiscoverAgentProviderProfile?: (
     request: AgentProviderProfileSaveRequest
   ) => Promise<AgentModelCatalogSnapshot | null>;
-  readonly refreshAgentModels?: (providerId: string) => Promise<AgentModelCatalogSnapshot | null>;
+  readonly refreshAgentModels?: (
+    providerId: string,
+    options?: { readonly listOnly?: boolean },
+  ) => Promise<AgentModelCatalogSnapshot | null>;
   readonly refreshAgentModelCatalog?: () => Promise<void>;
+  readonly adoptAgentModelCatalog?: (catalog: AgentModelCatalogSnapshot) => void;
   readonly setAgentModelEnabled?: (
     request: AgentModelEnableRequest
   ) => Promise<void>;

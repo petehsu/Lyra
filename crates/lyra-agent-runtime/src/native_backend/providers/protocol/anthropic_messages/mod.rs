@@ -68,6 +68,12 @@ pub(crate) fn apply_headers(
     builder: RequestBuilder,
     provider: &NativeProviderProfile,
 ) -> AgentRuntimeResult<RequestBuilder> {
+    if super::super::subscription::uses_claude_code_contract(&provider.route_id)
+        || provider.route_id == super::super::routes::subscription::MINIMAX
+    {
+        return transport::auth::apply_model_auth(builder, provider)
+            .map(|builder| builder.header("anthropic-version", ANTHROPIC_VERSION));
+    }
     let api_key = transport::auth::resolve_api_key(provider).ok_or_else(|| {
         errors::configuration_error(
             provider,
@@ -99,6 +105,12 @@ pub(crate) fn apply_headers_async(
     builder: AsyncRequestBuilder,
     provider: &NativeProviderProfile,
 ) -> AgentRuntimeResult<AsyncRequestBuilder> {
+    if super::super::subscription::uses_claude_code_contract(&provider.route_id)
+        || provider.route_id == super::super::routes::subscription::MINIMAX
+    {
+        return transport::auth::apply_model_auth_async(builder, provider)
+            .map(|builder| builder.header("anthropic-version", ANTHROPIC_VERSION));
+    }
     let api_key = transport::auth::resolve_api_key(provider).ok_or_else(|| {
         errors::configuration_error(
             provider,

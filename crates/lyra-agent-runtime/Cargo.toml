@@ -32,7 +32,7 @@ minijinja.workspace = true
 rand.workspace = true
 tiny_http.workspace = true
 webbrowser.workspace = true
-reqwest = { workspace = true, features = ["blocking", "json", "multipart", "rustls-tls", "system-proxy", "stream"] }
+reqwest = { workspace = true, features = ["blocking", "http2", "json", "multipart", "rustls-tls", "system-proxy", "stream"] }
 http.workspace = true
 rmcp = { workspace = true, features = ["auth", "client", "transport-child-process", "transport-streamable-http-client-reqwest", "reqwest"] }
 rmcp-reqwest = { package = "reqwest", version = "0.13.2", default-features = false }

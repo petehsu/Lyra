@@ -30,6 +30,7 @@ import type {
 } from "../../../shared/desktop-bridge";
 import type { AgentProviderRouteAdjustment } from "../../../shared/agent";
 import { AgentProviderBrandIcon } from "../agent-provider-brand-icon";
+import { SubscriptionRouteLogin } from "./subscription-accounts";
 import type { GlobalDialogModel } from "../global-dialog";
 import { resolveElectronFilePath } from "@workbench/shell/electron-file-path";
 import {
@@ -313,6 +314,34 @@ const PROVIDER_ROUTE_ALIASES: readonly {
   {
     match: (route) => route.providerId.includes("xuanyuan") || route.label.toLocaleLowerCase().includes("xuanyuan"),
     values: ["xuanyuan", "轩辕", "度小满"],
+  },
+  {
+    match: (route) => route.catalogSection === "subscription" || route.authKind.startsWith("subscription"),
+    values: ["subscription", "订阅", "账号", "登录"],
+  },
+  {
+    match: (route) => route.id === "claude_subscription" || route.label.toLocaleLowerCase().includes("claude"),
+    values: ["claude", "anthropic", "克劳德"],
+  },
+  {
+    match: (route) => route.id === "chatgpt_codex",
+    values: ["chatgpt", "codex", "openai", "gpt"],
+  },
+  {
+    match: (route) => route.id.startsWith("github_copilot"),
+    values: ["copilot", "github"],
+  },
+  {
+    match: (route) => route.id === "gemini_code_assist",
+    values: ["gemini", "google", "code assist"],
+  },
+  {
+    match: (route) => route.id === "grok_build" || route.id === "xai_oauth",
+    values: ["grok", "xai", "grok build"],
+  },
+  {
+    match: (route) => route.id === "qwen_portal",
+    values: ["qwen", "通义", "千问"],
   },
 ];
 
@@ -1371,10 +1400,16 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
     ? false
     : selectedProviderRoute.defaultBaseUrl === null
       || selectedProviderRoute.catalogSection === "custom"
-      || selectedProviderRoute.localBackend !== null;
+      || selectedProviderRoute.localBackend !== null
+      || (selectedProviderRoute.defaultBaseUrl?.includes("YOUR_") ?? false)
+      || (selectedProviderRoute.defaultBaseUrl?.includes("ACCOUNT.") ?? false);
   const selectedRouteAllowsAuth = selectedProviderRoute === null
     ? false
-    : !selectedProviderRoute.authKind.startsWith("none");
+    : !selectedProviderRoute.authKind.startsWith("none")
+      && (
+        !selectedProviderRoute.authKind.startsWith("subscription")
+        || selectedProviderRoute.authKind.includes("or-key")
+      );
   const renderedModels = useMemo<readonly SettingsAiRenderedModelEntry[]>(() =>
     (model.agentModelCatalog?.models ?? [])
       .filter((entry) => entry.available),
@@ -1481,7 +1516,7 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
   const confirmDeleteProviderGroup = (group: { readonly key: string; readonly label: string; readonly entries: readonly SettingsAiRenderedModelEntry[] }): void => {
     openDialog({
       title: labels.modelsDeleteConfirmTitle,
-      description: formatSettingsAiLabel(labels.modelsDeleteConfirmDescription, {
+      description: formatSettingsAiLabel(labels.modelsDeleteProviderDescription, {
         model: group.label,
       }),
       source: {
@@ -1497,12 +1532,7 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
           label: labels.modelsDeleteConfirmAction,
           tone: "danger",
           onSelect: () => {
-            for (const entry of group.entries) {
-              const provider = modelProviderKeys(entry)[0] ?? "";
-              if (provider.length > 0) {
-                void model.deleteAgentModel?.({ provider, model: entry.model });
-              }
-            }
+            void model.deleteAgentModel?.({ provider: group.key, scope: "provider" });
           },
         },
       ],
@@ -1511,7 +1541,7 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
 
   const providerRouteMatches = useMemo(() => {
     if (providerQuery.trim().length === 0) {
-      return providerRoutes;
+      return [...providerRoutes].sort((left, right) => left.label.localeCompare(right.label));
     }
     const ranked = providerRoutes
       .map((route, index) => ({
@@ -1684,8 +1714,11 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
           ? await model.saveAndDiscoverAgentProviderProfile(saveRequest)
           : await (async () => {
             await model.saveAgentProviderProfile?.(saveRequest);
-            return model.refreshAgentModels?.(profileName) ?? null;
+            return model.refreshAgentModels?.(profileName, { listOnly: true }) ?? null;
           })();
+        if (catalog == null) {
+          return;
+        }
         if (catalog?.routeAdjustment) {
           setRouteAdjustment(catalog.routeAdjustment);
           setProviderQuery(catalog.routeAdjustment.toLabel);
@@ -1707,20 +1740,19 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
     const saveRequest = buildProviderSaveRequest(
       discoveredModelEntries.length > 0 ? discoveredModelEntries : undefined
     );
-    if (saveRequest === null) {
+    if (saveRequest === null || selectedProviderRoute === null) {
       return;
     }
+    const discoverOnSave = selectedProviderRoute.modelDiscoverySupported
+      && discoveredModelEntries.length === 0
+      && model.saveAndDiscoverAgentProviderProfile !== undefined;
     void (async () => {
-      // Saving a newly entered MiMo key must perform the same verification as
-      // Discover. Do not refresh an unrelated default provider instead.
-      if (selectedProviderRoute?.providerId === "mimo"
-        && model.saveAndDiscoverAgentProviderProfile
-        && (providerApiKey.trim().length > 0 || discoveredModelEntries.length === 0)) {
-        const catalog = await model.saveAndDiscoverAgentProviderProfile(saveRequest);
-        if (catalog === null) return;
+      if (discoverOnSave) {
+        const catalog = await model.saveAndDiscoverAgentProviderProfile?.(saveRequest);
+        if (catalog === null || catalog === undefined) return;
       } else {
         await model.saveAgentProviderProfile?.(saveRequest);
-        await model.refreshAgentModelCatalog?.();
+        await model.refreshAgentModels?.(saveRequest.profileName, { listOnly: true });
       }
       setIsAddingModel(false);
       setSelectedProviderRouteId("");
@@ -1755,13 +1787,9 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
     // 若未 Discover（profile.models 为空），同样写入单条自定义模型。
     const saveRequest = buildProviderSaveRequest(mergedEntries);
     if (saveRequest !== null) {
-      void (async () => {
-        const catalog = await model.saveAndDiscoverAgentProviderProfile?.(saveRequest);
-        if (catalog?.routeAdjustment) {
-          setRouteAdjustment(catalog.routeAdjustment);
-          setProviderQuery(catalog.routeAdjustment.toLabel);
-        }
-      })();
+      void model.saveAgentProviderProfile?.(saveRequest).then(() =>
+        model.refreshAgentModels?.(saveRequest.profileName, { listOnly: true })
+      );
     }
   };
   const toggleDiscoveredModel = (id: string, enabled: boolean): void => {
@@ -1884,6 +1912,34 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
                       onValueChange={setProviderBaseUrl}
                     />
                   ) : null}
+                  {selectedProviderRoute.authKind.startsWith("subscription") ? (
+                    <SubscriptionRouteLogin
+                      routeId={selectedProviderRoute.id}
+                      baseUrl={providerBaseUrl}
+                      onConnected={(catalog) => {
+                        const previousModelEntries = [...(model.agentModelCatalog?.models ?? [])];
+                        const applyCatalog = (next: NonNullable<typeof catalog>) => {
+                          model.adoptAgentModelCatalog?.(next);
+                          const ids = discoveredModelIdsFromCatalog(
+                            next.models,
+                            selectedProviderRoute.id,
+                            previousModelEntries,
+                          );
+                          setDiscoveredModelIds(ids);
+                          setDisabledDiscoveredModelIds(new Set());
+                          setDiscoveryReturnedEmpty(ids.length === 0);
+                        };
+                        if (catalog != null) {
+                          applyCatalog(catalog);
+                          return;
+                        }
+                        void model.refreshAgentModels?.(selectedProviderRoute.id, { listOnly: true })
+                          .then((next) => {
+                            if (next != null) applyCatalog(next);
+                          });
+                      }}
+                    />
+                  ) : null}
                   {selectedRouteAllowsAuth ? (
                     <SettingsAiInputField
                       label={labels.keyLabel}
@@ -1984,7 +2040,9 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
                       </div>
                     ) : null}
                     <div className="lyra-software-store-item-list lyra-settings-ai-model-list-surface lyra-settings-ai-model-list-rows">
-                      {discoveredModelIds.map((id) => (
+                      {discoveredModelIds.map((id) => {
+                        const signedIn = renderedModels.find((entry) => entry.routeId === selectedProviderRoute.id);
+                        return (
                         <AppObjectRow
                           key={id}
                           as="div"
@@ -1994,14 +2052,15 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
                           icon={(
                             <AgentProviderBrandIcon
                               baseUrl={providerBaseUrl || selectedProviderRoute.defaultBaseUrl}
-                              label={selectedProviderRoute.label}
+                              imageUrl={signedIn?.accountAvatarUrl}
+                              label={signedIn?.accountEmail ?? selectedProviderRoute.label}
                               modelId={id}
                               providerId={selectedProviderRoute.providerId}
                               routeId={selectedProviderRoute.id}
                             />
                           )}
                           title={id}
-                          description={selectedProviderRoute.label}
+                          description={signedIn?.accountEmail ?? selectedProviderRoute.label}
                           actions={(
                             <AppSwitch
                               checked={!disabledDiscoveredModelIds.has(id)}
@@ -2013,7 +2072,8 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
                             />
                           )}
                         />
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -2041,13 +2101,14 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
                     icon={(
                       <AgentProviderBrandIcon
                         baseUrl={providerConfig?.baseUrl ?? null}
-                        label={group.label}
+                        imageUrl={firstEntry?.accountAvatarUrl}
+                        label={firstEntry?.accountName ?? firstEntry?.accountEmail ?? group.label}
                         providerId={firstEntry?.providerId}
                         routeId={firstEntry?.routeId}
                       />
                     )}
                     title={group.label}
-                    description={`${group.entries.length} ${labels.modelsTitle}`}
+                    description={firstEntry?.accountEmail ?? firstEntry?.accountName ?? `${group.entries.length} ${labels.modelsTitle}`}
                     onClick={() => {
                       setDrilledProviderKey(group.key);
                       setQuery("");
@@ -2100,9 +2161,12 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
               {visibleDrilledModels.map((entry) => {
                 const active = isCurrentModelEntry(entry, model, config);
                 const disabled = model.isSaving || !entry.available;
+                const managedCatalog = providerRoutes.some((route) =>
+                  route.id === entry.routeId
+                  && (route.catalogSection === "subscription" || route.authKind.startsWith("subscription")));
                 const providerConfig = configForModelEntry(entry, config);
                 const description = [
-                  entry.providerLabel ?? entry.providerKey ?? entry.provider ?? labels.noDefaultProvider,
+                  entry.accountEmail ?? entry.accountName ?? entry.providerLabel ?? entry.providerKey ?? entry.provider ?? labels.noDefaultProvider,
                   entry.detail ?? "",
                   ...([
                     ["operation.imageGeneration", "Image generation"],
@@ -2127,7 +2191,8 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
                     icon={(
                       <AgentProviderBrandIcon
                         baseUrl={providerConfig?.baseUrl ?? null}
-                        label={entry.providerLabel ?? entry.label}
+                        imageUrl={entry.accountAvatarUrl}
+                        label={entry.accountName ?? entry.accountEmail ?? entry.providerLabel ?? entry.label}
                         modelId={entry.model}
                         provider={entry.provider}
                         providerId={entry.providerId}
@@ -2147,6 +2212,7 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
                     }}
                     actions={(
                       <span className="lyra-settings-ai-model-actions">
+                        {managedCatalog ? null : (
                         <AppIconButton
                           aria-label={`${labels.modelsDeleteLabel}: ${entry.label}`}
                           title={labels.modelsDeleteLabel}
@@ -2160,6 +2226,7 @@ export const SettingsAiModelsView = ({ labels, model, openDialog }: SettingsAiMo
                         >
                           <Trash2 size={14} aria-hidden="true" />
                         </AppIconButton>
+                        )}
                         <AppSwitch
                           checked={entry.enabled}
                           disabled={disabled}

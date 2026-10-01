@@ -2413,6 +2413,19 @@
   object-fit: contain;
 }
 
+.lyra-agent-provider-brand-icon-avatar {
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.lyra-settings-ai-account-avatar {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
 [data-lyra-theme-tone="dark"] .lyra-agent-provider-brand-icon[data-lyra-brand-luma="dark"] svg,
 [data-lyra-theme-tone="light"] .lyra-agent-provider-brand-icon[data-lyra-brand-luma="light"] svg {
   filter: invert(1) hue-rotate(180deg);

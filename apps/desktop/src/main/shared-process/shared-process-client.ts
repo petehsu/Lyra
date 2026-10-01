@@ -5,6 +5,7 @@ import type {
   RuntimeEventListener,
   RuntimeRequestHandler
 } from "../runtime-client";
+import { registerProcessRole, type ProcessRole } from "../process-roles";
 
 // ─── Message protocol (shared with shared-process-main.ts) ─────────────────
 // ponytail: 双向消息类型。import type 在构建时擦除，utility 入口零运行时依赖。
@@ -25,6 +26,7 @@ export type SharedProcessMessage =
   | { readonly type: "response"; readonly id: string; readonly ok: boolean; readonly result?: unknown; readonly error?: SharedProcessError }
   | { readonly type: "host-request"; readonly id: string; readonly method: string; readonly payload: unknown }
   | { readonly type: "event"; readonly event: string; readonly payload: unknown }
+  | { readonly type: "role-pid"; readonly role: string; readonly pid: number }
   | { readonly type: "disposed" };
 
 // ─── Proxy ──────────────────────────────────────────────────────────────────
@@ -49,6 +51,8 @@ export type SharedProcessClientOptions = {
   readonly runtimeBinaryPath?: string;
   readonly runtimeComponentVersion?: string;
   readonly serviceName?: string;
+  readonly hostRole?: string;
+  readonly restartOnExit?: boolean;
 };
 
 export type SharedProcessRuntimeClient = LyraRuntimeClient & {
@@ -64,28 +68,56 @@ export type SharedProcessRuntimeClient = LyraRuntimeClient & {
  *                                        wrapper 把 daemon host-request 转发回 main 执行
  *   proxy.subscribe() ←──event────── utility: client.subscribe() ←──event── lyrad
  *
- * 消费者 (agent/terminal/lsp/performance) 零改动。
+ * 每个角色一个 utility。它负责拉起对应的 Rust 进程、在退出后重启，并用 MessagePort 把请求转过去。
  */
+const processRoleForHost = (role: string): ProcessRole | undefined => {
+  switch (role) {
+    case "agent":
+    case "services":
+    case "host":
+      return "host";
+    case "terminal":
+    case "files":
+    case "scheduler":
+    case "exec":
+      return role;
+    default:
+      return undefined;
+  }
+};
+
 export const createSharedProcessClient = (
   options: SharedProcessClientOptions
 ): SharedProcessRuntimeClient => {
-  const proc = utilityProcess.fork(options.modulePath, [], {
-    serviceName: options.serviceName ?? "lyra-shared-process",
-    env: {
-      ...process.env,
-      LYRA_SHARED_PROCESS_STORAGE_ROOT: options.storageRoot,
-      LYRA_SHARED_PROCESS_AGENT_STORAGE_ROOT: options.agentStorageRoot,
-      ...(options.runtimeBinaryPath === undefined
-        ? {}
-        : { LYRA_RUNTIME_BIN: options.runtimeBinaryPath }),
-      ...(options.runtimeComponentVersion === undefined
-        ? {}
-        : {
-            LYRA_RUNTIME_EXPECTED_COMPONENT_VERSION:
-              options.runtimeComponentVersion
-          })
+  const forkUtility = () => {
+    const proc = utilityProcess.fork(options.modulePath, [], {
+      serviceName: options.serviceName ?? "lyra-shared-process",
+      env: {
+        ...process.env,
+        LYRA_SHARED_PROCESS_STORAGE_ROOT: options.storageRoot,
+        LYRA_SHARED_PROCESS_AGENT_STORAGE_ROOT: options.agentStorageRoot,
+        ...(options.runtimeBinaryPath === undefined
+          ? {}
+          : { LYRA_RUNTIME_BIN: options.runtimeBinaryPath }),
+        ...(options.runtimeComponentVersion === undefined
+          ? {}
+          : {
+              LYRA_RUNTIME_EXPECTED_COMPONENT_VERSION:
+                options.runtimeComponentVersion
+            }),
+        ...(options.hostRole === undefined ? {} : { LYRA_HOST_ROLE: options.hostRole })
+      }
+    });
+    if (proc.pid !== undefined && options.hostRole !== undefined) {
+      const role = processRoleForHost(options.hostRole);
+      if (role !== undefined) {
+        registerProcessRole(proc.pid, role);
+      }
     }
-  });
+    return proc;
+  };
+
+  let proc = forkUtility();
 
   const pendingRequests = new Map<string, PendingRequest>();
   const handlers = new Map<string, RuntimeRequestHandler>();
@@ -100,89 +132,112 @@ export const createSharedProcessClient = (
     proc.postMessage(msg);
   };
 
-  // Electron UtilityProcess "message" event passes the raw message directly
-  // (not a MessageEvent with .data like parentPort.on in the child side)
-  proc.on("message", (msg: SharedProcessMessage) => {
-    // UtilityProcess lifecycle 期间可能 emit undefined/null 载荷
-    if (typeof msg !== "object" || msg === null) return;
-    switch (msg.type) {
-      case "response": {
-        const pending = pendingRequests.get(msg.id);
-        if (pending === undefined) {
+  const bindProcess = (current: typeof proc): void => {
+    current.on("message", (msg: SharedProcessMessage) => {
+      if (typeof msg !== "object" || msg === null) return;
+      switch (msg.type) {
+        case "response": {
+          const pending = pendingRequests.get(msg.id);
+          if (pending === undefined) {
+            return;
+          }
+          pendingRequests.delete(msg.id);
+          if (msg.ok) {
+            pending.resolve(msg.result);
+          } else {
+            pending.reject(toError(msg.error, "shared process request failed"));
+          }
           return;
         }
-        pendingRequests.delete(msg.id);
-        if (msg.ok) {
-          pending.resolve(msg.result);
-        } else {
-          pending.reject(toError(msg.error, "shared process request failed"));
-        }
-        return;
-      }
-      case "host-request": {
-        // daemon → utility → main: 在 main 执行真正的 handler（可访问 Electron API）
-        const handler = handlers.get(msg.method);
-        if (handler === undefined) {
-          post({
-            type: "host-response",
-            id: msg.id,
-            ok: false,
-            error: {
-              code: "RUNTIME_HOST_METHOD_NOT_FOUND",
-              message: `No handler registered for ${msg.method}`
-            }
-          });
-          return;
-        }
-        void Promise.resolve(handler(msg.payload))
-          .then((result) => {
-            post({ type: "host-response", id: msg.id, ok: true, result });
-          })
-          .catch((error: unknown) => {
-            const message = error instanceof Error ? error.message : String(error);
-            const code =
-              error !== null
-              && typeof error === "object"
-              && typeof (error as { code?: unknown }).code === "string"
-                ? (error as { code: string }).code
-                : "RUNTIME_HOST_REQUEST_FAILED";
+        case "host-request": {
+          const handler = handlers.get(msg.method);
+          if (handler === undefined) {
             post({
               type: "host-response",
               id: msg.id,
               ok: false,
-              error: { code, message }
+              error: {
+                code: "RUNTIME_HOST_METHOD_NOT_FOUND",
+                message: `No handler registered for ${msg.method}`
+              }
             });
-          });
-        return;
-      }
-      case "event": {
-        for (const listener of listeners) {
-          listener(msg.event, msg.payload);
+            return;
+          }
+          void Promise.resolve(handler(msg.payload))
+            .then((result) => {
+              post({ type: "host-response", id: msg.id, ok: true, result });
+            })
+            .catch((error: unknown) => {
+              const message = error instanceof Error ? error.message : String(error);
+              const code =
+                error !== null
+                && typeof error === "object"
+                && typeof (error as { code?: unknown }).code === "string"
+                  ? (error as { code: string }).code
+                  : "RUNTIME_HOST_REQUEST_FAILED";
+              post({
+                type: "host-response",
+                id: msg.id,
+                ok: false,
+                error: { code, message }
+              });
+            });
+          return;
         }
-        return;
-      }
-      case "disposed": {
-        disposalAcknowledged = true;
-        for (const resolve of disposedWaiters) {
-          resolve();
+        case "event": {
+          for (const listener of listeners) {
+            listener(msg.event, msg.payload);
+          }
+          return;
         }
-        disposedWaiters.clear();
-        return;
+        case "role-pid": {
+          const role = processRoleForHost(msg.role);
+          if (role !== undefined) {
+            registerProcessRole(msg.pid, role);
+          }
+          return;
+        }
+        case "disposed": {
+          disposalAcknowledged = true;
+          for (const resolve of disposedWaiters) {
+            resolve();
+          }
+          disposedWaiters.clear();
+          return;
+        }
       }
-    }
-  });
+    });
 
-  proc.on("exit", () => {
-    exited = true;
-    for (const pending of pendingRequests.values()) {
-      pending.reject(new Error("Shared process exited unexpectedly"));
-    }
-    pendingRequests.clear();
-    for (const resolve of exitWaiters) {
-      resolve();
-    }
-    exitWaiters.clear();
-  });
+    current.on("exit", () => {
+      if (current !== proc) {
+        return;
+      }
+      if (disposed === false && options.restartOnExit === true) {
+        for (const pending of pendingRequests.values()) {
+          pending.reject(new Error("Shared process exited unexpectedly"));
+        }
+        pendingRequests.clear();
+        console.warn(`[lyra-host] ${options.hostRole ?? "host"} exited; restarting`);
+        proc = forkUtility();
+        bindProcess(proc);
+        for (const method of handlers.keys()) {
+          post({ type: "register-handler", method });
+        }
+        return;
+      }
+      exited = true;
+      for (const pending of pendingRequests.values()) {
+        pending.reject(new Error("Shared process exited unexpectedly"));
+      }
+      pendingRequests.clear();
+      for (const resolve of exitWaiters) {
+        resolve();
+      }
+      exitWaiters.clear();
+    });
+  };
+
+  bindProcess(proc);
 
   const rejectPendingAndClear = (message: string): void => {
     for (const pending of pendingRequests.values()) {

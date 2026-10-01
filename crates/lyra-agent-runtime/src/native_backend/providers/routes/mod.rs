@@ -28,6 +28,7 @@ pub(crate) mod opencode;
 pub(crate) mod openrouter;
 pub(crate) mod perplexity;
 pub(crate) mod poolside;
+pub(crate) mod subscription;
 pub(crate) mod togetherai;
 pub(crate) mod venice;
 pub(crate) mod vllm;

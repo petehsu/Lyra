@@ -92,6 +92,7 @@ fn build_overflow_session(session_id: &str) -> NativeSession {
         dirty: true,
         dialog_dirty_from: Some(0),
         persisted_dialog_len: 0,
+        dialog_loaded: true,
         ephemeral: false,
     }
 }

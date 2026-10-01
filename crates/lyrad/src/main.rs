@@ -1,5 +1,6 @@
 mod elevated_helper;
 mod handlers;
+mod host_companions;
 mod modules;
 mod router;
 
@@ -138,6 +139,7 @@ fn main() {
         println!("{RUNTIME_NAME} {}", env!("CARGO_PKG_VERSION"));
         return;
     }
+    router::install_host_role_from_args(&arguments);
 
     // Elevated helper mode: a minimal named-pipe server that runs commands
     // with the process's elevated (admin) token.  Started via UAC by the
@@ -764,6 +766,7 @@ fn is_authorized_unix_peer(stream: &UnixStream) -> io::Result<bool> {
 async fn run_unix_runtime() {
     let socket_path = resolve_socket_path();
     let _guard = acquire_unix_runtime_guard(&socket_path);
+    host_companions::start_role_companions(&socket_path);
 
     let listener = match UnixListener::bind(&socket_path) {
         Ok(listener) => listener,
@@ -1020,74 +1023,83 @@ fn forward_json_event(sessions: &DaemonSessionManager, event_name: &str, payload
 
 #[cfg(any(unix, windows))]
 fn register_runtime_hooks(sessions: &DaemonSessionManager) {
-    set_agent_runtime_backend(Arc::new(LyraAgentBackend));
+    let role = router::host_role();
+    let enabled = |roles: &[&str]| role == "all" || roles.contains(&role.as_str());
 
-    let terminal_sessions = sessions.clone();
-    register_terminal_event_callback(Arc::new(move |event_json| {
-        forward_json_event(&terminal_sessions, TERMINAL_RUNTIME_EVENT_NAME, &event_json);
-    }));
+    if enabled(&["agent", "exec"]) {
+        set_agent_runtime_backend(Arc::new(LyraAgentBackend));
+        let agent_sessions = sessions.clone();
+        register_agent_event_callback(Arc::new(move |event_json| {
+            forward_json_event(&agent_sessions, AGENT_RUNTIME_EVENT_NAME, &event_json);
+        }));
+        let host_sessions = sessions.clone();
+        register_agent_host_capability_dispatcher(Arc::new(move |method, payload_json| {
+            let payload = match serde_json::from_str::<Value>(&payload_json) {
+                Ok(val) => val,
+                Err(e) => return Err(format!("Failed to parse payload: {e}")),
+            };
+            match host_sessions.request(method, payload) {
+                Ok(result) => serde_json::to_string(&result)
+                    .map_err(|e| format!("Failed to serialize response: {e}")),
+                Err(error) => Err(error.message),
+            }
+        }));
+    }
 
-    let lsp_sessions = sessions.clone();
-    register_lsp_event_callback(Arc::new(move |event_json| {
-        forward_json_event(&lsp_sessions, LSP_RUNTIME_EVENT_NAME, &event_json);
-    }));
-    std::thread::spawn(|| {
-        refresh_cached_servers();
-    });
+    if enabled(&["terminal"]) {
+        let terminal_sessions = sessions.clone();
+        register_terminal_event_callback(Arc::new(move |event_json| {
+            forward_json_event(&terminal_sessions, TERMINAL_RUNTIME_EVENT_NAME, &event_json);
+        }));
+    }
 
-    let download_sessions = sessions.clone();
-    register_download_event_callback(Arc::new(move |event_json| {
-        forward_json_event(&download_sessions, DOWNLOAD_RUNTIME_EVENT_NAME, &event_json);
-    }));
+    if enabled(&["files"]) {
+        let files_sessions = sessions.clone();
+        register_files_event_callback(Arc::new(move |event_name, event_json| {
+            forward_json_event(&files_sessions, &event_name, &event_json);
+        }));
+    }
 
-    let files_sessions = sessions.clone();
-    register_files_event_callback(Arc::new(move |event_name, event_json| {
-        forward_json_event(&files_sessions, &event_name, &event_json);
-    }));
+    if enabled(&["services"]) {
+        let lsp_sessions = sessions.clone();
+        register_lsp_event_callback(Arc::new(move |event_json| {
+            forward_json_event(&lsp_sessions, LSP_RUNTIME_EVENT_NAME, &event_json);
+        }));
+        std::thread::spawn(|| {
+            refresh_cached_servers();
+        });
 
-    let aria2_lease_sessions = sessions.clone();
-    register_aria2_resource_lease_dispatcher(Arc::new(move |method, payload_json| {
-        let payload = serde_json::from_str::<Value>(&payload_json)
-            .map_err(|error| format!("failed to parse aria2 lease payload: {error}"))?;
-        aria2_lease_sessions
-            .request(method.to_string(), payload)
-            .and_then(|result| {
-                serde_json::to_string(&result).map_err(|error| {
-                    RuntimeError::new(
-                        "SERDE_ENCODE_FAILED",
-                        format!("failed to serialize aria2 lease response: {error}"),
-                    )
+        let download_sessions = sessions.clone();
+        register_download_event_callback(Arc::new(move |event_json| {
+            forward_json_event(&download_sessions, DOWNLOAD_RUNTIME_EVENT_NAME, &event_json);
+        }));
+
+        let aria2_lease_sessions = sessions.clone();
+        register_aria2_resource_lease_dispatcher(Arc::new(move |method, payload_json| {
+            let payload = serde_json::from_str::<Value>(&payload_json)
+                .map_err(|error| format!("failed to parse aria2 lease payload: {error}"))?;
+            aria2_lease_sessions
+                .request(method.to_string(), payload)
+                .and_then(|result| {
+                    serde_json::to_string(&result).map_err(|error| {
+                        RuntimeError::new(
+                            "SERDE_ENCODE_FAILED",
+                            format!("failed to serialize aria2 lease response: {error}"),
+                        )
+                    })
                 })
-            })
-            .map_err(|error| error.message)
-    }));
+                .map_err(|error| error.message)
+        }));
 
-    let agent_sessions = sessions.clone();
-    register_agent_event_callback(Arc::new(move |event_json| {
-        forward_json_event(&agent_sessions, AGENT_RUNTIME_EVENT_NAME, &event_json);
-    }));
-
-    let performance_sessions = sessions.clone();
-    register_performance_event_callback(Arc::new(move |event_json| {
-        forward_json_event(
-            &performance_sessions,
-            PERFORMANCE_RUNTIME_EVENT_NAME,
-            &event_json,
-        );
-    }));
-
-    let host_sessions = sessions.clone();
-    register_agent_host_capability_dispatcher(Arc::new(move |method, payload_json| {
-        let payload = match serde_json::from_str::<Value>(&payload_json) {
-            Ok(val) => val,
-            Err(e) => return Err(format!("Failed to parse payload: {e}")),
-        };
-        match host_sessions.request(method, payload) {
-            Ok(result) => serde_json::to_string(&result)
-                .map_err(|e| format!("Failed to serialize response: {e}")),
-            Err(error) => Err(error.message),
-        }
-    }));
+        let performance_sessions = sessions.clone();
+        register_performance_event_callback(Arc::new(move |event_json| {
+            forward_json_event(
+                &performance_sessions,
+                PERFORMANCE_RUNTIME_EVENT_NAME,
+                &event_json,
+            );
+        }));
+    }
 }
 
 #[cfg(any(unix, windows))]
@@ -1131,7 +1143,16 @@ async fn handle_request_envelope(
     payload: Value,
 ) {
     let outgoing = connection.outgoing.clone();
-    let result = if method.starts_with("performance.") {
+    let result = if method == "agent.exec.run" {
+        if router::host_role() != "exec" && router::host_role() != "all" {
+            Err(router::runtime_error(
+                "METHOD_NOT_FOUND",
+                "agent.exec.run is served by the exec host",
+            ))
+        } else {
+            Ok(lyra_agent_runtime::run_exec_tool(payload).await)
+        }
+    } else if method.starts_with("performance.") {
         let _permit = connection.performance_requests.enter().await;
         match _permit {
             Ok(_permit) => tokio::task::spawn_blocking(move || {

@@ -5,6 +5,7 @@ import { Terminal } from "xterm";
 
 import type { LyraDesktopApi } from "../../../shared/desktop-bridge";
 import { AppIconButton } from "@renderer/ui/components";
+import { subscribeLayoutResizeEnd } from "../shell/layout-resize-end";
 import { getIsLayoutResizing } from "../shell/use-panel-layout";
 import { getIsWindowResizing } from "../shell/use-window-resize-class";
 import {
@@ -323,6 +324,7 @@ const applyTerminalRendererOptions = (
 };
 
 const TERMINAL_RESIZE_SETTLE_MS = 140;
+const TERMINAL_RESIZE_DRAG_THROTTLE_MS = 300;
 const TERMINAL_HORIZONTAL_RESIZE_DEBOUNCE_MS = 220;
 const TERMINAL_HORIZONTAL_RESIZE_BUFFER_THRESHOLD = 200;
 const TERMINAL_INITIAL_RESIZE_RETRY_MS: readonly number[] = [32, 120, 320];
@@ -479,6 +481,8 @@ export const TerminalPaneSurface = ({
     terminalRef.current = terminal;
     const terminalWithElement = terminal as Terminal & { element?: HTMLElement };
 
+    let boxWidth = 0;
+    let boxHeight = 0;
     const fitToContainer = (options?: { readonly deferColumns?: boolean }): boolean => {
       if (sessionDisposedRef.current) {
         return false;
@@ -486,8 +490,11 @@ export const TerminalPaneSurface = ({
       if (!host.isConnected) {
         return false;
       }
-      if (host.clientWidth <= 0 || host.clientHeight <= 0) {
-        return false;
+      // ResizeObserver already reported the box. clientWidth forces a document layout.
+      if (boxWidth <= 0 || boxHeight <= 0) {
+        if (host.clientWidth <= 0 || host.clientHeight <= 0) {
+          return false;
+        }
       }
       if (terminalWithElement.element === undefined || !terminalWithElement.element.isConnected) {
         return false;
@@ -589,9 +596,19 @@ export const TerminalPaneSurface = ({
       if (!activeRef.current && mode !== "immediate") {
         return;
       }
-      // Panel animations produce transient terminal sizes; only user drag needs frame-level fitting.
-      // Read the cached flag instead of `classList.contains`, which forces a style reflush each tick.
-      const isLayoutResizing = getIsLayoutResizing() || getIsWindowResizing();
+      // While the sash moves, fit at most every 300ms. A fit on every frame
+      // forces layout and the divider stops following the pointer.
+      if (getIsLayoutResizing() && mode !== "immediate") {
+        if (resizeSettleTimerId !== null) {
+          return;
+        }
+        resizeSettleTimerId = window.setTimeout(() => {
+          resizeSettleTimerId = null;
+          scheduleResizeFrame();
+        }, TERMINAL_RESIZE_DRAG_THROTTLE_MS);
+        return;
+      }
+      const isLayoutResizing = getIsLayoutResizing();
       if (mode === "immediate" || isLayoutResizing) {
         cancelResizeSettleTimer();
         scheduleResizeFrame({ deferColumns: isLayoutResizing });
@@ -633,13 +650,45 @@ export const TerminalPaneSurface = ({
       resizeAndSync();
     });
 
-    const resizeObserver = new ResizeObserver(() => {
+    let observedHostWidth = -1;
+    let observedHostHeight = -1;
+    let previousHostWidth = -1;
+    let previousHostHeight = -1;
+    const resizeObserver = new ResizeObserver((entries) => {
       if (sessionDisposedRef.current) {
         return;
       }
+      const entry = entries[entries.length - 1];
+      if (entry === undefined) {
+        return;
+      }
+      const width = Math.round(entry.contentRect.width);
+      const height = Math.round(entry.contentRect.height);
+      if (width <= 0 || height <= 0 || (width === observedHostWidth && height === observedHostHeight)) {
+        return;
+      }
+      // Scrollbar show/hide returns the box to the size we just left.
+      const bounced = !getIsLayoutResizing()
+        && previousHostWidth >= 0
+        && width === previousHostWidth
+        && height === previousHostHeight
+        && Math.abs(width - observedHostWidth) <= 80
+        && Math.abs(height - observedHostHeight) <= 80;
+      if (bounced) {
+        return;
+      }
+      previousHostWidth = observedHostWidth;
+      previousHostHeight = observedHostHeight;
+      observedHostWidth = width;
+      observedHostHeight = height;
+      boxWidth = width;
+      boxHeight = height;
       scheduleResizeAndSync();
     });
     resizeObserver.observe(host);
+    const unsubscribeResizeEnd = subscribeLayoutResizeEnd(() => {
+      scheduleResizeAndSync("immediate");
+    });
 
     renderer.inputHandler = (data) => {
       if (sessionReadyRef.current === false) {
@@ -742,6 +791,7 @@ export const TerminalPaneSurface = ({
       cancelResizeSettleTimer();
       cancelInitialResizeTimers();
       resizeObserver.disconnect();
+      unsubscribeResizeEnd();
       if (renderer.activeToken === rendererToken) {
         renderer.activeToken = null;
         renderer.callbacks = null;

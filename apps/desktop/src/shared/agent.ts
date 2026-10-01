@@ -750,6 +750,7 @@ export type AgentLoginProviderCatalogSnapshot = {
 export type AgentAccountLoginStartRequest = {
   readonly provider: string;
   readonly label?: string | null;
+  readonly account?: string | null;
 };
 
 export type AgentAccountLoginStartResponse = {
@@ -757,6 +758,9 @@ export type AgentAccountLoginStartResponse = {
   readonly label?: string | null;
   readonly flowId: string;
   readonly authUrl?: string | null;
+  readonly userCode?: string | null;
+  readonly baseUrl?: string | null;
+  readonly borrow?: boolean;
   readonly callbackHint?: string | null;
   readonly authKind: string;
   readonly instructions: string;
@@ -781,6 +785,10 @@ export type AgentAccountLoginCompleteRequest = {
 export type AgentAccountLoginCompleteResponse = {
   readonly accounts: AgentAccountsSnapshot;
   readonly message: string;
+  readonly email?: string | null;
+  readonly displayName?: string | null;
+  readonly avatarUrl?: string | null;
+  readonly catalog?: AgentModelCatalogSnapshot | null;
 };
 
 export type AgentPokeResponse = {
@@ -1451,6 +1459,9 @@ export type AgentModelEntry = {
   readonly provider?: string | null;
   readonly providerId?: string | null;
   readonly providerLabel?: string | null;
+  readonly accountEmail?: string | null;
+  readonly accountName?: string | null;
+  readonly accountAvatarUrl?: string | null;
   readonly providerKey?: string | null;
   readonly routeId?: string | null;
   readonly protocolId?: string | null;
@@ -1588,12 +1599,14 @@ export type AgentModelCapabilitiesUpdateRequest = {
 export type AgentModelDeleteRequest = {
   readonly sessionId?: string | null;
   readonly provider: string;
-  readonly model: string;
+  readonly model?: string | null;
+  readonly scope?: "model" | "provider";
 };
 
 export type AgentModelRefreshRequest = {
   readonly sessionId?: string | null;
   readonly provider?: string | null;
+  readonly listOnly?: boolean;
 };
 
 export type AgentProviderOptionsUpdateRequest = {

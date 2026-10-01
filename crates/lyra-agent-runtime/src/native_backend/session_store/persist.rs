@@ -6,6 +6,54 @@ pub(super) fn load_session(
     root: &Path,
     session_id: &str,
 ) -> AgentRuntimeResult<Option<NativeSession>> {
+    load_session_inner(root, session_id, true)
+}
+
+/// Startup index. OpenCode `Session.list` and ZCode `getSession` never read
+/// every transcript. Only a live turn needs its dialog in memory.
+pub(super) fn load_session_for_startup(
+    root: &Path,
+    session_id: &str,
+) -> AgentRuntimeResult<Option<NativeSession>> {
+    let db_path = session_db_path(root, session_id);
+    if !db_path.is_file() {
+        return Ok(None);
+    }
+    let conn = open_connection(&db_path)?;
+    init_schema(&conn)?;
+    let running = conn
+        .query_row(
+            "SELECT turn_status FROM session_meta WHERE session_id = ?1",
+            params![session_id],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap_or_default();
+    drop(conn);
+    load_session_inner(root, session_id, running == "running")
+}
+
+pub(super) fn fill_dialog(root: &Path, session: &mut NativeSession) -> AgentRuntimeResult<()> {
+    if session.dialog_loaded {
+        return Ok(());
+    }
+    let db_path = session_db_path(root, &session.id);
+    if !db_path.is_file() {
+        session.dialog_loaded = true;
+        return Ok(());
+    }
+    let conn = open_connection(&db_path)?;
+    let messages = read_dialog(&conn)?;
+    session.persisted_dialog_len = messages.len();
+    session.snapshot["messages"] = Value::Array(messages);
+    session.dialog_loaded = true;
+    Ok(())
+}
+
+fn load_session_inner(
+    root: &Path,
+    session_id: &str,
+    load_dialog: bool,
+) -> AgentRuntimeResult<Option<NativeSession>> {
     let db_path = session_db_path(root, session_id);
     if !db_path.is_file() {
         return Ok(None);
@@ -42,19 +90,11 @@ pub(super) fn load_session(
         )
         .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
 
-    let mut messages = Vec::new();
-    let mut statement = conn
-        .prepare("SELECT content_raw FROM session_dialog ORDER BY ordinal ASC")
-        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
-    let rows = statement
-        .query_map([], |row| row.get::<_, String>(0))
-        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
-    for row in rows {
-        let raw = row.map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
-        let message = serde_json::from_str(&raw)
-            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
-        messages.push(message);
-    }
+    let messages = if load_dialog {
+        read_dialog(&conn)?
+    } else {
+        Vec::new()
+    };
 
     let (snapshot_json, runtime_turns_json, rollback_json, file_read_json) = conn
         .query_row(
@@ -116,8 +156,26 @@ pub(super) fn load_session(
         dirty: false,
         dialog_dirty_from: None,
         persisted_dialog_len,
+        dialog_loaded: load_dialog,
         ephemeral: false,
     }))
+}
+
+fn read_dialog(conn: &rusqlite::Connection) -> AgentRuntimeResult<Vec<Value>> {
+    let mut statement = conn
+        .prepare("SELECT content_raw FROM session_dialog ORDER BY ordinal ASC")
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let rows = statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    let mut messages = Vec::new();
+    for row in rows {
+        let raw = row.map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        let message = serde_json::from_str(&raw)
+            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+        messages.push(message);
+    }
+    Ok(messages)
 }
 
 pub(super) fn list_session_summaries_from_meta(root: &Path) -> Vec<Value> {
@@ -360,57 +418,58 @@ pub(super) fn save_session(root: &Path, session: &NativeSession) -> AgentRuntime
     )
     .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
 
-    let messages = snapshot
-        .get("messages")
-        .and_then(Value::as_array)
-        .map(Vec::as_slice)
-        .unwrap_or(&[]);
-    let stored_dialog_len = tx
-        .query_row(
-            "SELECT COALESCE(MAX(ordinal) + 1, 0) FROM session_dialog",
-            [],
-            |row| row.get::<_, i64>(0),
-        )
-        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?
-        .max(0) as usize;
-    let dirty_from = session.dialog_dirty_from.or_else(|| {
-        (stored_dialog_len != messages.len()).then_some(stored_dialog_len.min(messages.len()))
-    });
-    if let Some(dirty_from) = dirty_from {
-        let rewrite_from = dirty_from.min(stored_dialog_len).min(messages.len());
-        tx.execute(
-            "DELETE FROM session_dialog WHERE ordinal >= ?1",
-            params![rewrite_from as i64],
-        )
-        .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
-        for (ordinal, message) in messages.iter().enumerate().skip(rewrite_from) {
-            let msg_id = message
-                .get("id")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-                .unwrap_or_else(|| format!("{session_id}:message-{ordinal}"));
-            let role = message
-                .get("role")
-                .and_then(Value::as_str)
-                .unwrap_or("runtime")
-                .to_string();
-            let created_at_iso = message
-                .get("createdAt")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-                .unwrap_or_else(|| updated_at_iso.clone());
-            let created_at_ms = iso_ms(&created_at_iso);
-            let char_count = message_char_count(message);
-            let token_count = super::super::token_estimate::estimate_message_tokens(message);
-            let turn_index = message
-                .get("turnIndex")
-                .or_else(|| message.pointer("/metadata/turnIndex"))
-                .and_then(Value::as_i64);
-            let metadata_json = message.get("metadata").map(|value| value.to_string());
-            let content_raw = serde_json::to_string(message)
-                .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+    if session.dialog_loaded {
+        let messages = snapshot
+            .get("messages")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        let stored_dialog_len = tx
+            .query_row(
+                "SELECT COALESCE(MAX(ordinal) + 1, 0) FROM session_dialog",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?
+            .max(0) as usize;
+        let dirty_from = session.dialog_dirty_from.or_else(|| {
+            (stored_dialog_len != messages.len()).then_some(stored_dialog_len.min(messages.len()))
+        });
+        if let Some(dirty_from) = dirty_from {
+            let rewrite_from = dirty_from.min(stored_dialog_len).min(messages.len());
             tx.execute(
-                "INSERT INTO session_dialog (
+                "DELETE FROM session_dialog WHERE ordinal >= ?1",
+                params![rewrite_from as i64],
+            )
+            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+            for (ordinal, message) in messages.iter().enumerate().skip(rewrite_from) {
+                let msg_id = message
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format!("{session_id}:message-{ordinal}"));
+                let role = message
+                    .get("role")
+                    .and_then(Value::as_str)
+                    .unwrap_or("runtime")
+                    .to_string();
+                let created_at_iso = message
+                    .get("createdAt")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| updated_at_iso.clone());
+                let created_at_ms = iso_ms(&created_at_iso);
+                let char_count = message_char_count(message);
+                let token_count = super::super::token_estimate::estimate_message_tokens(message);
+                let turn_index = message
+                    .get("turnIndex")
+                    .or_else(|| message.pointer("/metadata/turnIndex"))
+                    .and_then(Value::as_i64);
+                let metadata_json = message.get("metadata").map(|value| value.to_string());
+                let content_raw = serde_json::to_string(message)
+                    .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+                tx.execute(
+                    "INSERT INTO session_dialog (
                     msg_id, ordinal, turn_index, role, content_raw,
                     token_count, char_count, created_at_ms, created_at_iso,
                     updated_at_ms, updated_at_iso, metadata_json
@@ -427,22 +486,23 @@ pub(super) fn save_session(root: &Path, session: &NativeSession) -> AgentRuntime
                     updated_at_ms = excluded.updated_at_ms,
                     updated_at_iso = excluded.updated_at_iso,
                     metadata_json = excluded.metadata_json",
-                params![
-                    msg_id,
-                    ordinal as i64,
-                    turn_index,
-                    role,
-                    content_raw,
-                    token_count as i64,
-                    char_count as i64,
-                    created_at_ms,
-                    created_at_iso,
-                    updated_at_ms,
-                    updated_at_iso,
-                    metadata_json,
-                ],
-            )
-            .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+                    params![
+                        msg_id,
+                        ordinal as i64,
+                        turn_index,
+                        role,
+                        content_raw,
+                        token_count as i64,
+                        char_count as i64,
+                        created_at_ms,
+                        created_at_iso,
+                        updated_at_ms,
+                        updated_at_iso,
+                        metadata_json,
+                    ],
+                )
+                .map_err(|error| AgentRuntimeError::Core(error.to_string()))?;
+            }
         }
     }
 

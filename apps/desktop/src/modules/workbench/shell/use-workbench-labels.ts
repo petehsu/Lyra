@@ -348,6 +348,7 @@ export const useWorkbenchLabels = (t: WorkbenchTranslator) =>
         modelsDeleteLabel: t("settings.aiModelsDeleteLabel"),
         modelsDeleteConfirmTitle: t("settings.aiModelsDeleteConfirmTitle"),
         modelsDeleteConfirmDescription: t("settings.aiModelsDeleteConfirmDescription"),
+        modelsDeleteProviderDescription: t("settings.aiModelsDeleteProviderDescription"),
         modelsDeleteConfirmAction: t("settings.aiModelsDeleteConfirmAction"),
         skillsTitle: t("settings.aiSkillsTitle"),
         skillsSearchPlaceholder: t("settings.aiSkillsSearchPlaceholder"),
