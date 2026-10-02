@@ -336,9 +336,34 @@ if (linuxCompatBridge.status.enabled) {
   }
 }
 
+// A hardware-GPU process can segfault on some XWayland driver stacks
+// (exit_code=139). The window then never paints, so instead of leaving a
+// blank launch, relaunch once in recovery mode: same x11 backend (the input
+// method fix survives) with software rendering, which terminates the loop
+// because recovery launches skip the crashing GPU path entirely.
+let gpuCrashRelaunchTriggered = false;
+
 app.on("child-process-gone", (_event, details) => {
   linuxCompatBridge.recordChildProcessGone(details);
   if (details.type !== "GPU") {
+    return;
+  }
+  if (
+    process.platform === "linux"
+    && gpuCrashRelaunchTriggered === false
+    && linuxCompatBridge.status.enabled
+    && linuxCompatBridge.status.recovery.active === false
+  ) {
+    gpuCrashRelaunchTriggered = true;
+    console.warn(
+      `[lyra-linux] gpu process ${details.reason} (exit_code=${details.exitCode}); relaunching once in recovery (software rendering)`
+    );
+    setTimeout(() => {
+      linuxCompatBridge.requestRestart(app, {
+        recovery: true,
+        reason: `gpu-${details.reason}-${details.exitCode}`
+      });
+    }, 2_500);
     return;
   }
   const window = mainWindow;
