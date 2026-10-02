@@ -3,6 +3,12 @@ export {
   readLinuxCompatConfig,
   resolveLinuxCompatPlan
 } from "./service";
+export {
+  parseLinuxDisplayBackendOverride,
+  resolveLinuxDisplayBackendPolicy,
+  type LinuxDisplayBackendOverride
+} from "./display-backend-policy";
+export { detectLinuxInputMethod, resolveInputMethodX11Env } from "./input-method";
 export type {
   LinuxCompatBridge,
   LinuxCompatConfig,
@@ -15,9 +21,11 @@ export type {
   LinuxCompatUpdateConfigRequest,
   LinuxCompatUpdateConfigResponse,
   LinuxCompatWarning,
+  LinuxDisplayBackendReason,
   LinuxEnvironmentFacts,
   LinuxGpuMode,
   LinuxGraphicsBackend,
+  LinuxInputMethodId,
   LinuxPackageType,
   LinuxSessionType,
   LinuxStrategySource

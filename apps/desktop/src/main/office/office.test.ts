@@ -166,7 +166,8 @@ const tableDocx = (): Uint8Array => zip([
 
 describe("office docx", () => {
   // The first docx call initializes the headless engine (jsdom + tiptap), which
-  // alone can exceed the default 5s test timeout; later calls are warm.
+  // alone can exceed the default 5s test timeout, and under full-suite parallel
+  // load even 20s is not enough; later calls are warm.
   test("reads the paragraph block index and preview", async () => {
     const read = await readDocxBytes(helloDocx());
     expect(read.blocks).toEqual([
@@ -176,7 +177,7 @@ describe("office docx", () => {
     expect(read.sections).toEqual([
       expect.objectContaining({ index: 0, firstBlock: 0, lastBlock: 0, summary: expect.stringMatching(/portrait/) })
     ]);
-  }, 20_000);
+  }, 60_000);
 
   test("replaces paragraph text and rejects an invalid batch without writing", async () => {
     const directory = await mkdtemp(join(tmpdir(), "lyra-office-docx-"));

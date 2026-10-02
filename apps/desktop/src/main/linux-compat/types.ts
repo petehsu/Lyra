@@ -27,10 +27,20 @@ export type LinuxStrategySource = "auto" | "cli" | "config" | "env" | "history" 
 
 export type LinuxSessionType = "wayland" | "x11" | "unknown";
 
+export type LinuxInputMethodId = "fcitx5" | "ibus" | "none" | "unknown";
+
+export type LinuxDisplayBackendReason =
+  | "user-override"
+  | "recovery-fallback"
+  | "x11-session-native"
+  | "wayland-default"
+  | "wayland-ime-candidate-position-compat";
+
 export type LinuxCompatWarning = {
   readonly code:
     | "both-display-servers-detected"
     | "gpu-compat-fallback"
+    | "invalid-display-backend-override"
     | "missing-display-server"
     | "previous-launch-failed"
     | "recovery-mode"
@@ -89,6 +99,8 @@ export type LinuxCompatPlan = {
   readonly recommendedProfile: LinuxCompatProfile;
   readonly safeMode: boolean;
   readonly backend: LinuxGraphicsBackend;
+  readonly displayBackendReason: LinuxDisplayBackendReason;
+  readonly inputMethod: LinuxInputMethodId;
   readonly gpuMode: LinuxGpuMode;
   readonly profileSource: LinuxStrategySource;
   readonly backendSource: LinuxStrategySource;
@@ -109,6 +121,8 @@ export type LinuxCompatStatus = {
   readonly recommendedProfile: LinuxCompatProfile;
   readonly safeMode: boolean;
   readonly backend: LinuxGraphicsBackend;
+  readonly displayBackendReason: LinuxDisplayBackendReason;
+  readonly inputMethod: LinuxInputMethodId;
   readonly gpuMode: LinuxGpuMode;
   readonly profileSource: LinuxStrategySource;
   readonly backendSource: LinuxStrategySource;

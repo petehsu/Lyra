@@ -321,8 +321,15 @@ configureBrowserIdentityCompatibility(app);
 
 if (linuxCompatBridge.status.enabled) {
   const status = linuxCompatBridge.status;
+  console.info(`[linux-compat] session=${status.facts.sessionType}`);
+  console.info(`[linux-compat] compositor=${status.facts.desktop}`);
+  console.info(`[linux-compat] input-method=${status.inputMethod}`);
   console.info(
-    `[lyra-linux] profile=${status.profile} backend=${status.backend} gpu=${status.gpuMode} safeMode=${status.safeMode} profileSource=${status.profileSource} backendSource=${status.backendSource} gpuSource=${status.gpuSource}`
+    `[linux-compat] display-backend=${status.backend === "x11" && status.facts.sessionType === "wayland" ? "xwayland" : status.backend}`
+  );
+  console.info(`[linux-compat] reason=${status.displayBackendReason}`);
+  console.info(
+    `[lyra-linux] profile=${status.profile} gpu=${status.gpuMode} safeMode=${status.safeMode}`
   );
   for (const warning of status.warnings) {
     console.warn(`[lyra-linux] warning ${warning.code}: ${warning.message}`);
