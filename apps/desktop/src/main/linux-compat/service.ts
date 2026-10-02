@@ -1216,14 +1216,6 @@ export const createLinuxCompatBridge = (input: {
             lastRestartReason: request?.reason ?? "linux-compat"
           });
         }
-        // Under electron-vite the app cannot relaunch itself: the dev wrapper
-        // tears the renderer server and runtime stack down on exit. Exit with
-        // the recovery code (93) so scripts/desktop/dev-electron-vite.ts
-        // respawns electron-vite with the recovery environment instead.
-        if (process.env.ELECTRON_RENDERER_URL !== undefined) {
-          app.exit(93);
-          return { ok: true };
-        }
         app.relaunch({
           args: createRelaunchArgs(input.argv, request?.reason, recovery)
         });
