@@ -4,11 +4,6 @@ import os from "node:os";
 import path from "node:path";
 
 import { resolveDesktopTarget } from "../platform-target";
-import { resolveInputMethodX11Env, detectLinuxInputMethod } from "./input-method";
-import {
-  parseLinuxDisplayBackendOverride,
-  resolveLinuxDisplayBackendPolicy
-} from "./display-backend-policy";
 import type {
   LinuxCompatBridge,
   LinuxCompatConfig,
@@ -21,13 +16,11 @@ import type {
   LinuxCompatUpdateConfigRequest,
   LinuxCompatUpdateConfigResponse,
   LinuxCompatWarning,
-  LinuxDisplayBackendReason,
   LinuxEnvironmentFacts,
   LinuxGpuFacts,
   LinuxGpuMode,
   LinuxGpuVendor,
   LinuxGraphicsBackend,
-  LinuxInputMethodId,
   LinuxPackageType,
   LinuxSessionType,
   LinuxStrategySource
@@ -203,34 +196,12 @@ const normalizeDesktop = (desktopRaw: string): string => {
   if (normalized.includes("kde") || normalized.includes("plasma")) return "kde";
   if (normalized.includes("hyprland")) return "hyprland";
   if (normalized.includes("sway")) return "sway";
-  if (normalized.includes("niri")) return "niri";
   if (normalized.includes("xfce")) return "xfce";
   if (normalized.includes("cinnamon")) return "cinnamon";
   if (normalized.includes("mate")) return "mate";
   if (normalized.includes("lxqt")) return "lxqt";
   if (normalized.includes("cosmic")) return "cosmic";
   return normalized.split(/[:;]/u)[0] ?? normalized;
-};
-
-/** One small read per running process; used only as the IME fallback signal. */
-const readLinuxProcessNames = (): readonly string[] => {
-  let entries: readonly string[] = [];
-  try {
-    entries = readdirSync("/proc");
-  } catch {
-    return [];
-  }
-  const names: string[] = [];
-  for (const entry of entries) {
-    if (/^\d+$/u.test(entry) === false) {
-      continue;
-    }
-    const comm = readTextFile(path.join("/proc", entry, "comm"))?.trim();
-    if (typeof comm === "string" && comm.length > 0) {
-      names.push(comm);
-    }
-  }
-  return names;
 };
 
 const detectPackageType = (env: NodeJS.ProcessEnv): LinuxPackageType => {
@@ -603,41 +574,42 @@ const resolveBackend = (
   argv: readonly string[],
   env: NodeJS.ProcessEnv,
   facts: LinuxEnvironmentFacts,
-  inputMethod: LinuxInputMethodId,
+  profile: LinuxCompatProfile,
   recovery: LinuxCompatRecoveryStatus
-): {
-  readonly backend: LinuxGraphicsBackend;
-  readonly source: LinuxStrategySource;
-  readonly reason: LinuxDisplayBackendReason;
-} => {
+): { readonly backend: LinuxGraphicsBackend; readonly source: LinuxStrategySource } => {
   const cliValue = parseBackendFromArgv(argv);
   if (cliValue !== null) {
-    return { backend: cliValue, source: "cli", reason: "user-override" };
+    return { backend: cliValue, source: "cli" };
   }
-  // Canonical override (auto | wayland | xwayland); invalid values fall back
-  // to auto with a warning surfaced by resolveWarnings.
-  const displayOverride = parseLinuxDisplayBackendOverride(env.LYRA_DISPLAY_BACKEND);
-  if (displayOverride === "wayland" || displayOverride === "xwayland") {
-    return {
-      backend: displayOverride === "xwayland" ? "x11" : "wayland",
-      source: "env",
-      reason: "user-override"
-    };
+  const envValue = parseBackendValue(env.LYRA_LINUX_BACKEND);
+  if (envValue !== null) {
+    return { backend: envValue, source: "env" };
   }
-  const legacyEnvValue = parseBackendValue(env.LYRA_LINUX_BACKEND);
-  if (legacyEnvValue !== null) {
-    return { backend: legacyEnvValue, source: "env", reason: "user-override" };
+  if (recovery.active && facts.x11Display !== null) {
+    return { backend: "x11", source: "recovery" };
   }
-  const policy = resolveLinuxDisplayBackendPolicy({
-    sessionType: facts.sessionType,
-    desktop: facts.desktop,
-    inputMethod,
-    hasWaylandDisplay: facts.waylandDisplay !== null,
-    hasX11Display: facts.x11Display !== null,
-    recoveryActive: recovery.active,
-    override: null
-  });
-  return { backend: policy.backend, source: "auto", reason: policy.reason };
+  if (profile === "reliable") {
+    if (facts.x11Display !== null) {
+      return {
+        backend: "x11",
+        source: recovery.previousFailureReason === null ? "auto" : "history"
+      };
+    }
+    if (facts.waylandDisplay !== null) {
+      return { backend: "wayland", source: "auto" };
+    }
+    return { backend: "x11", source: "auto" };
+  }
+  if (profile === "native") {
+    if (facts.sessionType === "wayland" || facts.waylandDisplay !== null) {
+      return { backend: "wayland", source: "auto" };
+    }
+    return { backend: "x11", source: "auto" };
+  }
+  if (facts.sessionType === "wayland" || facts.waylandDisplay !== null) {
+    return { backend: "wayland", source: "auto" };
+  }
+  return { backend: "x11", source: "auto" };
 };
 
 const shouldUseSoftwareGpuByDefault = (
@@ -697,19 +669,9 @@ const resolveWarnings = (
   facts: LinuxEnvironmentFacts,
   backend: LinuxGraphicsBackend,
   gpuMode: LinuxGpuMode,
-  recovery: LinuxCompatRecoveryStatus,
-  displayBackendOverride: unknown
+  recovery: LinuxCompatRecoveryStatus
 ): readonly LinuxCompatWarning[] => {
   const warnings: LinuxCompatWarning[] = [];
-  if (
-    displayBackendOverride !== undefined
-    && parseLinuxDisplayBackendOverride(displayBackendOverride) === null
-  ) {
-    warnings.push({
-      code: "invalid-display-backend-override",
-      message: `Unsupported LYRA_DISPLAY_BACKEND value: ${String(displayBackendOverride)}; falling back to auto detection.`
-    });
-  }
   if (recovery.active) {
     warnings.push({
       code: "recovery-mode",
@@ -768,9 +730,7 @@ const toAppliedEnv = (
   recovery: LinuxCompatRecoveryStatus,
   facts: LinuxEnvironmentFacts,
   env: NodeJS.ProcessEnv,
-  gpuMode: LinuxGpuMode,
-  backend: LinuxGraphicsBackend,
-  inputMethod: LinuxInputMethodId
+  gpuMode: LinuxGpuMode
 ): Readonly<Record<string, string>> => {
   const result: Record<string, string> = {
     LYRA_LINUX_LAUNCH_ID: recovery.launchId,
@@ -781,13 +741,6 @@ const toAppliedEnv = (
   }
   if (facts.x11Display !== null && (env.DISPLAY === undefined || env.DISPLAY.trim().length === 0)) {
     result.DISPLAY = facts.x11Display;
-  }
-  // XWayland compatibility: the Chromium shell runs on the X11 input path,
-  // where GTK needs these variables to reach the session input method.
-  // Native Wayland mode must stay untouched so text-input keeps working, and
-  // a native X11 session already carries the user's own IM environment.
-  if (backend === "x11" && facts.sessionType === "wayland") {
-    Object.assign(result, resolveInputMethodX11Env({ inputMethod, env }));
   }
   if (
     gpuMode === "hardware"
@@ -856,7 +809,6 @@ export const resolveLinuxCompatPlan = (input: {
   readonly report?: Parameters<typeof resolveDesktopTarget>[0]["report"];
   readonly gpu?: LinuxGpuFacts;
   readonly x11Sockets?: readonly string[];
-  readonly processNames?: readonly string[];
 }): LinuxCompatPlan => {
   const arch = input.arch ?? process.arch;
   const config = input.config ?? DEFAULT_CONFIG;
@@ -872,12 +824,6 @@ export const resolveLinuxCompatPlan = (input: {
     ...(input.x11Sockets === undefined ? {} : { x11Sockets: input.x11Sockets })
   });
   const recovery = resolveRecoveryStatus(input.argv, input.env, runtimeState);
-  const inputMethod = input.platform === "linux"
-    ? detectLinuxInputMethod({
-      env: input.env,
-      ...(input.processNames === undefined ? {} : { processNames: input.processNames })
-    })
-    : "none";
 
   if (input.platform !== "linux") {
     return {
@@ -886,8 +832,6 @@ export const resolveLinuxCompatPlan = (input: {
       recommendedProfile: "reliable",
       safeMode: false,
       backend: "x11",
-      displayBackendReason: "x11-session-native",
-      inputMethod: "none",
       gpuMode: "hardware",
       profileSource: "auto",
       backendSource: "auto",
@@ -908,7 +852,7 @@ export const resolveLinuxCompatPlan = (input: {
     input.argv,
     input.env,
     facts,
-    inputMethod,
+    profileResolved.profile,
     recovery
   );
   const gpuResolved = resolveGpuMode(
@@ -925,13 +869,7 @@ export const resolveLinuxCompatPlan = (input: {
       argument.startsWith("--ozone-platform")
       || argument.startsWith("--ozone-platform-hint")
   );
-  const warnings = resolveWarnings(
-    facts,
-    backendResolved.backend,
-    gpuResolved.gpuMode,
-    recovery,
-    input.env.LYRA_DISPLAY_BACKEND
-  );
+  const warnings = resolveWarnings(facts, backendResolved.backend, gpuResolved.gpuMode, recovery);
   const notes: string[] = [];
   if (safeMode) {
     notes.push("safe mode enabled: forcing software rendering for startup stability");
@@ -952,22 +890,13 @@ export const resolveLinuxCompatPlan = (input: {
     recommendedProfile: recommendedProfileForFacts(facts),
     safeMode,
     backend: backendResolved.backend,
-    displayBackendReason: backendResolved.reason,
-    inputMethod,
     gpuMode: gpuResolved.gpuMode,
     profileSource: profileResolved.source,
     backendSource: backendResolved.source,
     gpuSource: gpuResolved.source,
     warnings,
     notes,
-    appliedEnv: toAppliedEnv(
-      recovery,
-      facts,
-      input.env,
-      gpuResolved.gpuMode,
-      backendResolved.backend,
-      inputMethod
-    ),
+    appliedEnv: toAppliedEnv(recovery, facts, input.env, gpuResolved.gpuMode),
     appliedSwitches: toAppliedSwitches(
       backendResolved.backend,
       gpuResolved.gpuMode,
@@ -1000,8 +929,6 @@ const buildStatus = (
   recommendedProfile: plan.recommendedProfile,
   safeMode: plan.safeMode,
   backend: plan.backend,
-  displayBackendReason: plan.displayBackendReason,
-  inputMethod: plan.inputMethod,
   gpuMode: plan.gpuMode,
   profileSource: plan.profileSource,
   backendSource: plan.backendSource,
@@ -1061,8 +988,7 @@ export const createLinuxCompatBridge = (input: {
     argv: input.argv,
     env: input.env,
     config,
-    runtimeState,
-    ...(input.platform === "linux" ? { processNames: readLinuxProcessNames() } : {})
+    runtimeState
   });
   let status = buildStatus(input.platform, plan);
 

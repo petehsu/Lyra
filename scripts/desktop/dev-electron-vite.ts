@@ -28,9 +28,15 @@ const buildEnv = (): NodeJS.ProcessEnv => {
   };
   // Electron treats the variable as enabled whenever it exists, even when empty.
   delete env.ELECTRON_RUN_AS_NODE;
-  // Display-backend selection on Linux (native Wayland vs XWayland) is owned
-  // by the linux-compat policy in the main process; the deprecated
-  // ELECTRON_OZONE_PLATFORM_HINT must not pre-empt it here.
+  const isLinuxWayland = process.platform === "linux"
+    && (
+      (env.XDG_SESSION_TYPE ?? "").toLowerCase() === "wayland"
+      || (typeof env.WAYLAND_DISPLAY === "string" && env.WAYLAND_DISPLAY.length > 0)
+    );
+  if (isLinuxWayland) {
+    env.ELECTRON_OZONE_PLATFORM_HINT = "wayland";
+    env.DISPLAY = "";
+  }
   if (process.platform === "darwin") {
     const devElectronDist = path.join(desktopRoot, ".dev-electron");
     if (existsSync(path.join(devElectronDist, "Electron.app"))) {

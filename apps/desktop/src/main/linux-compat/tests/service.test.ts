@@ -84,7 +84,7 @@ describe("linux compat resolver", () => {
     expect(inferX11Display(undefined, [])).toBeNull();
   });
 
-  test("keeps native wayland on a wayland session without input-method signals", () => {
+  test("defaults to reliable startup when both display servers are present", () => {
     const plan = isolatedPlan({
       platform: "linux",
       argv: ["lyra"],
@@ -94,133 +94,14 @@ describe("linux compat resolver", () => {
 
     expect(plan.enabled).toBe(true);
     expect(plan.profile).toBe("reliable");
-    expect(plan.backend).toBe("wayland");
-    expect(plan.displayBackendReason).toBe("wayland-default");
-    expect(plan.inputMethod).toBe("none");
+    expect(plan.backend).toBe("x11");
     expect(plan.gpuMode).toBe("software");
     expect(plan.appliedEnv.LYRA_LINUX_PACKAGE_TYPE).toBe("unknown");
-    expect(plan.appliedEnv.GTK_IM_MODULE).toBeUndefined();
-    expect(plan.appliedEnv.XMODIFIERS).toBeUndefined();
-    expect(plan.appliedSwitches["ozone-platform"]).toBe("wayland");
+    expect(plan.appliedSwitches["ozone-platform"]).toBe("x11");
     expect(plan.facts.distributionId).toBe("ubuntu");
     expect(plan.facts.distributionVersion).toBe("24.04");
     expect(plan.facts.distributionLike).toEqual(["debian"]);
   });
-
-  test("hyprland + fcitx5 auto-selects xwayland compatibility with the input-method env", () => {
-    const plan = isolatedPlan({
-      platform: "linux",
-      argv: ["lyra"],
-      env: {
-        ...baseEnv(),
-        XDG_CURRENT_DESKTOP: "Hyprland"
-      },
-      processNames: ["hyprland", "fcitx5", "dunst"],
-      osReleaseText: ubuntuRelease
-    });
-
-    expect(plan.backend).toBe("x11");
-    expect(plan.displayBackendReason).toBe("wayland-ime-candidate-position-compat");
-    expect(plan.inputMethod).toBe("fcitx5");
-    expect(plan.appliedSwitches["ozone-platform"]).toBe("x11");
-    expect(plan.appliedEnv.GTK_IM_MODULE).toBe("fcitx");
-    expect(plan.appliedEnv.XMODIFIERS).toBe("@im=fcitx");
-    // QT_IM_MODULE is deliberately not injected.
-    expect(plan.appliedEnv.QT_IM_MODULE).toBeUndefined();
-  });
-
-  test("fcitx5 detected without env vars still routes hyprland to xwayland", () => {
-    const plan = isolatedPlan({
-      platform: "linux",
-      argv: ["lyra"],
-      env: {
-        XDG_SESSION_TYPE: "wayland",
-        WAYLAND_DISPLAY: "wayland-1",
-        DISPLAY: ":0",
-        XDG_CURRENT_DESKTOP: "Hyprland"
-      },
-      processNames: ["fcitx5"],
-      osReleaseText: ubuntuRelease
-    });
-
-    expect(plan.inputMethod).toBe("fcitx5");
-    expect(plan.backend).toBe("x11");
-    expect(plan.displayBackendReason).toBe("wayland-ime-candidate-position-compat");
-  });
-
-  test("unknown wayland compositor + fcitx5 takes the conservative xwayland path", () => {
-    const plan = isolatedPlan({
-      platform: "linux",
-      argv: ["lyra"],
-      env: {
-        ...baseEnv(),
-        XDG_CURRENT_DESKTOP: "wlroots"
-      },
-      processNames: ["fcitx5"],
-      osReleaseText: ubuntuRelease
-    });
-
-    expect(plan.facts.desktop).toBe("wlroots");
-    expect(plan.backend).toBe("x11");
-    expect(plan.displayBackendReason).toBe("wayland-ime-candidate-position-compat");
-  });
-
-  test("LYRA_DISPLAY_BACKEND forces the backend and reports the override", () => {
-    const waylandPlan = isolatedPlan({
-      platform: "linux",
-      argv: ["lyra"],
-      env: { ...baseEnv(), XDG_CURRENT_DESKTOP: "Hyprland", LYRA_DISPLAY_BACKEND: "wayland" },
-      processNames: ["fcitx5"],
-      osReleaseText: ubuntuRelease
-    });
-    expect(waylandPlan.backend).toBe("wayland");
-    expect(waylandPlan.displayBackendReason).toBe("user-override");
-    expect(waylandPlan.backendSource).toBe("env");
-    expect(waylandPlan.appliedSwitches["ozone-platform"]).toBe("wayland");
-
-    const xwaylandPlan = isolatedPlan({
-      platform: "linux",
-      argv: ["lyra"],
-      env: { ...baseEnv(), XDG_CURRENT_DESKTOP: "KDE", LYRA_DISPLAY_BACKEND: "xwayland" },
-      processNames: [],
-      osReleaseText: ubuntuRelease
-    });
-    expect(xwaylandPlan.backend).toBe("x11");
-    expect(xwaylandPlan.displayBackendReason).toBe("user-override");
-    expect(xwaylandPlan.appliedSwitches["ozone-platform"]).toBe("x11");
-  });
-
-  test("an invalid LYRA_DISPLAY_BACKEND warns and falls back to auto", () => {
-    const plan = isolatedPlan({
-      platform: "linux",
-      argv: ["lyra"],
-      env: { ...baseEnv(), LYRA_DISPLAY_BACKEND: "max-vibrancy" },
-      osReleaseText: ubuntuRelease
-    });
-
-    expect(plan.backend).toBe("wayland");
-    expect(plan.displayBackendReason).toBe("wayland-default");
-    expect(plan.warnings.some((warning) => warning.code === "invalid-display-backend-override")).toBe(true);
-  });
-
-  test("explicit ozone argv overrides keep the automatic switches off", () => {
-    const plan = isolatedPlan({
-      platform: "linux",
-      argv: ["lyra", "--ozone-platform=wayland"],
-      env: {
-        ...baseEnv(),
-        XDG_CURRENT_DESKTOP: "Hyprland",
-        GTK_IM_MODULE: "fcitx",
-        XMODIFIERS: "@im=fcitx"
-      },
-      processNames: ["fcitx5"],
-      osReleaseText: ubuntuRelease
-    });
-
-    expect(plan.appliedSwitches["ozone-platform"]).toBeUndefined();
-    expect(plan.inputMethod).toBe("fcitx5");
-  });
-
 
   test("uses native profile to prefer wayland on a wayland session", () => {
     const plan = isolatedPlan({
