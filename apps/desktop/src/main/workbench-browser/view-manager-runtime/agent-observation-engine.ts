@@ -1361,7 +1361,9 @@ export const createBrowserAgentObservationEngine = (deps: BrowserAgentObservatio
       ...(browserHealth.length > 0 ? { browserHealth } : {}),
       ...(warnings.length > 0 ? { warnings } : {}),
       nextRecommendedAction:
-        elements.some((element) => element.discoveryScope === "coordinate")
+        semanticTree.blockedRegions.some((region) => region.kind === "auth-prompt")
+                ? "browser_ax.map"
+                : elements.some((element) => element.discoveryScope === "coordinate")
                 || semanticTree.blockedRegions.some((region) => region.fallback === "coordinate")
                 ? "lyra_lumen.act"
                 : semanticTree.coverage.visualCoverage > 0

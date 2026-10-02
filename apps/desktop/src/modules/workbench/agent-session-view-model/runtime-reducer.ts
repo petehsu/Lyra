@@ -267,11 +267,8 @@ const appendReasoningDeltaToBlocks = (
 };
 
 const completeThinkingBlocks = (
-  blocks: readonly AgentMessageBlock[] | undefined
-): readonly AgentMessageBlock[] | undefined => {
-  if (blocks === undefined) {
-    return undefined;
-  }
+  blocks: readonly AgentMessageBlock[]
+): readonly AgentMessageBlock[] => {
   return blocks.map((block) =>
     block.type === "thinking" && block.status === "thinking"
       ? { ...block, status: "done" as const }
@@ -288,7 +285,7 @@ const sealOpenAssistantReasoning = (
   return {
     ...message,
     ...(message.reasoningStatus === "thinking" ? { reasoningStatus: "done" as const } : {}),
-    blocks: completeThinkingBlocks(message.blocks)
+    ...(message.blocks === undefined ? {} : { blocks: completeThinkingBlocks(message.blocks) })
   };
 };
 

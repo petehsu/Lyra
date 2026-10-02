@@ -469,6 +469,7 @@ const createDesktopApi = (): {
         readOnly: false,
         sizeBytes: 0
       }),
+      searchText: async () => ({ hits: [], truncated: false }),
       selectAttachments: async () => [],
       selectDirectories: async () => [],
       createFile: async () => ({}),
@@ -492,6 +493,9 @@ const createDesktopApi = (): {
         items: [],
         isIncomplete: false
       }),
+      hover: async () => null,
+      gotoDefinition: async () => [],
+      findReferences: async () => [],
       onEvent: () => () => undefined
     },
     terminal: {

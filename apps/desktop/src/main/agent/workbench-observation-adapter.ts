@@ -140,7 +140,7 @@ const captureFromWindowPixels = async (
   const scaleX = shellSize.width / Math.max(1, content.width);
   const scaleY = shellSize.height / Math.max(1, content.height);
   const painted = paintWorkspaceLayers(
-    shell.getBitmap(),
+    shell.toBitmap(),
     shellSize.width,
     shellSize.height,
     content.width,
@@ -155,7 +155,7 @@ const captureFromWindowPixels = async (
         y: layer.y,
         width: layer.width,
         height: layer.height,
-        bitmap: fitted.getBitmap(),
+        bitmap: fitted.toBitmap(),
         bitmapWidth: slotWidth,
         bitmapHeight: slotHeight
       };
@@ -191,7 +191,7 @@ const captureLyraWorkspaceWindow = async (
     throw new Error("renderer_bridge_unavailable");
   }
   const scale = screen.getPrimaryDisplay().scaleFactor || 1;
-  const { width, height } = window.getSize();
+  const [width, height] = window.getSize() as [number, number];
   // Wayland's portal treats a D-Bus name as a PipeWire address and can freeze
   // the process. Capture our own pixels instead of asking for a window list.
   if (waylandSession() === false) try {

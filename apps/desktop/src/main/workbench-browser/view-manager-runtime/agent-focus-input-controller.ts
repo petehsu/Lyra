@@ -516,6 +516,7 @@ export const createBrowserAgentFocusInputController = (deps: BrowserAgentFocusIn
         inputMode: "chromium",
         targetMode: target.targetMode,
         browserMode: target.browserMode,
+        targetRef: planned.targetRef,
         ...(beforeObservationId === undefined ? {} : { beforeObservationId }),
         ...(after === null ? {} : { afterObservationId: after.observationId }),
         message: written.join("\n") + inputMapFeedback(cached, after),

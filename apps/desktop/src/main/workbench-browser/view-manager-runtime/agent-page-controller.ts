@@ -398,7 +398,20 @@ export const createBrowserAgentPageController = (deps: BrowserAgentPageControlle
     if (request.waitOperationId) {
       const response = await readResponseWatch(target, request.waitOperationId, Math.min(timeoutMs, 1000));
       const stateOnly = request.responseStateOnly && response.status !== "complete";
-      const read = stateOnly ? { content: "", text: "", truncated: false }
+      const read = stateOnly
+        // Keep the response-state short-circuit on the extract-text contract:
+        // consumers narrow readAgentPage results on WorkbenchTabExtractTextResult.
+        ? {
+            content: "",
+            text: "",
+            truncated: false,
+            scope: "main" as const,
+            startChar: 0,
+            endChar: 0,
+            totalChars: 0,
+            hasMore: false,
+            extractionMethod: "lumen:response-wait"
+          }
         : await readAgentRecentTextFromTarget(target, request.maxChars, timeoutMs, request.scope ?? "full", undefined, true);
       return { ...read, tabId, targetMode: target.targetMode, browserMode: target.browserMode,
         url: agentTargetAddress(target), title: target.webContents.getTitle?.() ?? target.title,

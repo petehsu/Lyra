@@ -384,6 +384,9 @@ export const createModularRuntimeHost = async ({
         wasiFeatureEnabled:
           isPackaged === false || process.env.LYRA_ENABLE_THIRD_PARTY_WASI === "1"
       });
+      const completeAppDevOverlayRoot = isPackaged
+        ? undefined
+        : resolveCompleteAppDevOverlayRoot(process.cwd());
       const componentsBridge = createComponentsIpcBridge({
         componentsRoot: storageRoots.componentsRoot,
         systemRoot: storageRoots.systemRoot,
@@ -391,9 +394,9 @@ export const createModularRuntimeHost = async ({
         releaseKeyScopes: dynamicComponentReleaseKeyScopes,
         allowLocalInstall:
           isPackaged === false || process.env.LYRA_ENABLE_LOCAL_COMPONENT_INSTALL === "1",
-        completeAppDevOverlayRoot: isPackaged
-          ? undefined
-          : resolveCompleteAppDevOverlayRoot(process.cwd()),
+        ...(completeAppDevOverlayRoot === undefined
+          ? {}
+          : { completeAppDevOverlayRoot }),
         runtimeUpdate,
         resourceUpdate,
         componentUpdate,

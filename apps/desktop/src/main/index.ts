@@ -1133,7 +1133,7 @@ const installLyraDockIconThemeSync = (): (() => void) | null => {
 
 const registerIpcHandlers = async (): Promise<void> => {
   applyLyraBrowserLaunchEnvToProcess(app.getPath("userData"), {
-    electronAppPath: app.isPackaged ? undefined : app.getAppPath()
+    ...(app.isPackaged ? {} : { electronAppPath: app.getAppPath() })
   });
   const storageBackedBridges = createStorageBackedIpcBridges({
     fileManagerStorageRoot: storageRoots.modules.fileManager,

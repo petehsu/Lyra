@@ -1226,6 +1226,13 @@ export type WorkbenchBrowserViewManager = {
     options?: BrowserTextExtractOptions
   ) => Promise<WorkbenchTabExtractTextResult>;
   readonly capturePage: (tabId: string) => Promise<WorkbenchVisualCaptureResult>;
+  readonly captureVisiblePageLayers: () => Promise<readonly {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+    readonly imageBase64: string;
+  }[]>;
   readonly readRenderedSnapshot: (payload: unknown) => Promise<unknown>;
   readonly resolveFrameGlobalBounds: (
     tabId: string,
@@ -1500,12 +1507,16 @@ export type WorkbenchBrowserViewManager = {
     }
   ) => Promise<
     | (WorkbenchTabExtractTextResult & {
+        readonly url: string;
+        readonly title: string;
         readonly targetMode: WorkbenchBrowserAgentTargetMode;
         readonly browserMode?: WorkbenchBrowserAgentModeInfo;
         readonly content: string;
         readonly waitState?: WorkbenchBrowserWaitState;
       })
     | (WorkbenchObservationBrowserDomSummary & {
+        readonly url: string;
+        readonly title: string;
         readonly targetMode: WorkbenchBrowserAgentTargetMode;
         readonly browserMode?: WorkbenchBrowserAgentModeInfo;
         readonly content: string;

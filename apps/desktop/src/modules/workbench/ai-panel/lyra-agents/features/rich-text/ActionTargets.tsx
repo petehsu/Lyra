@@ -553,7 +553,9 @@ export function AdaptiveImageLayers({
           decoding="async"
           loading="lazy"
           referrerPolicy="no-referrer"
-          fetchpriority="low"
+          // Lowercase on purpose: React 18 renders unknown camelCase props
+          // with a dev warning, and the HTML attribute is case-insensitive.
+          {...{ fetchpriority: "low" }}
         />
       </span>
       {photo}

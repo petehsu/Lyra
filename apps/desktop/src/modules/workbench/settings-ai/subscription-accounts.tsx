@@ -27,14 +27,15 @@ export function SubscriptionRouteLogin({
   const [accountName, setAccountName] = useState<string | null>(null);
   const [accountAvatar, setAccountAvatar] = useState<string | null>(null);
 
-  if (desktopApi === null) {
+  if (desktopApi === null || desktopApi.agent === undefined) {
     return null;
   }
+  const agentApi = desktopApi.agent;
 
   const start = () => {
     setBusy(true);
     setMessage("Opening sign-in…");
-    void desktopApi.agent.startAccountLogin({
+    void agentApi.startAccountLogin({
       provider: routeId,
       ...(routeId === "snowflake_cortex" && account.trim().length > 0
         ? { account: account.trim() }
@@ -59,7 +60,7 @@ export function SubscriptionRouteLogin({
     }
     setBusy(true);
     setMessage(borrow ? "Checking the local login…" : "Finishing sign-in…");
-    void desktopApi.agent.completeAccountLogin({
+    void agentApi.completeAccountLogin({
       provider: routeId,
       flowId,
       callbackInput: borrow ? "borrow" : callback,

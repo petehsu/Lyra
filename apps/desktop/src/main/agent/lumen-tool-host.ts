@@ -23,6 +23,7 @@ import { loginMapNoteForStorage } from "./login-map-note";
 import type { WorkbenchObservedTabDescriptor } from "../../shared/workbench-observation";
 import {
   allocateLiveAgentBrowserPreviewTabId,
+  readAgentBrowserPreviewTarget,
   rememberAgentBrowserPreviewTarget
 } from "./agent-browser-preview-target";
 import { materializeLumenCapture, materializeQrCropCapture } from "./artifact-materializer";
@@ -264,7 +265,18 @@ export const createLumenToolHost = ({
     if (targetMode === "isolated" && tabId && sessionPages.pages(payload).some(page => page.tabId === tabId)) {
       return Promise.resolve(tabId);
     }
-    return resolveWorkbenchBrowserAgentTabId(payload, targetMode);
+    return resolveWorkbenchBrowserAgentTabId(payload, targetMode).catch((error) => {
+      // The agent's preview page survives a workbench tab switch: a live
+      // default resolution that finds no browser page tab falls back to it.
+      if (tabId !== null || targetMode !== "live" || !(error instanceof NonBrowserWorkbenchTabError)) {
+        throw error;
+      }
+      const preview = readAgentBrowserPreviewTarget();
+      if (preview === null || preview.targetMode !== "live") {
+        throw error;
+      }
+      return preview.tabId;
+    });
   };
   const withLyraLumenResult = (
     requestedMethod: string,
@@ -418,8 +430,7 @@ export const createLumenToolHost = ({
         nextRecommendedAction: "lyra_lumen.map"
       };
     }
-    finally { operation.dispose(); if (timer !== undefined) clearTimeout(timer); }
-  };
+    finally { operation.dispose(); if (timer !== undefined) clearTimeout(timer); }  };
 
   const elementRevealKey = (element: unknown): string => {
     if (!isRecord(element)) return "";
@@ -657,13 +668,16 @@ export const createLumenToolHost = ({
       // Compatibility with older host bridges. New hosts always use the shared scene.
       const point = readOptionalLumenPoint(payload);
       if (!point) throw new Error("This host requires screenshot point coordinates");
-      return withLumenTargetIds(await browser.actOnAgentVisualPoint(tabId, {
-        captureId: readStringField(payload, "captureId"), point, effect,
-        interaction: readLumenVisualInteraction(payload), ...readLumenModeRequest(payload, targetMode),
-        ...(readOptionalLumenToPoint(payload) ? { to: readOptionalLumenToPoint(payload)! } : {}),
-        ...(readOptionalNumberField(payload, "scrollDy") === undefined ? {} : { scrollDy: readOptionalNumberField(payload, "scrollDy")! }),
-        ...(timeoutMs === undefined ? {} : { timeoutMs })
-      }), tabId);
+      return withLumenTargetIds({
+        ...await browser.actOnAgentVisualPoint(tabId, {
+          captureId: readStringField(payload, "captureId"), point, effect,
+          interaction: readLumenVisualInteraction(payload), ...readLumenModeRequest(payload, targetMode),
+          ...(readOptionalLumenToPoint(payload) ? { to: readOptionalLumenToPoint(payload)! } : {}),
+          ...(readOptionalNumberField(payload, "scrollDy") === undefined ? {} : { scrollDy: readOptionalNumberField(payload, "scrollDy")! }),
+          ...(timeoutMs === undefined ? {} : { timeoutMs })
+        }),
+        visual: true
+      }, tabId);
     }),
     "lyraLumen.reveal": withLyraLumenResult("lyraLumen.reveal", async (payload) => {
       const browser = getBrowserBridge();

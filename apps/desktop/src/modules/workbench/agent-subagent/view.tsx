@@ -41,7 +41,7 @@ const adoptSessionSnapshot = (
       ...merged,
       follow: current.follow,
       turnStatus: current.turnStatus,
-      activeTurnId: current.activeTurnId
+      activeTurnId: current.activeTurnId ?? null
     };
   }
   return merged;

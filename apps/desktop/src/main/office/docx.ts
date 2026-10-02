@@ -60,7 +60,7 @@ export const applyDocxBytes = async (
     await applyHeadless(doc, ops);
     return { bytes: await save(doc), applied: ops.length };
   } catch (error) {
-    officeError(error);
+    throw officeError(error);
   } finally {
     close(doc);
   }

@@ -125,7 +125,9 @@ export const armTextInputScript = (key: string, text: string, clear: boolean): s
   if (focused(node.ownerDocument) !== node || !node.isConnected) return fail('editable_changed');
   state.node = node; state.before = before;
   state.method = special ? 'nativeFormValue' : 'chromium.insertText';
-  state.alreadyMatched = CLEAR && canonical(node,before) === canonical(node,TEXT);
+  // Skipping is safe for incremental input too: only an exact whole-value
+  // match skips, so partial appends still insert at the caret.
+  state.alreadyMatched = canonical(node,before) === canonical(node,TEXT);
   state.expected = TEXT;
   if (state.alreadyMatched) return {ok:true, skipInput:true};
   if (special) {

@@ -7,7 +7,8 @@ import {
   crossMapLines,
   formatAffordanceListsForMap,
   splitAffordanceColumns,
-  surfaceMapElements
+  surfaceMapElements,
+  type AffordanceListFields
 } from "../view-manager-runtime/agent-affordance-lists";
 
 const el = (
@@ -23,7 +24,7 @@ const el = (
     offscreen?: boolean;
     targetRef?: string;
   }
-) => ({
+): AffordanceListFields => ({
   id,
   frameRef: "main",
   tagName: rest.tagName,
@@ -445,7 +446,7 @@ describe("surfaceMapElements", () => {
   });
 
   test("sends only the current window when many controls remain", () => {
-    const outside = Array.from({ length: 30 }, (_, index) => index);
+    const outside = Array.from({ length: 30 }, (_, index) => `outside-${index}`);
     const page = surfaceMapElements(["visible"], outside);
     expect(page.elements).toEqual(["visible"]);
     expect(page.remaining).toBe(30);

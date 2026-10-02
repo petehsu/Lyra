@@ -24,12 +24,12 @@ export const typeTargetWhenSeveralFields = (
   const editables = elements.filter(isAgentEditableElement);
   if (focused !== null && focused.tagName === "textarea" && editables.length > 1) {
     const others = editables.filter((candidate) => candidate.targetRef !== focused.targetRef);
-    return others.length === 1 ? others[0] : null;
+    return others.length === 1 ? others[0] ?? null : null;
   }
   if (focused !== null) {
     return focused;
   }
-  return editables.length === 1 ? editables[0] : null;
+  return editables.length === 1 ? editables[0] ?? null : null;
 };
 
 export const activeEditableElementFromObservation = (

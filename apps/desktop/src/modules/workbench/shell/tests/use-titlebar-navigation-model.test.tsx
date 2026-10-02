@@ -331,6 +331,12 @@ describe("useTitlebarNavigationModel", () => {
           label: "Google",
           accentColor: "#4285F4",
           searchUrlTemplate: "https://www.google.com/search?q={searchTerms}"
+        },
+        {
+          id: "duckduckgo",
+          label: "DuckDuckGo",
+          accentColor: "#DE5833",
+          searchUrlTemplate: "https://duckduckgo.com/?q={searchTerms}"
         }
       ]
     });
@@ -341,11 +347,11 @@ describe("useTitlebarNavigationModel", () => {
 
     expect(resolveWebSearchEngine).toHaveBeenCalledWith(
       expect.objectContaining({
-        engines: [
+        engines: expect.arrayContaining([
           expect.objectContaining({
             id: "google"
           })
-        ]
+        ])
       })
     );
     expect(tabsModel.openWebSearchTabs).toHaveBeenCalledWith(

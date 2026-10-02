@@ -1238,7 +1238,9 @@ describe("Settings AI views", () => {
         ],
       }));
     });
-    expect(refreshAgentModels).toHaveBeenCalledWith("openai-compatible");
+    expect(refreshAgentModels).toHaveBeenCalledWith("openai-compatible", {
+      listOnly: true
+    });
   });
 
   test("does not reuse the built-in OpenCode profile for a new custom provider", async () => {

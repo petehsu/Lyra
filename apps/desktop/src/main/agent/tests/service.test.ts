@@ -1303,7 +1303,7 @@ describe("Agent IPC bridge", () => {
     expect(browserBridge.observeAgentPage).toHaveBeenCalledWith("page-1", {
       strategy: "interactiveOnly",
       targetMode: "live",
-      mapScope: "viewport"
+      mapScope: "document"
     });
 
     expect(
@@ -1331,7 +1331,7 @@ describe("Agent IPC bridge", () => {
     expect(browserBridge.observeAgentPage).toHaveBeenLastCalledWith("page-1", {
       strategy: "interactiveOnly",
       targetMode: "live",
-      mapScope: "viewport"
+      mapScope: "document"
     });
     browserBridge.observeAgentPage.mockClear();
     await expect(registered.get("lyraLumen.map")?.({ target: "isolated" })).resolves.toMatchObject({
@@ -1340,7 +1340,7 @@ describe("Agent IPC bridge", () => {
     expect(browserBridge.observeAgentPage).toHaveBeenLastCalledWith("page-1", {
       strategy: "interactiveOnly",
       targetMode: "isolated",
-      mapScope: "viewport"
+      mapScope: "document"
     });
 
     browserBridge.observeAgentPage.mockResolvedValueOnce({
@@ -1367,7 +1367,7 @@ describe("Agent IPC bridge", () => {
     const oauthMapResult = await registered.get("lyraLumen.map")?.({ targetMode: "live" });
     expect(oauthMapResult).toMatchObject({
       kind: "lyraLumenMap",
-      nextRecommendedAction: "browser_ax.map"
+      nextRecommendedAction: "lyra_lumen.read"
     });
     expect(oauthMapResult).not.toHaveProperty("needsUserAction");
 
@@ -1410,7 +1410,7 @@ describe("Agent IPC bridge", () => {
       targetMode: "isolated",
       authState: "borrowLiveLogin",
       useLiveLoginState: true,
-      mapScope: "viewport"
+      mapScope: "document"
     });
 
     await expect(
@@ -1738,7 +1738,8 @@ describe("Agent IPC bridge", () => {
       registered.get("lyraLumen.vact")?.({
         captureId: "visual-capture-1",
         point: { x: 50, y: 100, reason: "visual button" },
-        interaction: "click"
+        interaction: "click",
+        effect: "unknown"
       })
     ).resolves.toMatchObject({
       ok: true,
@@ -1751,6 +1752,7 @@ describe("Agent IPC bridge", () => {
     expect(browserBridge.actOnAgentVisualPoint).toHaveBeenCalledWith("page-1", {
       captureId: "visual-capture-1",
       point: { x: 50, y: 100, reason: "visual button" },
+      effect: "unknown",
       interaction: "click",
       targetMode: "live"
     });
@@ -1826,12 +1828,15 @@ describe("Agent IPC bridge", () => {
       until: "textContains",
       matched: true,
       content: "Doubao reply complete",
-      nextRecommendedAction: "lyra_lumen.map"
+      nextRecommendedAction: "inspect_returned_state_before_waiting"
     });
     expect(browserBridge.readAgentPage).toHaveBeenCalledWith("page-1", {
       strategy: "focus",
+      scope: "full",
+      textTail: true,
+      waitText: "reply",
       targetMode: "live",
-      timeoutMs: expect.any(Number)
+      timeoutMs: 250
     });
     expect(browserBridge.showAgentActivity).toHaveBeenCalledWith("page-1", {
       action: "wait",
@@ -1867,10 +1872,16 @@ describe("Agent IPC bridge", () => {
       kind: "lyraLumenNavigate",
       url: "https://example.com/docs"
     });
-    expect(browserBridge.navigate).toHaveBeenCalledWith({
-      address: "https://example.com/docs",
-      newTab: true
-    });
+    // newTab no longer casts the page into the workspace; it opens a fresh
+    // preview tab so a helper site cannot replace the task's active tab.
+    expect(browserBridge.navigate).not.toHaveBeenCalled();
+    expect(browserBridge.navigateAgentPage).toHaveBeenCalledWith(
+      expect.stringMatching(/^browser-agent-/u),
+      {
+        url: "https://example.com/docs",
+        targetMode: "live"
+      }
+    );
 
     await expect(
       registered.get("lyraLumen.navigate")?.({
@@ -1883,10 +1894,14 @@ describe("Agent IPC bridge", () => {
       targetMode: "live",
       url: "https://example.com/docs"
     });
-    expect(browserBridge.navigate).toHaveBeenCalledWith({
-      address: "https://example.com/docs",
-      newTab: true
-    });
+    expect(browserBridge.navigate).not.toHaveBeenCalled();
+    expect(browserBridge.navigateAgentPage).toHaveBeenCalledWith(
+      expect.stringMatching(/^browser-agent-/u),
+      {
+        url: "https://example.com/docs",
+        targetMode: "live"
+      }
+    );
 
     await expect(
       registered.get("lyraLumen.reload")?.({
@@ -1998,9 +2013,12 @@ describe("Agent IPC bridge", () => {
       title: "The Internet",
       elements: [{
         id: 1,
+        targetRef: "lumen:login-username",
+        frameRef: "page",
         tagName: "input",
         role: "textbox",
-        label: "Username"
+        label: "Username",
+        bounds: { x: 10, y: 120, width: 200, height: 24 }
       }],
       activeElementId: null,
       focusOrder: [] as number[],
@@ -2266,7 +2284,7 @@ describe("Agent IPC bridge", () => {
       {
         strategy: "interactiveOnly",
         targetMode: "isolated",
-        mapScope: "viewport"
+        mapScope: "document"
       }
     );
 
@@ -2410,6 +2428,11 @@ describe("Agent IPC bridge", () => {
       getWindow: () => null,
       getBrowserBridge: () => ({
         readActiveTabId: () => "page-1",
+        readPageState: vi.fn((request?: { readonly tabId?: string }) =>
+          request?.tabId === "page-1"
+            ? { tabId: "page-1", address: "https://example.com" }
+            : null
+        ),
         navigate,
         navigateAgentPage
       }) as never,
@@ -2438,6 +2461,7 @@ describe("Agent IPC bridge", () => {
       tabId: navigateAgentPage.mock.calls[0]?.[0],
       targetMode: "live"
     });
+    const firstPreviewTabId = navigateAgentPage.mock.calls[0]?.[0];
 
     navigateAgentPage.mockClear();
     await expect(registered.get("lyraLumen.navigate")?.({
@@ -2448,12 +2472,19 @@ describe("Agent IPC bridge", () => {
       kind: "lyraLumenNavigate",
       url: "https://example.com/docs"
     });
-    expect(navigate).toHaveBeenCalledWith({
-      address: "https://example.com/docs",
-      newTab: true,
-      useFrameworkRouter: true
-    });
-    expect(navigateAgentPage).not.toHaveBeenCalled();
+    // newTab no longer casts the page into the workspace; it opens a fresh
+    // preview tab so a helper site cannot replace the task's active tab.
+    expect(navigate).not.toHaveBeenCalled();
+    expect(navigateAgentPage).toHaveBeenCalledTimes(1);
+    expect(navigateAgentPage).toHaveBeenCalledWith(
+      expect.stringMatching(/^browser-agent-/u),
+      {
+        url: "https://example.com/docs",
+        targetMode: "live",
+        useFrameworkRouter: true
+      }
+    );
+    expect(navigateAgentPage.mock.calls[0]?.[0]).not.toBe(firstPreviewTabId);
 
     navigate.mockClear();
     await expect(registered.get("lyraLumen.navigate")?.({

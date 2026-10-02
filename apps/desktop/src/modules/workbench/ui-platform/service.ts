@@ -58,7 +58,11 @@ const REQUIRED_CAPABILITIES = [
   "supportsInteractionPolicy"
 ] as const satisfies readonly (keyof WorkbenchUiPack["manifest"]["capabilities"])[];
 
-const isFunctionAdapter = (value: unknown): boolean => typeof value === "function";
+// Adapters may be plain functions or React components (memo/forwardRef wrap
+// them in an object with $$typeof).
+const isFunctionAdapter = (value: unknown): boolean =>
+  typeof value === "function"
+  || (typeof value === "object" && value !== null && "$$typeof" in value);
 
 export const validateWorkbenchUiPack = (
   pack: WorkbenchUiPack

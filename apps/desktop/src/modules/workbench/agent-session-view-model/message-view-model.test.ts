@@ -196,10 +196,10 @@ describe("agentSessionToChatMessages", () => {
         id: "call-1",
         name: "exec_command",
         label: "Ran command",
-        status: "done",
+        status: "completed",
         input: { command: "pwd" },
         startedAt: "2026-06-20T00:00:01.000Z",
-        completedAt: "2026-06-20T00:00:01.500Z"
+        finishedAt: "2026-06-20T00:00:01.500Z"
       }]
     }));
 

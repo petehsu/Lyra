@@ -393,7 +393,7 @@ export const createPageFindRuntime = ({
       query,
       currentIndex,
       ...(activeMatchId === undefined ? {} : { activeMatchId }),
-      ...(reveal.rect === undefined ? {} : { revealRect: reveal.rect }),
+      ...(reveal.ok === true && reveal.rect !== undefined ? { revealRect: reveal.rect } : {}),
       ...result
     };
   };

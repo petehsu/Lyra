@@ -23,9 +23,9 @@ const electronMock = vi.hoisted(() => {
 
 vi.mock("electron", () => electronMock);
 
-import { LYRA_CHANNELS } from "../../shared/desktop-bridge";
+import { LYRA_CHANNELS, type ComponentAppModuleRuntime } from "../../shared/desktop-bridge";
 import type { ModuleDataSchemaStore } from "./data-schema";
-import type { ComponentRegistryStore } from "./registry";
+import type { ComponentRegistryStore, InstalledComponentV1 } from "./registry";
 import { createComponentsIpcBridge } from "./service";
 
 const roots: string[] = [];
@@ -79,6 +79,33 @@ const createStore = (
   ...overrides
 } as unknown as ComponentRegistryStore);
 
+const installedNotifications = (): InstalledComponentV1 => ({
+  componentId: "lyra.notifications",
+  kind: "app",
+  active: "9.0.0",
+  versions: {
+    "9.0.0": {
+      installedAt: "2026-07-30T00:00:00.000Z",
+      target: "linux-x64",
+      manifest: {
+        schemaVersion: 1,
+        componentId: "lyra.notifications",
+        kind: "app",
+        version: "9.0.0",
+        target: "linux-x64",
+        entry: "payload.zip",
+        activation: "module-idle",
+        dataSchema: { readerMin: 1, readerMax: 1, writer: 1 },
+        permissions: ["notifications:read"],
+        publisher: "Lyra",
+        files: [{ path: "payload.zip", size: 1, sha256: "a".repeat(64) }],
+        keyId: "lyra-release",
+        signature: "A".repeat(86) + "=="
+      }
+    }
+  }
+});
+
 const createBridge = (
   overlayRoot: string | undefined,
   store: ComponentRegistryStore,
@@ -89,7 +116,7 @@ const createBridge = (
   publicKeys: {},
   releaseKeyScopes: {},
   allowLocalInstall: false,
-  completeAppDevOverlayRoot: overlayRoot,
+  ...(overlayRoot === undefined ? {} : { completeAppDevOverlayRoot: overlayRoot }),
   registryStore: store,
   ...(dataSchemaStore === undefined ? {} : { dataSchemaStore })
 });
@@ -111,10 +138,10 @@ describe("complete app dev overlay IPC", () => {
       active: "1.0.0"
     })]);
 
-    const runtime = await electronMock.handlers.get(LYRA_CHANNELS.componentsResolveAppModule)?.(
+    const runtime = (await electronMock.handlers.get(LYRA_CHANNELS.componentsResolveAppModule)?.(
       {},
       { componentId: "lyra.notifications", version: "1.0.0" }
-    );
+    )) as ComponentAppModuleRuntime;
     expect(runtime).toEqual({
       componentId: "lyra.notifications",
       version: "1.0.0",
@@ -136,30 +163,8 @@ describe("complete app dev overlay IPC", () => {
   test("keeps the signed registry when notifications is already installed", async () => {
     const overlayRoot = await createOverlayRoot("export default { id: 'overlay' };\n");
     const store = createStore({
-      list: vi.fn(async () => [{
-        componentId: "lyra.notifications",
-        kind: "app",
-        active: "9.0.0",
-        versions: {
-          "9.0.0": {
-            installedAt: "2026-07-30T00:00:00.000Z",
-            target: "linux-x64",
-            manifest: { componentId: "lyra.notifications" }
-          }
-        }
-      }]),
-      read: vi.fn(async () => ({
-        componentId: "lyra.notifications",
-        kind: "app",
-        active: "9.0.0",
-        versions: {
-          "9.0.0": {
-            installedAt: "2026-07-30T00:00:00.000Z",
-            target: "linux-x64",
-            manifest: { componentId: "lyra.notifications" }
-          }
-        }
-      })),
+      list: vi.fn(async () => [installedNotifications()]),
+      read: vi.fn(async () => installedNotifications()),
       verifyInstalledVersion: vi.fn(async () => {
         throw new Error("signed verify");
       })

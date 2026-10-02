@@ -319,10 +319,13 @@ export const useFileEditorRuntime = ({
                 if (selection === undefined) {
                   return;
                 }
+                // Monaco hands opener callbacks IRange | IPosition; a bare
+                // position reports lineNumber/column instead of a range.
+                const isRange = "startLineNumber" in selection;
                 revealLocationRef.current(latestState.instanceId, {
-                  line: selection.startLineNumber,
-                  column: selection.startColumn,
-                  endLine: selection.endLineNumber
+                  line: isRange ? selection.startLineNumber : selection.lineNumber,
+                  column: isRange ? selection.startColumn : selection.column,
+                  ...(isRange ? { endLine: selection.endLineNumber } : {})
                 });
               });
               return true;

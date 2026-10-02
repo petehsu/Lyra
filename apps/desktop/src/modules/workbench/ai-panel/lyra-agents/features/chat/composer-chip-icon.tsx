@@ -76,7 +76,7 @@ export const FileChipTypeIcon = ({
   kind
 }: {
   readonly name: string;
-  readonly kind?: AgentFileEntryKind;
+  readonly kind?: AgentFileEntryKind | undefined;
 }) => (
   <span
     className="lyra-agents-citation-chip-icon"

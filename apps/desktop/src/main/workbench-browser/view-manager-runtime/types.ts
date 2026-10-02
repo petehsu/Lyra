@@ -64,7 +64,7 @@ type BrowserAgentPageTarget = {
   browserMode: WorkbenchBrowserAgentModeInfo;
   address: string;
   title: string;
-  faviconUrl?: string;
+  faviconUrl?: string | undefined;
   isLoading: boolean;
 };
 

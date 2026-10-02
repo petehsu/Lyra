@@ -48,7 +48,7 @@ export const createBuiltinHandlers = ({
   readonly labels: SoftwareStoreLabels;
   readonly tabsModel: WorkspaceTabsModel;
   readonly fileManagerModel: FileManagerModel;
-  readonly imageViewerModel?: ImageViewerModel;
+  readonly imageViewerModel?: ImageViewerModel | undefined;
   readonly software: readonly LyraSoftwareManifest[];
   readonly stateReaders: SoftwareStateReaders;
   readonly refreshLoginManagerState: () => Promise<unknown>;

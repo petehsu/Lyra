@@ -267,6 +267,9 @@ export interface ModelOption {
   selected?: boolean;
   contextWindow?: number | null;
   sourceLabel?: string | null;
+  accountEmail?: string | null;
+  accountName?: string | null;
+  accountAvatarUrl?: string | null;
 }
 
 export interface ProviderOptionControl {

@@ -1044,6 +1044,7 @@ const AgentMessage = memo(function AgentMessage({
   onContextMenu,
   onCiteMessage
 }: AgentMessageProps) {
+  const { session } = useData();
   const isLiveTurnMessage = isActiveTurnRunning;
   const streamingTextActive = isLiveTurnMessage;
   const streamingMessageId = message.streamingMessageId ?? message.id;

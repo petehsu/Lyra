@@ -177,6 +177,8 @@ type FakeWebContents = {
   insertCSS: ReturnType<typeof vi.fn>;
   findInPage: ReturnType<typeof vi.fn>;
   stopFindInPage: ReturnType<typeof vi.fn>;
+  insertText: ReturnType<typeof vi.fn>;
+  removeInsertedCSS: ReturnType<typeof vi.fn>;
   capturePage: ReturnType<typeof vi.fn>;
   navigationHistory: {
     canGoBack: ReturnType<typeof vi.fn>;
@@ -200,6 +202,49 @@ const originFromUrl = (url: string): string => {
   }
 };
 
+// Electron sendInputEvent lands in the renderer as a trusted input event, and
+// JSDOM can only construct synthetic ones whose trust flag the dispatcher
+// resets. Chromium also routes the click through the compositor, so a point
+// over a child iframe is delivered to that frame's document in child-frame
+// coordinates. This fixture mirrors both.
+const markTrustedInput = (event: Event): void => {
+  for (const symbol of Object.getOwnPropertySymbols(event)) {
+    const impl = (event as unknown as Record<symbol, unknown>)[symbol];
+    if (impl !== null && typeof impl === "object" && "isTrusted" in (impl as object)) {
+      Object.defineProperty(impl as object, "isTrusted", {
+        configurable: true,
+        get: () => true,
+        set: () => undefined
+      });
+    }
+  }
+};
+const dispatchTrustedMouseInput = (frame: FakeFrame, type: string, x: number, y: number): void => {
+  const win = frame.window;
+  const hit = win.document.elementFromPoint(x, y);
+  if (hit === null) {
+    return;
+  }
+  if (hit instanceof win.HTMLIFrameElement) {
+    const iframe = hit as HTMLIFrameElement;
+    const child = frame.frames.find((candidate) =>
+      (iframe.name.length > 0 && candidate.name === iframe.name) || candidate.url === iframe.src);
+    if (child !== undefined) {
+      const rect = iframe.getBoundingClientRect();
+      dispatchTrustedMouseInput(child, type, x - rect.x, y - rect.y);
+      return;
+    }
+  }
+  const event = new win.MouseEvent(type, {
+    bubbles: true,
+    composed: true,
+    clientX: x,
+    clientY: y
+  });
+  markTrustedInput(event);
+  hit.dispatchEvent(event);
+};
+
 const createWindow = (html: string, url: string): DOMWindow => {
   const dom = new JSDOM(html, {
     url,
@@ -212,6 +257,35 @@ const createWindow = (html: string, url: string): DOMWindow => {
   Object.defineProperty(win.Element.prototype, "checkVisibility", { configurable: true, value: function (this: Element) {
     const style = win.getComputedStyle(this);
     return style.display !== "none" && !["hidden", "collapse"].includes(style.visibility);
+  } });
+  // Chromium scrolls when revealing owners; JSDOM has no layout engine, so the
+  // reveal scripts only need the call to exist.
+  Object.defineProperty(win.Element.prototype, "scrollIntoView", { configurable: true, value: function (this: Element) {
+    // Intentional no-op: JSDOM has no scrolling layout to update.
+  } });
+  // Rendered-text reads gate text nodes on non-empty range rects. JSDOM has no
+  // layout, so derive range rects from the fake element boxes set by setRect;
+  // unmeasured elements keep the all-zero JSDOM box and stay excluded.
+  Object.defineProperty(win.Range.prototype, "getClientRects", { configurable: true, value: function (this: Range) {
+    const dbgStart = this.startContainer;
+    const element = dbgStart.nodeType === 3 ? dbgStart.parentElement : dbgStart.nodeType === 1 ? (dbgStart as Element) : null;
+    const rect = element !== null && typeof element.getBoundingClientRect === "function"
+      ? element.getBoundingClientRect()
+      : null;
+    if (rect === null || rect.width <= 0 || rect.height <= 0) {
+      return [];
+    }
+    return [{
+      left: rect.left,
+      right: rect.right,
+      top: rect.top,
+      bottom: rect.bottom,
+      width: rect.width,
+      height: rect.height,
+      x: rect.x,
+      y: rect.y,
+      toJSON: () => rect
+    }];
   } });
   Object.defineProperty(win, "innerWidth", { configurable: true, value: 1_280 });
   Object.defineProperty(win, "innerHeight", { configurable: true, value: 720 });
@@ -246,6 +320,10 @@ const setRect = (element: Element, rect: Rect): void => {
     height: rect.height,
     toJSON: () => rect
   }));
+  // JSDOM has no layout engine; the surface frame math scales points by the
+  // owner element's border box, so supply the fake layout box too.
+  Object.defineProperty(element, "offsetWidth", { configurable: true, value: rect.width });
+  Object.defineProperty(element, "offsetHeight", { configurable: true, value: rect.height });
 };
 
 const createFrame = ({
@@ -374,13 +452,28 @@ const createWebContents = (
       ) {
         const domEventType =
           type === "mouseMove" ? "mousemove" : type === "mouseDown" ? "mousedown" : "mouseup";
-        const target = mainFrame.window.document.elementFromPoint(x, y);
-        target?.dispatchEvent(new mainFrame.window.MouseEvent(domEventType, {
-          bubbles: true,
-          composed: true,
-          clientX: x,
-          clientY: y
-        }));
+        dispatchTrustedMouseInput(mainFrame, domEventType, x, y);
+      }
+    }),
+    insertText: vi.fn(async (text: string) => {
+      const win = mainFrame.window;
+      // document.activeElement retargets to the shadow host; walk open shadow
+      // roots to the actual focused editable, as Chromium's insertText would.
+      let active = win.document.activeElement;
+      while (active !== null && active.shadowRoot !== null && active.shadowRoot.activeElement !== null) {
+        active = active.shadowRoot.activeElement;
+      }
+      if (active instanceof win.HTMLInputElement || active instanceof win.HTMLTextAreaElement) {
+        const start = active.selectionStart ?? active.value.length;
+        const end = active.selectionEnd ?? active.value.length;
+        active.value = active.value.slice(0, start) + text + active.value.slice(end);
+        const caret = start + text.length;
+        try {
+          active.setSelectionRange(caret, caret);
+        } catch {
+          // Caret-less input types keep their full replacement value.
+        }
+        active.dispatchEvent(new win.Event("input", { bubbles: true, composed: true }));
       }
     }),
     executeJavaScript: vi.fn(async (script: string, userGesture?: boolean) =>
@@ -434,6 +527,7 @@ const createWebContents = (
       }
     }),
     insertCSS: vi.fn(async () => "css-key"),
+    removeInsertedCSS: vi.fn(async () => undefined),
     findInPage: vi.fn(),
     stopFindInPage: vi.fn(),
     capturePage: vi.fn(async () => ({
@@ -1305,13 +1399,13 @@ describe("Workbench browser semantic tree fixtures", () => {
     });
     expect(fastResult.afterObservationId).toBeUndefined();
     expect(fastResult.elementDiff ?? fastResult.diffUnavailable).toBeTruthy();
-    expect(mainFrame.executeJavaScript.mock.calls.some((call) => String(call[0]).includes("TARGET_ID"))).toBe(true);
-    expect(mainFrame.executeJavaScript.mock.calls.some((call) => String(call[0]).includes("window.innerWidth"))).toBe(true);
+    expect(mainFrame.executeJavaScript.mock.calls.some((call) => String(call[0]).includes("element_not_found"))).toBe(true);
+    expect(mainFrame.executeJavaScript.mock.calls.some((call) => String(call[0]).includes("defaultView.innerWidth"))).toBe(true);
     expect(
       webContents.executeJavaScript.mock.calls.filter(
         (call) => String(call[0]).includes("__lyra_agent_page_cursor__") === false
       )
-    ).toHaveLength(1);
+    ).toHaveLength(0);
     expect(
       webContents.executeJavaScript.mock.calls.some(
         (call) => String(call[0]).includes("__lyra_agent_page_cursor__")
@@ -1551,7 +1645,7 @@ describe("Workbench browser semantic tree fixtures", () => {
     expect(observation.blockedRegions).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          kind: "cross-origin",
+          kind: "visual-fallback",
           frameTreeNodeId: 2,
           bounds: { x: 240, y: 140, width: 360, height: 220 },
           fallback: "coordinate"
@@ -1604,45 +1698,24 @@ describe("Workbench browser semantic tree fixtures", () => {
       parent: mainFrame,
       html: "<!doctype html><title>Pay</title><button>Pay now</button>",
       executeJavaScript: (script) => {
+        // The frame observation script must go through the CDP attach below;
+        // direct main-frame probes of a cross-origin frame stay blocked.
         if (script.includes("const FRAME_TREE_NODE_ID")) {
           throw new Error("cross origin frame execution blocked");
         }
-        throw new Error("unexpected child frame script");
+        return childFrame.window.eval(script);
       }
     });
     appendChildFrame(mainFrame, childFrame);
     const iframe = mainFrame.window.document.querySelector("iframe");
+    const payButton = childFrame.window.document.querySelector("button");
     expect(iframe).toBeInstanceOf(mainFrame.window.HTMLIFrameElement);
+    expect(payButton).toBeInstanceOf(childFrame.window.HTMLButtonElement);
     setRect(iframe as Element, { x: 240, y: 140, width: 360, height: 220 });
-
-    const oopifObservation = {
-      title: "Pay",
-      url: "https://pay.example/auth",
-      elements: [
-        {
-          id: 1,
-          frameTreeNodeId: 2,
-          tagName: "button",
-          role: "button",
-          label: "Pay now",
-          selectorPreview: "button",
-          bounds: { x: 252, y: 156, width: 120, height: 30 },
-          localBounds: { x: 12, y: 16, width: 120, height: 30 },
-          frameBounds: { x: 240, y: 140, width: 360, height: 220 },
-          focusable: true,
-          disabled: false,
-          editable: false
-        }
-      ],
-      focusOrder: [1],
-      activeElementId: null,
-      authChallengeSignals: [],
-      blockedRegions: [],
-      warnings: []
-    };
+    setRect(payButton as Element, { x: 12, y: 16, width: 120, height: 30 });
 
     const { manager, webContents } = createManager(mainFrame, {
-      sendCommand: async (method, _params, sessionId) => {
+      sendCommand: async (method, params, sessionId) => {
         if (method === "Target.getTargets") {
           return {
             targetInfos: [{ type: "iframe", targetId: "oopif-target", url: "https://pay.example/auth" }]
@@ -1652,7 +1725,10 @@ describe("Workbench browser semantic tree fixtures", () => {
           return { sessionId: "oopif-session" };
         }
         if (method === "Runtime.evaluate" && sessionId === "oopif-session") {
-          return { result: { value: oopifObservation } };
+          // The attached OOPIF session evaluates inside the child frame's own
+          // JavaScript world, which also stamps the surface node registry.
+          const expression = typeof params?.expression === "string" ? params.expression : "";
+          return { result: { value: await childFrame.window.eval(expression) } };
         }
         if (method === "Accessibility.getFullAXTree") {
           return { nodes: [] };
@@ -2169,7 +2245,7 @@ describe("Workbench browser semantic tree fixtures", () => {
         url: "https://app.test/first",
         timeoutMs: 10_000
       });
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
       expect(shadowWebContents.listenerCount("did-stop-loading")).toBe(2);
 
       const secondNavigation = manager.navigateAgentPage("agent-tab", {
@@ -2177,7 +2253,7 @@ describe("Workbench browser semantic tree fixtures", () => {
         url: "https://app.test/second",
         timeoutMs: 1_000
       });
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(0);
 
       expect(shadowWebContents.stop).toHaveBeenCalledTimes(1);
       expect(shadowWebContents.listenerCount("did-stop-loading")).toBe(2);

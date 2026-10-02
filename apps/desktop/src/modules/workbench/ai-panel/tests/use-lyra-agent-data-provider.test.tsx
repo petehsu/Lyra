@@ -392,9 +392,10 @@ describe("useLyraAgentDataProvider", () => {
     const first = createSnapshot({ id: "session-1", title: "One" });
     const second = createSnapshot({ id: "session-2", title: "Two" });
     const desktopApi = createDesktopApi(first);
-    vi.mocked(desktopApi.agent!.readSession).mockImplementation(async ({ sessionId }) => (
-      sessionId === second.id ? second : first
-    ));
+    vi.mocked(desktopApi.agent!.readSession).mockImplementation(async (request) => {
+      const sessionId = request?.sessionId ?? "";
+      return sessionId === second.id ? second : first;
+    });
 
     const { rerender } = renderHook(
       ({ sessionId }) => useLyraAgentDataProvider(
@@ -425,7 +426,8 @@ describe("useLyraAgentDataProvider", () => {
     const first = createSnapshot({ id: "session-1", title: "One" });
     const last = createSnapshot({ id: "session-4", title: "Four" });
     const desktopApi = createDesktopApi(first);
-    vi.mocked(desktopApi.agent!.readSession).mockImplementation(async ({ sessionId }) => {
+    vi.mocked(desktopApi.agent!.readSession).mockImplementation(async (request) => {
+      const sessionId = request?.sessionId ?? "";
       if (sessionId === last.id) return last;
       return createSnapshot({ id: sessionId, title: sessionId });
     });

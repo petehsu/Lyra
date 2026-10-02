@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 
 import { browserContextMenuLabels } from "../../../shared/browser-context-menu-labels";
+import { NATIVE_CONTEXT_MENU_TRANSLATION_KEYS } from "../../../shared/language-packs";
 import { readBrowserContextMenuLocaleFromPreferences } from "../view-manager-runtime/page-context-menu-native";
 
 describe("page context menu native", () => {
@@ -14,10 +15,14 @@ describe("page context menu native", () => {
     ).toBe("fr-FR");
   });
 
-  test("labels include cite actions", () => {
+  test("labels include cite actions and resolve translations from pack resources", () => {
     expect(browserContextMenuLabels("en-US").citeSelection).toContain("AI");
     expect(browserContextMenuLabels("zh-CN").citePage).toContain("AI");
-    expect(browserContextMenuLabels("ja-JP").copy).toBe("コピー");
+    expect(
+      browserContextMenuLabels("ja-JP", {
+        [NATIVE_CONTEXT_MENU_TRANSLATION_KEYS.copy]: "コピー"
+      }).copy
+    ).toBe("コピー");
     expect(browserContextMenuLabels("unknown").back).toBe("Back");
   });
 });

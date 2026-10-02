@@ -233,7 +233,7 @@ const downloadsSlot = {
 };
 
 const renderFileManagerSurface = (
-  props: ComponentProps<typeof FileManagerSurface>
+  props: Omit<ComponentProps<typeof FileManagerSurface>, "downloadsSlot">
 ) => {
   const scopeId = "file-manager-test";
   return render(

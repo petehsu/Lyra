@@ -7,15 +7,18 @@ export type WorkbenchUiPackOption = {
   readonly description: string;
 };
 
-const builtinPackCopy = {
+type BuiltinPackCopy = {
+  readonly labelKey: I18nKey;
+  readonly descriptionKey: I18nKey;
+};
+
+// Not every pack id has bundled copy; the lookup below throws for the gaps.
+const builtinPackCopy: Partial<Record<WorkbenchUiPackId, BuiltinPackCopy>> = {
   classic: {
     labelKey: "settings.uiStyle.classic",
     descriptionKey: "settings.uiStyleDescription.classic"
   }
-} as const satisfies Record<string, {
-  readonly labelKey: I18nKey;
-  readonly descriptionKey: I18nKey;
-}>;
+};
 
 export const createWorkbenchUiPackOptions = (
   t: (key: I18nKey) => string

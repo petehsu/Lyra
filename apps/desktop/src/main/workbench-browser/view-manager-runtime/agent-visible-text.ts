@@ -8,7 +8,9 @@ export const VISIBLE_TEXT_RUNTIME = String.raw`(() => {
     for (let current = node; current; current = parent(current)) {
       if (current.hidden || current.getAttribute('aria-hidden') === 'true' || current.inert) return false;
       const style = current.ownerDocument.defaultView.getComputedStyle(current);
-      if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse' || Number(style.opacity) === 0) return false;
+      // An empty computed opacity (environments without a style engine) is
+      // not "fully transparent"; only an explicit numeric 0 hides the node.
+      if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse' || (style.opacity !== '' && Number(style.opacity) === 0)) return false;
     }
     return true;
   };
@@ -108,7 +110,9 @@ export const VISIBLE_TEXT_RUNTIME = String.raw`(() => {
       }
     };
     visit(root);
-    const text = parts.join(' ');
+    // Blocks join with newlines: downstream chunking, sentence splitting and
+    // anchors treat each rendered block as its own line, matching innerText.
+    const text = parts.join('\n');
     // Fingerprint the complete rendered text, independently of output budget.
     // A stable excerpt must never conceal a changing offscreen remainder.
     let h1 = 2166136261, h2 = 5381;

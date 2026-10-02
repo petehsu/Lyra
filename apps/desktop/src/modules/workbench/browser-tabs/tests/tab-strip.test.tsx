@@ -389,6 +389,8 @@ describe("BrowserTabStrip", () => {
       width: 88,
       height: 34
     });
+    // The close lock reads the render-stamped width, never live layout.
+    docsTab.dataset.lyraTabWidth = "88";
 
     fireEvent.click(within(nav).getByRole("button", { name: "Close-Docs" }));
     await flushQueuedCloses();

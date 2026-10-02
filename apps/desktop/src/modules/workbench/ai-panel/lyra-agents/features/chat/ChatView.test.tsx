@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { ChatMessage, SessionMeta } from "../../core/types";
 import type { AgentSessionSnapshot } from "../../../../../../shared/agent";
+import type { LyraDesktopApi } from "../../../../../../shared/desktop-bridge";
 import { normalizeAgentSessionSnapshot } from "../../../../agent-session-view-model";
 import {
   getStreamStore,
@@ -439,7 +440,7 @@ describe("ChatView virtual message window", () => {
           plans: []
         }))
       }
-    } as never;
+    } as unknown as LyraDesktopApi;
 
     const { container } = render(
       <DataContextProvider value={data}>
@@ -448,7 +449,7 @@ describe("ChatView virtual message window", () => {
     );
 
     await waitFor(() => {
-      expect(desktopApi.agent.listProjectPlans).toHaveBeenCalled();
+      expect(desktopApi.agent?.listProjectPlans).toHaveBeenCalled();
     });
     expect(container.querySelector(".lyra-agents-composer-toprow")).not.toHaveTextContent("Plan");
   });

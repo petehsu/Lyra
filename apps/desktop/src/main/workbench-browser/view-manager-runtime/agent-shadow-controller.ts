@@ -255,7 +255,7 @@ export const createAgentShadowController = ({
       shadow.address = normalizeAddress(shadow.webContents.getURL()) ?? sourceAddress;
       shadow.title = normalizeString(shadow.webContents.getTitle()) ?? source.runtime.title;
       const sourceFavicon = normalizeString(source.runtime.faviconUrl);
-      if (sourceFavicon !== undefined) {
+      if (sourceFavicon !== null) {
         shadow.faviconUrl = sourceFavicon;
       }
     }

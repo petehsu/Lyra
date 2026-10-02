@@ -250,7 +250,7 @@ const appendToolBlock = (blocks: MessageBlock[], toolBlock: Extract<MessageBlock
 
 const toolProjectionContext = (session: AgentSessionSnapshot): ToolProjectionContext => ({
   turnStatus: session.turnStatus,
-  subagents: session.subagents
+  ...(session.subagents === undefined ? {} : { subagents: session.subagents })
 });
 
 const chatBlocksForAgentMessage = (

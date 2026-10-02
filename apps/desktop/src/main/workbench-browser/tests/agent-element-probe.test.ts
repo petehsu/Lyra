@@ -43,7 +43,8 @@ describe("agent-element-probe", () => {
   });
 
   test("reads a pressed hint as the checked bit so a toggle click is a change", () => {
-    const before = elementStateFromCached({ ...sampleElement(), checked: undefined, stateHint: "unpressed" });
+    const { checked: _omitted, ...withoutChecked } = sampleElement();
+    const before = elementStateFromCached({ ...withoutChecked, stateHint: "unpressed" });
     const after = { ...before, checked: true };
     expect(before.checked).toBe(false);
     expect(diffElementStates(before, after)).toEqual(["checked: false -> true"]);

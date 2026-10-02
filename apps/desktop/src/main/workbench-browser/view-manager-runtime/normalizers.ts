@@ -496,8 +496,12 @@ const findSearchInPageMatches = (
 } => {
   const caseSensitive = request.caseSensitive === true;
   const maxMatches = Math.max(1, Math.min(100, Math.round(request.maxMatches ?? 20)));
-  const haystack = normalizeSearchText(text, caseSensitive);
-  const needle = normalizeSearchText(query, caseSensitive);
+  // Anchors come from the visible-text reader (space-joined blocks) while page
+  // text may come from innerText/textContent (newline-separated blocks); match
+  // on whitespace-collapsed copies so the two extractors agree.
+  const searchText = text.replace(/\s+/gu, " ");
+  const haystack = normalizeSearchText(searchText, caseSensitive);
+  const needle = normalizeSearchText(query, caseSensitive).replace(/\s+/gu, " ").trim();
   const matches: WorkbenchBrowserSearchInPageMatch[] = [];
   let totalMatches = 0;
   let cursor = 0;
@@ -505,14 +509,14 @@ const findSearchInPageMatches = (
     const index = haystack.indexOf(needle, cursor);
     if (index < 0) break;
     totalMatches += 1;
-    const endChar = index + query.length;
+    const endChar = index + needle.length;
     if (matches.length < maxMatches) {
       matches.push({
         id: `find-${hashStableString(`${query}|${totalMatches}|${index}|${endChar}`)}`,
         index: totalMatches,
         startChar: index,
         endChar,
-        snippet: buildSearchSnippet(text, index, endChar)
+        snippet: buildSearchSnippet(searchText, index, endChar)
       });
     }
     cursor = Math.max(index + needle.length, index + 1);

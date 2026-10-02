@@ -152,7 +152,9 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
     createVisualFrame: host.createVisualFrame,
     entries: host.entries,
     navigateInEntry: host.navigateInEntry,
-    prepareAgentPage: host.prepareAgentPage,
+    ...(host.prepareAgentPage === undefined
+      ? {}
+      : { prepareAgentPage: host.prepareAgentPage }),
     publishBrowserAgentActivity: host.publishBrowserAgentActivity,
     publishEvent: host.publishEvent,
     readBrowserAgentShadow: host.readBrowserAgentShadow,
@@ -320,7 +322,10 @@ export const createWorkbenchBrowserAgentController = (host: WorkbenchBrowserAgen
           throw new Error(`Live browser page is not materialized: ${tabId || "(missing-tab-id)"}`);
         }
       }
-      return captureAction(page.navigateAgentPage)(tabId, request);
+      // Navigations must not serialize behind the dialog-capture gate: a stale
+      // in-flight load is superseded by the next waitForLoad, and holding the
+      // gate until the first load settles would deadlock that supersession.
+      return page.navigateAgentPage(tabId, request);
     },
     reloadAgentPage: captureAction(page.reloadAgentPage),
     observeAgentPage,

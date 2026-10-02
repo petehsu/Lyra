@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test } from "vitest";
 import { summarizeRenderStates, renderStateId } from "./visual-render-state";
 import type { VisualMark } from "./visual-scene-types";
 

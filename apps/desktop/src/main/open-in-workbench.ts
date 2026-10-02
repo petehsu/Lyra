@@ -131,9 +131,9 @@ const openFallbackBrowserWindow = (url: string): void => {
     fallbackWindow.focus();
     return;
   }
-  const parent = bindings?.getMainWindow() ?? undefined;
+  const parent = bindings?.getMainWindow() ?? null;
   const window = new BrowserWindow({
-    parent: parent === null || parent?.isDestroyed() === true ? undefined : parent,
+    ...(parent !== null && parent.isDestroyed() === false ? { parent } : {}),
     width: 960,
     height: 740,
     autoHideMenuBar: true,
@@ -407,11 +407,11 @@ export const applyLyraBrowserLaunchEnvToProcess = (
   );
   const helperDir = installLyraOpenUrlHelpers(userDataDir, {
     electronExecPath: process.execPath,
-    electronAppPath
+    ...(electronAppPath === undefined ? {} : { electronAppPath })
   });
   const next = applyLyraBrowserLaunchEnv(process.env, helperDir, {
     electronExecPath: process.execPath,
-    electronAppPath
+    ...(electronAppPath === undefined ? {} : { electronAppPath })
   });
   for (const [key, value] of Object.entries(next)) {
     if (typeof value === "string") {
@@ -441,13 +441,14 @@ export const mergeLyraBrowserEnvPairs = (
   if (typeof asEnv.PATH !== "string" || asEnv.PATH.length === 0) {
     asEnv.PATH = process.env.PATH ?? "";
   }
+  const launchedElectronAppPath = resolveElectronAppPathForLaunch(
+    asEnv.LYRA_ELECTRON_APP_PATH
+      ?? process.env.LYRA_ELECTRON_APP_PATH
+      ?? resolveUnpackagedElectronAppPath()
+  );
   const launched = applyLyraBrowserLaunchEnv(asEnv, helperDir, {
     electronExecPath: process.env.LYRA_ELECTRON_EXEC ?? process.execPath,
-    electronAppPath: resolveElectronAppPathForLaunch(
-      asEnv.LYRA_ELECTRON_APP_PATH
-        ?? process.env.LYRA_ELECTRON_APP_PATH
-        ?? resolveUnpackagedElectronAppPath()
-    )
+    ...(launchedElectronAppPath === undefined ? {} : { electronAppPath: launchedElectronAppPath })
   });
   const pairs: { readonly key: string; readonly value: string }[] = [];
   for (const [key, value] of Object.entries(launched)) {

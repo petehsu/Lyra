@@ -94,7 +94,7 @@ export function BackgroundTerminalButton({
             </div>
             <AppButton
               type="button"
-              size="icon-sm"
+              size="icon"
               variant="ghost"
               className="lyra-agents-bg-terminal-kill"
               aria-label={t("lyra-agents-composer.endTerminal")}

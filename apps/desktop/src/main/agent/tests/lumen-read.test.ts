@@ -29,8 +29,8 @@ test("a missing text search explains how to locate a field without claiming it i
   const read = vi.fn();
   const result = await host(read, find)["lyraLumen.read"]!({ query: "Message Body" });
   expect(result).toMatchObject({ ok: true, matches: [] });
-  expect(result.message).toContain("map(query)");
-  expect(result.message).toContain("does not mean that field is empty or missing");
+  expect((result as { message: string }).message).toContain("map(query)");
+  expect((result as { message: string }).message).toContain("does not mean that field is empty or missing");
   expect(read).not.toHaveBeenCalled();
   expect(find).toHaveBeenCalledOnce();
 });
@@ -38,5 +38,5 @@ test("a missing text search explains how to locate a field without claiming it i
 test("schema hints do not claim HTML inspection or dictate the user's final reply", async () => {
   const result=await host(vi.fn().mockResolvedValue({content:"Visible outcome",truncated:false}))["lyraLumen.read"]!({instruction:"Describe the overlay HTML",schema:{type:"object"}});
   expect(result).toMatchObject({ok:true,content:"Visible outcome",extractionMode:"renderedText",schemaApplied:false});
-  expect(result.message).toContain("were not executed");
+  expect((result as { message: string }).message).toContain("were not executed");
 });

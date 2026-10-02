@@ -436,8 +436,7 @@ describe("Login Manager IPC bridge", () => {
         "localstorage",
         "indexdb",
         "cachestorage",
-        "serviceworkers",
-        "websql"
+        "serviceworkers"
       ]
     });
     expect(bridge.list().sessions[0]).toMatchObject({

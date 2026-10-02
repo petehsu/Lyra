@@ -16,7 +16,12 @@ export const LYRA_CORE_API_DAEMON_METHOD_PREFIXES = [
   "agent."
 ] as const;
 
-export const LYRA_DAEMON_EXTRA_METHOD_PREFIXES = ["performance."] as const;
+export const LYRA_DAEMON_EXTRA_METHOD_PREFIXES = [
+  "runtime.",
+  "files.",
+  "scheduler.",
+  "performance."
+] as const;
 
 export const LYRA_DAEMON_METHOD_PREFIXES = [
   ...LYRA_CORE_API_DAEMON_METHOD_PREFIXES,

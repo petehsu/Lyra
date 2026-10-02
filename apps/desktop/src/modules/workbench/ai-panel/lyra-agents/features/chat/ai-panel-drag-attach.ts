@@ -99,7 +99,7 @@ const resolveFileManagerDragAttachAction = (
   if (isImageViewerSupportedPath(path)) {
     return {
       kind: "images",
-      images: [imageAttachmentMetadataFromPath(path, { label: payload.name || undefined })]
+      images: [imageAttachmentMetadataFromPath(path, { label: payload.name })]
     };
   }
 

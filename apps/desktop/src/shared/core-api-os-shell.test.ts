@@ -70,7 +70,9 @@ describe("Core API vs this-machine shell freeze", () => {
   test("lyrad keeps Core daemon prefixes and does not grow OS-shell routes", () => {
     const router = readRepoSource("crates/lyrad/src/router.rs");
     const routed = [...router.matchAll(/starts_with\("([^"]+)"\)/gu)].map((match) => match[1]);
-    expect(routed).toEqual([...LYRA_DAEMON_METHOD_PREFIXES]);
+    // The extraction walks the whole file (ACL guards and dispatch arms), so
+    // compare the route SET; router.rs may legitimately repeat a prefix.
+    expect(new Set(routed)).toEqual(new Set(LYRA_DAEMON_METHOD_PREFIXES));
     for (const prefix of LYRA_CORE_API_DAEMON_METHOD_PREFIXES) {
       expect(routed).toContain(prefix);
     }

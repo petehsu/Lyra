@@ -112,7 +112,7 @@ export const rehypeSafeInlineColors = () => (tree: HastNode) => {
   visitElement(tree);
 };
 
-type MdNode = {
+export type MdNode = {
   type: string;
   value?: string;
   children?: MdNode[];
@@ -314,8 +314,10 @@ export const lyraRemarkPlugins: NonNullable<StreamdownProps["remarkPlugins"]> = 
 ];
 
 export const lyraRehypePlugins: NonNullable<StreamdownProps["rehypePlugins"]> = [
-  defaultRehypePlugins.raw,
+  // Both keys always ship with streamdown; the record type just allows
+  // undefined because of noUncheckedIndexedAccess.
+  defaultRehypePlugins.raw!,
   [rehypeSanitize, buildSanitizeSchema()],
   rehypeSafeInlineColors,
-  defaultRehypePlugins.harden
+  defaultRehypePlugins.harden!
 ];

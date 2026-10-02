@@ -23,7 +23,7 @@ import {
 // cookies; upgrade path is session.fetch if a provider ever requires auth
 // cookies to serve its favicon.
 
-const PROVIDER_ICON_CACHE_VERSION = 2 as const;
+const PROVIDER_ICON_CACHE_VERSION = 1 as const;
 const PROVIDER_ICON_DIR_NAME = "provider-icons";
 const PROVIDER_ICON_INDEX_FILE = "index.v1.json";
 const PROVIDER_ICON_MAX_BYTES = 1024 * 1024;

@@ -807,7 +807,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
     const beforeNode = node;
     const granted = hasBrowserAuthorizeActGrant(node.frameUrl, tabId);
     const effect = granted
-      && (request.effect === "navigate" || request.effect === "editDraft" || request.effect === "unknown")
+      && (request.effect === "navigate" || request.effect === "editDraft")
       && classifyRisk(node, "authorize").requiredEffect === "authorize"
       ? "authorize"
       : request.effect;
@@ -1176,7 +1176,7 @@ export const createBrowserAxController = (deps: BrowserAxControllerDeps) => {
       }
       const granted = hasBrowserAuthorizeActGrant(resolution.node.frameUrl, tabId);
       const effect = granted
-        && (request.effect === "navigate" || request.effect === "editDraft" || request.effect === "unknown")
+        && (request.effect === "navigate" || request.effect === "editDraft")
         && classifyRisk(resolution.node, "authorize").requiredEffect === "authorize"
         ? "authorize"
         : request.effect;

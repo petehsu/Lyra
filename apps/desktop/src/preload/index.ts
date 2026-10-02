@@ -11,10 +11,6 @@ import {
   type AgentActCacheSnapshot,
   type AgentActCacheUpdateRequest,
   type AgentClarificationRespondRequest,
-  type AgentUserGateIdRequest,
-  type AgentUserGateListRequest,
-  type AgentUserGateListResponse,
-  type AgentUserGateResolveRequest,
   type AgentGitDiffRequest,
   type AgentGitDiffResponse,
   type AgentGitFileRequest,
@@ -258,6 +254,12 @@ import {
   type DetectedEditor,
   type OpenInEditorRequest
 } from "../shared/desktop-bridge";
+import type {
+  AgentUserGateIdRequest,
+  AgentUserGateListRequest,
+  AgentUserGateListResponse,
+  AgentUserGateResolveRequest
+} from "../shared/agent";
 import type {
   InstalledLanguagePack,
   LanguagePackCatalogResponse,

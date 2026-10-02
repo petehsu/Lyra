@@ -703,6 +703,11 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
       ? ""
       : await readFocusedElementSignature(target, request.timeoutMs);
     let { x, y } = humanClickPoint(interactionElement.bounds);
+    // A coordinate fallback has no DOM node to stamp or verify. Dispatch
+    // exactly at the mapped center through the compositor instead.
+    if (interactionElement.discoveryScope === "coordinate") {
+      ({ x, y } = centerOfAgentElement(interactionElement));
+    }
     let inputDelivery: "targetReceived" | "unconfirmed" | undefined;
     let interaction = request.interaction;
     let twoPhase = false;
@@ -752,7 +757,11 @@ export const createBrowserAgentInteractionExecutor = (deps: BrowserAgentInteract
       ? await armResponseWatch(nameFrame, stampRef) : undefined;
     if (nativeSelected) {
       // Selection is already complete; do not open the native popup afterward.
-    } else if ((interaction === "click" || interaction === "doubleClick" || interaction === "rightClick" || interaction === "hover") && stampRef.length > 0) {
+    } else if (
+      interactionElement.discoveryScope !== "coordinate"
+      && (interaction === "click" || interaction === "doubleClick" || interaction === "rightClick" || interaction === "hover")
+      && stampRef.length > 0
+    ) {
       try {
         ({ x, y, inputDelivery } = await performBoundSurfacePointer(tabId, target, stampRef, interaction, nameFrame, request));
       } catch (error) {

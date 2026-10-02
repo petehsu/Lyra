@@ -5,7 +5,7 @@ import {
   useState,
   type DragEvent as ReactDragEvent,
   type MouseEvent as ReactMouseEvent,
-  type RefObject
+  type Ref
 } from "react";
 
 import type { WorkspaceTabsInteractionPolicy } from "../interaction-policy";
@@ -70,7 +70,7 @@ export type BrowserTabStripRuntimeState = {
 };
 
 export type BrowserTabStripRuntime = {
-  readonly navRef: RefObject<HTMLElement | null>;
+  readonly navRef: Ref<HTMLElement>;
   readonly state: BrowserTabStripRuntimeState;
   readonly onTabBarDragOver: (event: ReactDragEvent<HTMLElement>) => void;
   readonly onTabBarDragLeave: (event: ReactDragEvent<HTMLElement>) => void;

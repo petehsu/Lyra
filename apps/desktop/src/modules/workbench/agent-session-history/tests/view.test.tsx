@@ -333,7 +333,7 @@ describe("AgentSessionHistorySurface", () => {
 
   test("renders image, file, citation, and page markers in session titles as chips", async () => {
     const markerSession: AgentSessionSummary = {
-      ...baseSessions[0],
+      ...baseSessions[0]!,
       id: "session-marker",
       title: "左下角 ⟦image:local-image-307ae69e-37cd-4d2b-a2df-a14e9… ⟦file:file-1⟧ ⟦cite:cite-1⟧ ⟦page-cite:page-1⟧",
       shortName: "marker",

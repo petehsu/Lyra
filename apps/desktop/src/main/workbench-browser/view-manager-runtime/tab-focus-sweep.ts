@@ -1,5 +1,6 @@
 import { focusBrowserPageForInput } from "../workspace-focus-isolation";
-import type { WorkbenchBrowserAgentElement, WorkbenchLumenTargetRef } from "../types";
+import type { WorkbenchBrowserAgentElement } from "../types";
+import type { WorkbenchLumenTargetRef } from "../../../shared/desktop-bridge";
 import type { BrowserAgentPageTarget } from "./types";
 import {
   actionCapabilitiesForElement,
@@ -101,7 +102,9 @@ const READ_TAB_STOP_SCRIPT = `(() => {
   };
 })()`;
 
-const controlKindFor = (stop: TabStop): WorkbenchBrowserAgentElement["controlKind"] => {
+const controlKindFor = (
+  stop: TabStop
+): NonNullable<WorkbenchBrowserAgentElement["controlKind"]> => {
   const tag = stop.tagName.toLowerCase();
   if (tag === "input") return "input";
   if (tag === "textarea") return "textarea";

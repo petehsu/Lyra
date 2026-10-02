@@ -270,6 +270,15 @@ const createDesktopApi = () => {
       previewRollback,
       restoreRollback,
       bindProject,
+      registerProject: vi.fn(async (request: { workingDir: string }) => ({
+        project: {
+          id: "project-lyra",
+          path: request.workingDir,
+          name: "Lyra",
+          lastUsedAt: "2026-05-13T00:00:00.000Z",
+          available: true
+        }
+      })),
       listAgentModels: vi.fn(async () => modelsResponse),
       switchAgentModel: vi.fn(async () => modelsResponse),
       refreshAgentModels: vi.fn(async () => modelsResponse),
@@ -478,7 +487,8 @@ describe("AiPanelSurface", () => {
     await waitFor(() => {
       expect(api.agent?.sendTurn).toHaveBeenCalledWith({
         sessionId: "session-1",
-        text: "Build the slice"
+        text: "Build the slice",
+        webLinks: []
       });
     });
   });
@@ -675,7 +685,8 @@ describe("AiPanelSurface", () => {
     await waitFor(() => {
       expect(api.agent?.sendTurn).toHaveBeenCalledWith({
         sessionId: "session-1",
-        text: "Queue this while running"
+        text: "Queue this while running",
+        webLinks: []
       });
     });
   });
@@ -691,7 +702,8 @@ describe("AiPanelSurface", () => {
     await waitFor(() => {
       expect(api.agent?.sendTurn).toHaveBeenCalledWith({
         sessionId: "session-1",
-        text: "Use the configured model"
+        text: "Use the configured model",
+        webLinks: []
       });
     });
   });
@@ -731,7 +743,10 @@ describe("AiPanelSurface", () => {
     await openModelControlsMenu();
     expect(screen.queryByRole("menuitem", { name: "unconfigured-model · Missing" }))
       .not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("menuitem", { name: "gpt-5 · OpenAI" }));
+    // Model rows carry a per-row reasoning submenu; picking an effort on a
+    // different row is what switches to that model.
+    await openModelParameterSubmenu(/gpt-5 · OpenAI/u);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Medium" }));
 
     await waitFor(() => {
       expect(api.agent?.switchAgentModel).toHaveBeenCalledWith({
@@ -742,13 +757,13 @@ describe("AiPanelSurface", () => {
     });
   });
 
-  test("changes reasoning effort from the visible composer control", async () => {
+  test("changes reasoning effort from the model menu row submenu", async () => {
     const { api } = createDesktopApi();
     renderPanel(api);
-    const user = userEvent.setup();
 
-    await user.click(await screen.findByLabelText("Reasoning"));
-    await user.click(await screen.findByRole("menuitemradio", { name: "Medium" }));
+    await openModelControlsMenu();
+    await openModelParameterSubmenu(/mimo-v2\.5-pro · MiMo/u);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Medium" }));
 
     await waitFor(() => {
       expect(api.agent?.updateAgentProviderOptions).toHaveBeenCalledWith({
@@ -1637,11 +1652,13 @@ describe("AiPanelSurface", () => {
       onOpenFile
     );
 
-    fireEvent.click(await screen.findByRole("link", { name: "https://example.com/docs" }));
+    // Website links render as citation chips whose accessible name is the
+    // shortened host/path label.
+    fireEvent.click(await screen.findByRole("link", { name: "example.com/docs" }));
     await waitFor(() => {
       expect(openUrlInWorkbench).toHaveBeenCalledWith({
         url: "https://example.com/docs",
-        title: "https://example.com/docs"
+        title: "example.com/docs"
       });
     });
 
@@ -1681,7 +1698,12 @@ describe("AiPanelSurface", () => {
         label: "Ran",
         status: "completed",
         input: { command: "cat apps/desktop/src/main/index.ts" },
-        output: { content: "See apps/desktop/src/main/index.ts:24 for startup." },
+        output: {
+          content: "See apps/desktop/src/main/index.ts:24 for startup.",
+          artifactRefs: [{
+            path: "/Users/petehsu/Documents/Lyra/apps/desktop/src/main/index.ts"
+          }]
+        },
         startedAt: "2026-05-13T00:00:03.000Z",
         finishedAt: "2026-05-13T00:00:03.500Z"
       }]
@@ -1698,13 +1720,13 @@ describe("AiPanelSurface", () => {
 
     fireEvent.click(await findToolGroupHead());
     fireEvent.click(await screen.findByText("shell"));
-    fireEvent.click(await screen.findByRole("button", {
-      name: "apps/desktop/src/main/index.ts:24"
-    }));
+    // Tool output paths are only clickable when the tool carries explicit
+    // artifact refs; the button uses the generic "Open artifact" label.
+    fireEvent.click(await screen.findByRole("button", { name: "Open artifact 1" }));
     await waitFor(() => {
       expect(onOpenFile).toHaveBeenCalledWith(
         "/Users/petehsu/Documents/Lyra/apps/desktop/src/main/index.ts",
-        expect.objectContaining({ line: 24 })
+        undefined
       );
     });
 
@@ -1800,7 +1822,7 @@ describe("AiPanelSurface", () => {
       ok: true,
       headers: { get: () => "image/png" },
       arrayBuffer: async () => pngBytes.buffer
-    } as Response);
+    } as unknown as Response);
 
     renderPanel(
       api,
@@ -2085,7 +2107,8 @@ describe("AiPanelSurface", () => {
       .toHaveAttribute("aria-selected", "true");
 
     await openModelControlsMenu();
-    fireEvent.click(screen.getByRole("menuitem", { name: "gpt-5 · OpenAI" }));
+    await openModelParameterSubmenu(/gpt-5 · OpenAI/u);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Medium" }));
 
     await waitFor(() => {
       expect(api.agent?.switchAgentModel).toHaveBeenCalledWith({
@@ -2104,12 +2127,14 @@ describe("AiPanelSurface", () => {
       });
       expect(api.agent?.sendTurn).toHaveBeenCalledWith({
         sessionId: "session-2",
-        text: "Start for real"
+        text: "Start for real",
+        webLinks: []
       });
     });
 
     await openModelControlsMenu();
-    fireEvent.click(screen.getByRole("menuitem", { name: "gpt-5 · OpenAI" }));
+    await openModelParameterSubmenu(/gpt-5 · OpenAI/u);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Medium" }));
 
     await waitFor(() => {
       expect(api.agent?.switchAgentModel).toHaveBeenLastCalledWith({
@@ -2393,6 +2418,7 @@ describe("AiPanelSurface", () => {
 
     expect(await screen.findByText("Streaming response")).toBeInTheDocument();
     expect(screen.queryByText("2026-05-13T00:00:01.000Z")).not.toBeInTheDocument();
+    expandCollapsedToolGroups();
     expect(screen.getAllByText("Searching workspace").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByLabelText("Pause"));
     await waitFor(() => {

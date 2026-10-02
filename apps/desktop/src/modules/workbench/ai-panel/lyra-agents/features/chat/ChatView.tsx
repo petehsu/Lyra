@@ -299,7 +299,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
     (): Promise<void> => (canManagePlans ? openProjectPlanManager("todo") : openProjectTodo()),
     [canManagePlans, openProjectPlanManager, openProjectTodo]
   );
-  const gitCounts = useComposerGitCounts(desktopApi, session.workingDir);
+  const gitCounts = useComposerGitCounts(desktopApi, session.workingDir ?? undefined);
   const hasProjectPlan = useComposerHasProjectPlan(
     desktopApi,
     session.workingDir,
@@ -798,7 +798,7 @@ export function ChatView({ showDecisions, showPermission, desktopApi = null }: C
         </div>
 
         <UserGateHost
-          sessionId={session.id}
+          sessionId={session.id ?? ""}
           permissionMode={permissionModeControls?.currentMode ?? "approval"}
           showDecisions={showDecisions}
           showPermission={showPermission}

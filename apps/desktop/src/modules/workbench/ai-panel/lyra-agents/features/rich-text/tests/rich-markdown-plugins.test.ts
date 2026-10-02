@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   isSafeCssColor,
   remarkDefinitionLists,
-  sanitizeInlineStyle
+  sanitizeInlineStyle,
+  type MdNode
 } from "../rich-markdown-plugins";
 
 describe("sanitizeInlineStyle", () => {
@@ -24,7 +25,7 @@ describe("sanitizeInlineStyle", () => {
 
 describe("remarkDefinitionLists", () => {
   it("turns extra and cjk glossary paragraphs into dl", () => {
-    const tree = {
+    const tree: MdNode = {
       type: "root",
       children: [
         {
@@ -38,10 +39,10 @@ describe("remarkDefinitionLists", () => {
       ]
     };
     remarkDefinitionLists()(tree);
-    expect(tree.children[0]?.data).toEqual({ hName: "dl" });
-    expect(tree.children[1]?.data).toEqual({ hName: "dl" });
-    expect(tree.children[0]?.children?.[0]?.data).toEqual({ hName: "dt" });
-    expect(tree.children[1]?.children?.[0]?.data).toEqual({ hName: "dt" });
-    expect(tree.children[1]?.children?.[1]?.data).toEqual({ hName: "dd" });
+    expect(tree.children?.[0]?.data).toEqual({ hName: "dl" });
+    expect(tree.children?.[1]?.data).toEqual({ hName: "dl" });
+    expect(tree.children?.[0]?.children?.[0]?.data).toEqual({ hName: "dt" });
+    expect(tree.children?.[1]?.children?.[0]?.data).toEqual({ hName: "dt" });
+    expect(tree.children?.[1]?.children?.[1]?.data).toEqual({ hName: "dd" });
   });
 });

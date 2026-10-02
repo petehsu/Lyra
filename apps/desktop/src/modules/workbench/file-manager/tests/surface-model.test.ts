@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import type { FileManagerAppState } from "../types";
+import type { FileManagerLocation } from "../../../../shared/file-manager";
 import {
   deriveFileManagerSurfaceModel,
   formatFileManagerDiskBytes,
@@ -104,9 +105,10 @@ describe("deriveFileManagerSurfaceModel", () => {
           id: "home",
           title: "This PC",
           kind: "home",
-          path: null as unknown as undefined,
-          specialId: "home"
-        },
+          specialId: "home",
+          // Simulates a serialized payload where an optional path arrived as null.
+          path: null
+        } as unknown as FileManagerLocation,
         systemLocations: [
           {
             id: "special:home",
@@ -119,9 +121,9 @@ describe("deriveFileManagerSurfaceModel", () => {
             id: "special:trash",
             title: "Trash",
             kind: "trash",
-            path: null as unknown as undefined,
-            specialId: "trash"
-          }
+            specialId: "trash",
+            path: null
+          } as unknown as FileManagerLocation
         ]
       }),
       null,

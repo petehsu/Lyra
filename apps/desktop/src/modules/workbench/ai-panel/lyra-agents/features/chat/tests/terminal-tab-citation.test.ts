@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import type { TerminalDockTab } from "../../../../terminal-dock/types";
+import type { TerminalDockTab } from "../../../../../terminal-dock/types";
 import {
   buildTerminalTabPageCitation,
   readTerminalCitationOutput

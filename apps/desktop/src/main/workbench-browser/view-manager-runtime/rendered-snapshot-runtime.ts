@@ -599,10 +599,10 @@ export const createRenderedSnapshotRuntime = ({
     const activeTabId = getActiveOrFocusedTabId();
     const activeEntry = activeTabId === null ? undefined : entries.get(activeTabId);
     const plan = planRenderedSnapshotTab({
-      requestedTabId,
+      ...(requestedTabId === undefined ? {} : { requestedTabId }),
       requestedTabLive: isLiveBrowserEntry(requestedEntry),
       mode: snapshotMode(request),
-      matchingTabId: matchingEntry?.tabId,
+      ...(matchingEntry === undefined ? {} : { matchingTabId: matchingEntry.tabId }),
       activeTabId,
       activeTabLive: isLiveBrowserEntry(activeEntry)
     });

@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { ChildProcess } from "node:child_process";
+import type { ChildProcess, SpawnOptions } from "node:child_process";
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -37,9 +37,7 @@ afterEach(async () => {
 
 const fakeChild = (): ChildProcess => {
   const child = new EventEmitter() as ChildProcess;
-  child.pid = 4242;
-  child.exitCode = null;
-  child.signalCode = null;
+  Object.assign(child, { pid: 4242, exitCode: null, signalCode: null });
   child.kill = vi.fn(() => true);
   child.unref = vi.fn(() => child);
   return child;
@@ -167,7 +165,7 @@ describe("startSearxngSupervisor", () => {
 
   test("spawns start.sh in the foreground when the local endpoint is down", async () => {
     const child = fakeChild();
-    const spawn = vi.fn(() => child);
+    const spawn = vi.fn((_command: string, _args: readonly string[], _options: SpawnOptions) => child);
     const root = await mkdtemp(path.join(tmpdir(), "lyra-searxng-"));
     tempRoots.push(root);
     const startScript = path.join(root, "start.sh");
