@@ -51,22 +51,45 @@ const resolveElectronViteEntry = (): string => {
 };
 
 const main = (): void => {
-  const child = spawnCommand(process.execPath, [resolveElectronViteEntry(), "dev", "--watch"], {
-    cwd: desktopRoot,
-    stdio: "inherit",
-    env: buildEnv()
-  });
-  child.once("exit", (code, signal) => {
-    if (signal) {
-      process.kill(process.pid, signal);
-      return;
-    }
-    process.exit(code ?? 0);
-  });
-  child.once("error", (error) => {
-    console.error(`[lyra-electron-vite] failed to start: ${error.message}`);
-    process.exit(1);
-  });
+  // The main process cannot relaunch itself under electron-vite: the wrapper
+  // tears the dev stack (renderer server, lyrad) down when electron exits.
+  // Recovery requests therefore exit with LYRA_DEV_RECOVERY_EXIT_CODE and we
+  // respawn electron-vite in place with the recovery environment set, so the
+  // dev stack stays up while the app restarts on the safe path (x11 +
+  // software rendering).
+  const recoveryRespawn = process.env.LYRA_LINUX_RECOVERY === "1";
+  const runElectronVite = (): void => {
+    const child = spawnCommand(process.execPath, [resolveElectronViteEntry(), "dev", "--watch"], {
+      cwd: desktopRoot,
+      stdio: "inherit",
+      env: buildEnv()
+    });
+    child.once("exit", (code, signal) => {
+      if (signal) {
+        process.kill(process.pid, signal);
+        return;
+      }
+      if (
+        code === 93
+        && recoveryRespawn === false
+        && process.env.LYRA_LINUX_RECOVERY !== "1"
+      ) {
+        console.warn(
+          "[lyra-dev] gpu crash recovery: relaunching the app with software rendering (recovery mode)"
+        );
+        process.env.LYRA_LINUX_RECOVERY = "1";
+        process.env.LYRA_LINUX_AUTO_RESTART = "1";
+        runElectronVite();
+        return;
+      }
+      process.exit(code ?? 0);
+    });
+    child.once("error", (error) => {
+      console.error(`[lyra-electron-vite] failed to start: ${error.message}`);
+      process.exit(1);
+    });
+  };
+  runElectronVite();
 };
 
 main();
