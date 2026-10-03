@@ -1,6 +1,13 @@
 name: Agent Vertical Slice
 
 on:
+  pull_request:
+    paths:
+      - crates/lyra-agent-runtime/**
+      - crates/lyrad/**
+      - crates/lyra-tool-fs-core/**
+      - apps/desktop/src/shared/agent.ts
+      - tools/verify-prompt-contract.ts
   workflow_dispatch:
 
 concurrency:

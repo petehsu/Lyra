@@ -4223,6 +4223,7 @@ name = "lyra-files-core"
 version = "0.1.0"
 dependencies = [
  "dirs",
+ "libc",
  "lru",
  "notify",
  "serde",

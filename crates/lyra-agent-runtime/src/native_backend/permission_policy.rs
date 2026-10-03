@@ -173,7 +173,32 @@ fn read_policy_config() -> AgentRuntimeResult<(PermissionPolicyConfig, bool, Opt
     }
 }
 
-fn write_policy_config(config: &PermissionPolicyConfig) -> AgentRuntimeResult<()> {
+#[cfg(test)]
+pub(crate) fn write_ask_for_file_policy_for_tests() -> AgentRuntimeResult<()> {
+    write_policy_config(&PermissionPolicyConfig {
+        version: PERMISSION_POLICY_VERSION,
+        mode: "approval".to_string(),
+        rules: vec![
+            PermissionPolicyRule {
+                tool: None,
+                action: None,
+                risk: Some("file".to_string()),
+                pattern: None,
+                decision: "ask".to_string(),
+            },
+            PermissionPolicyRule {
+                tool: None,
+                action: None,
+                risk: None,
+                pattern: None,
+                decision: "ask".to_string(),
+            },
+        ],
+        elevation_credential_ref: None,
+    })
+}
+
+pub(crate) fn write_policy_config(config: &PermissionPolicyConfig) -> AgentRuntimeResult<()> {
     let path = permission_policy_path()?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|error| {

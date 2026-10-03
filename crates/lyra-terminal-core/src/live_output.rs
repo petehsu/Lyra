@@ -19,6 +19,10 @@ pub(crate) struct SessionOutputState {
     pub(crate) text_retained_start: u64,
     pub(crate) total_text_bytes: u64,
     pub(crate) text_decoder: Utf8StreamDecoder,
+    /// Persistent VT parser (zed keeps one per terminal for the same reason):
+    /// escape sequences that straddle PTY read chunks must survive into the
+    /// next chunk instead of leaking as literal text.
+    pub(crate) text_parser: vte::Parser,
     pub(crate) running: bool,
     pub(crate) exit_code: Option<i32>,
 }
@@ -130,23 +134,28 @@ pub(crate) fn append_output(state_handle: &SessionStateHandle, data: &[u8]) {
             state.retained_start = state.retained_start.saturating_add(excess as u64);
         }
         let decoded = state.text_decoder.decode(data);
-        let text = strip_live_terminal_control_sequences(&decoded);
+        let text = strip_live_terminal_control_sequences(&mut state, &decoded);
         state.text_buffer.extend_from_slice(text.as_bytes());
         state.total_text_bytes = state.total_text_bytes.saturating_add(text.len() as u64);
         if state.text_buffer.len() > MAX_SESSION_BUFFER_BYTES {
             let excess = state.text_buffer.len() - MAX_SESSION_BUFFER_BYTES;
-            state.text_buffer.drain(0..excess);
-            state.text_retained_start = state.text_retained_start.saturating_add(excess as u64);
+            // Advance the drop point to a char boundary so the retained text
+            // never starts with the tail of a split character.
+            let mut drop = excess;
+            while drop < state.text_buffer.len() && state.text_buffer[drop] & 0xC0 == 0x80 {
+                drop += 1;
+            }
+            state.text_buffer.drain(0..drop);
+            state.text_retained_start = state.text_retained_start.saturating_add(drop as u64);
         }
         condvar.notify_all();
     }
 }
 
-fn strip_live_terminal_control_sequences(text: &str) -> String {
-    let mut parser = vte::Parser::new();
+fn strip_live_terminal_control_sequences(state: &mut SessionOutputState, text: &str) -> String {
     let mut collector = VteTextCollector::new();
     for byte in text.as_bytes() {
-        parser.advance(&mut collector, *byte);
+        state.text_parser.advance(&mut collector, *byte);
     }
     collector.out
 }
@@ -160,8 +169,26 @@ pub(crate) fn live_output_projection(
     let start_offset = available_start
         .saturating_sub(state.text_retained_start)
         .min(state.text_buffer.len() as u64) as usize;
-    let end_offset = (start_offset + max_bytes).min(state.text_buffer.len());
-    let output = String::from_utf8_lossy(&state.text_buffer[start_offset..end_offset]).to_string();
+    // Byte-based cursors can land mid-character; walk both cut points back to
+    // char boundaries so pagination never splits a Chinese character or emoji
+    // (zed applies the same guard when truncating terminal output). A UTF-8
+    // boundary is any position whose byte is not a continuation byte.
+    let mut start_offset = start_offset.min(state.text_buffer.len());
+    while start_offset > 0
+        && start_offset < state.text_buffer.len()
+        && state.text_buffer[start_offset] & 0xC0 == 0x80
+    {
+        start_offset -= 1;
+    }
+    let mut end_offset = (start_offset + max_bytes).min(state.text_buffer.len());
+    while end_offset > start_offset
+        && end_offset < state.text_buffer.len()
+        && state.text_buffer[end_offset] & 0xC0 == 0x80
+    {
+        end_offset -= 1;
+    }
+    let output =
+        String::from_utf8_lossy(&state.text_buffer[start_offset..end_offset]).to_string();
     let cursor = state.text_retained_start.saturating_add(end_offset as u64);
     let truncated = requested_cursor < state.text_retained_start || cursor < state.total_text_bytes;
     (cursor, output, truncated)

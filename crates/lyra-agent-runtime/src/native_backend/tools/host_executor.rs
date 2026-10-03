@@ -175,10 +175,38 @@ pub(crate) fn validate_browser_action_effect(
             keep_mutating_effect(declared, BrowserActionEffect::Communicate)
         }
         ("lyra_lumen", "act") => {
+            // Fail closed on contradictions (codex never rewrites a
+            // mismatching declaration): hover inspects only under observe,
+            // and a mutating gesture requires a mutating declaration.
             if interaction == "hover" {
-                BrowserActionEffect::Observe
+                match declared {
+                    Some(effect) if effect != BrowserActionEffect::Observe => {
+                        return Err(BrowserActionEffectFailure {
+                            code: "invalid_browser_action",
+                            message: format!(
+                                "{} does not match the hover gesture; declare observe for inspection or use a mutating gesture.",
+                                effect_name(effect)
+                            ),
+                            detail: json!({
+                                "action": action,
+                                "declared": effect_name(effect),
+                                "interaction": interaction,
+                            }),
+                        });
+                    }
+                    _ => BrowserActionEffect::Observe,
+                }
             } else {
-                keep_mutating_effect(declared, BrowserActionEffect::EditDraft)
+                match declared {
+                    Some(BrowserActionEffect::Observe) => {
+                        return Err(BrowserActionEffectFailure {
+                            code: "invalid_browser_action",
+                            message: "observe cannot activate: hover inspects without clicking, and a mutating gesture requires a mutating effect.".to_string(),
+                            detail: json!({ "action": action, "interaction": interaction }),
+                        });
+                    }
+                    _ => keep_mutating_effect(declared, BrowserActionEffect::EditDraft),
+                }
             }
         }
         ("lyra_lumen", "vact") => {
@@ -879,8 +907,26 @@ mod tests {
 
     #[test]
     fn action_assigns_effect_when_the_declaration_disagrees() {
+        // lyra_lumen act fails closed: a declaration that contradicts the
+        // gesture is rejected, never rewritten (codex semantics).
+        for (declared_effect, interaction) in [
+            ("observe", Some("click")),
+            ("observe", None),
+            ("delete", Some("hover")),
+        ] {
+            let mut input = json!({"effect": declared_effect});
+            if let Some(interaction) = interaction {
+                input["interaction"] = json!(interaction);
+            }
+            assert!(
+                validate_browser_action_effect("lyra_lumen", "act", &input).is_err(),
+                "contradictory act declaration must be rejected: {input}"
+            );
+        }
+        // vact and the accessibility act keep the rewrite semantics: a
+        // mutation hidden behind an observe declaration is reclassified as a
+        // mutating effect so it still passes the mutating permission gate.
         for (display, action) in [
-            ("lyra_lumen", "act"),
             ("lyra_lumen", "vact"),
             ("lyra_ax", "act"),
         ] {
@@ -896,14 +942,14 @@ mod tests {
                 validate_browser_action_effect(display, action, &hover).unwrap(),
                 Some(BrowserActionEffect::Observe)
             );
-            let mut omitted = json!({"effect":"observe"});
-            default_browser_interaction(display, action, &mut omitted);
-            assert_eq!(omitted["interaction"], "click");
-            assert_eq!(
-                validate_browser_action_effect(display, action, &omitted).unwrap(),
-                Some(BrowserActionEffect::EditDraft)
-            );
         }
+        let mut omitted = json!({"effect":"observe"});
+        default_browser_interaction("lyra_lumen", "vact", &mut omitted);
+        assert_eq!(omitted["interaction"], "click");
+        assert_eq!(
+            validate_browser_action_effect("lyra_lumen", "vact", &omitted).unwrap(),
+            Some(BrowserActionEffect::EditDraft)
+        );
         let mut typed = json!({"effect":"observe"});
         default_lumen_type_effect("lyra_lumen", "type", &mut typed);
         assert_eq!(

@@ -374,8 +374,11 @@ pub(crate) async fn tool_shell_run_async(
         );
     } else {
         // 成功退出后不杀进程组。后台子进程（nohup &、detached）合法存活。
-        // A descendant holding the pipe blocks EOF — stop waiting for pumps
-        // after OUTPUT_DRAIN_TIMEOUT and return partial output.
+        // A descendant holding the pipe blocks EOF — stop waiting for the
+        // pumps after OUTPUT_DRAIN_TIMEOUT, abort them (so reader tasks never
+        // outlive the turn), and return partial output. Descendants keep
+        // running; a descendant that writes past the pipe buffer afterwards
+        // sees EPIPE, which is the codex semantics short of a group kill.
         output_collection_timed_out =
             join_pipe_pumps(stdout_task, stderr_task, OUTPUT_DRAIN_TIMEOUT).await;
         stdout_output = snapshot_live_pipe(&stdout_buf, &stdout_total);
@@ -724,16 +727,24 @@ fn snapshot_live_pipe(buf: &Mutex<HeadTailBytes>, total: &AtomicUsize) -> Limite
 }
 
 async fn join_pipe_pumps(
-    stdout_task: tokio::task::JoinHandle<()>,
-    stderr_task: tokio::task::JoinHandle<()>,
+    mut stdout_task: tokio::task::JoinHandle<()>,
+    mut stderr_task: tokio::task::JoinHandle<()>,
     limit: Duration,
 ) -> bool {
-    tokio::time::timeout(limit, async {
-        let _ = stdout_task.await;
-        let _ = stderr_task.await;
+    // Codex-style bounded drain: a descendant holding the pipe blocks EOF, so
+    // past the deadline the readers are aborted instead of outliving the turn
+    // (the buffers keep whatever was collected before the abort).
+    let timed_out = tokio::time::timeout(limit, async {
+        let _ = (&mut stdout_task).await;
+        let _ = (&mut stderr_task).await;
     })
     .await
-    .is_err()
+    .is_err();
+    if timed_out {
+        stdout_task.abort();
+        stderr_task.abort();
+    }
+    timed_out
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1168,7 +1179,12 @@ pub(crate) fn classify_shell_command(command: &str) -> &'static str {
 }
 
 fn shell_requires_plan_mutation_gate(analysis: &ShellAstAnalysis) -> bool {
+    // codex/opencode treat dynamic interpreters (python -c, node -e, …) and
+    // unparseable commands as opaque: their payloads are never parsed, so
+    // they cannot be proven read-only and stay gated during plan phases.
     classify_shell_analysis(analysis) == "mutation"
+        || analysis.has_dynamic_interpreter
+        || analysis.has_parse_error
 }
 
 fn classify_shell_analysis(analysis: &ShellAstAnalysis) -> &'static str {
@@ -1624,6 +1640,9 @@ impl HeadTailBytes {
         let retained = self.head.len() + self.tail.len();
         let total_bytes = retained + self.omitted;
         if self.omitted == 0 {
+            // Nothing was cut, so the buffer is byte-identical to the stream;
+            // a trailing partial character (process died mid-write)
+            // legitimately renders as a replacement character.
             return LimitedOutput {
                 text: String::from_utf8_lossy(&self.head).into_owned(),
                 truncated: false,
@@ -1631,18 +1650,44 @@ impl HeadTailBytes {
                 timed_out: false,
             };
         }
+        // Budget cuts land on raw byte offsets and can split a multi-byte
+        // UTF-8 character (zed walks back to a char boundary for the same
+        // reason). Adjust both cut points so lossy conversion never emits a
+        // replacement character at a truncation boundary, counting the
+        // skipped fragments into the omitted total.
+        let head_end = self.utf8_boundary_back(self.head.len());
         let tail: Vec<u8> = self.tail.iter().copied().collect();
+        let mut tail_start = 0;
+        while tail_start < tail.len() && tail[tail_start] & 0xC0 == 0x80 {
+            tail_start += 1;
+        }
+        let omitted = self.omitted + (self.head.len() - head_end) + tail_start;
         LimitedOutput {
             text: format!(
                 "{}\n... {} bytes omitted ...\n{}",
-                String::from_utf8_lossy(&self.head),
-                self.omitted,
-                String::from_utf8_lossy(&tail)
+                String::from_utf8_lossy(&self.head[..head_end]),
+                omitted,
+                String::from_utf8_lossy(&tail[tail_start..]),
             ),
             truncated: true,
             total_bytes,
             timed_out: false,
         }
+    }
+
+    /// Largest index `<= end` that is a UTF-8 character boundary in the head
+    /// buffer. A boundary is any position whose byte is not a UTF-8
+    /// continuation byte (`[u8]` has no `is_char_boundary` of its own); the
+    /// buffer end itself is always a boundary.
+    fn utf8_boundary_back(&self, end: usize) -> usize {
+        let mut index = end.min(self.head.len());
+        while index > 0
+            && index < self.head.len()
+            && self.head[index] & 0xC0 == 0x80
+        {
+            index -= 1;
+        }
+        index
     }
 }
 
@@ -1693,7 +1738,10 @@ mod mutation_tests {
     }
 
     #[test]
-    fn dynamic_interpreter_inspection_is_not_plan_gated() {
+    fn dynamic_interpreter_inspection_is_plan_gated_fail_closed() {
+        // codex/opencode treat dynamic interpreters as opaque: payloads are
+        // never parsed, so inspection-looking scripts stay plan-gated and the
+        // agent inspects with plain read commands during plan phases.
         for command in [
             "python3 -c 'print(1)'",
             "ls && python3 -c 'from pathlib import Path; print(Path(\"index.html\").read_text())'",
@@ -1701,8 +1749,8 @@ mod mutation_tests {
         ] {
             let analysis = analyze_shell_command(command);
             assert!(
-                !shell_requires_plan_mutation_gate(&analysis),
-                "inspection command should not be plan-gated: {command}"
+                shell_requires_plan_mutation_gate(&analysis),
+                "dynamic interpreter should be plan-gated (opaque, cannot prove read-only): {command}"
             );
         }
         assert!(shell_requires_plan_mutation_gate(&analyze_shell_command(

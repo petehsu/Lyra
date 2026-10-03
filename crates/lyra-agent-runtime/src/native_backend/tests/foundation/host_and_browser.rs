@@ -1268,6 +1268,11 @@ fn direct_software_capability_proceeds_with_full_access() {
 
 #[test]
 fn tool_fs_dynamic_software_capabilities_are_discoverable_and_runnable() {
+    // The permission request/response protocol under test requires an
+    // explicit ask-for-file-writes policy; the default approval preset
+    // auto-allows workspace file edits (codex/zed/vscode semantics).
+    crate::native_backend::permission_policy::write_ask_for_file_policy_for_tests()
+        .expect("write ask-for-file policy");
     let backend = LyraAgentBackend;
     let created = backend
         .call_agent_method(

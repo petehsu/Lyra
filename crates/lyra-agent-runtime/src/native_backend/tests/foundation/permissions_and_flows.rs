@@ -1,5 +1,14 @@
 use super::*;
 
+/// Pin the permission policy to an explicit ask-for-file-writes config so the
+/// request/response protocol runs under a controlled contract instead of the
+/// host's real policy (the default approval preset auto-allows workspace file
+/// edits, matching codex/zed/vscode).
+fn pin_file_writes_to_ask() {
+    crate::native_backend::permission_policy::write_ask_for_file_policy_for_tests()
+        .expect("write ask-for-file policy");
+}
+
 #[test]
 fn rollback_preview_and_restore_recover_messages_and_files() {
     let backend = LyraAgentBackend;
@@ -135,6 +144,7 @@ fn direct_file_read_requests_outside_workspace_permission() {
 
 #[test]
 fn permission_request_denies_and_allows_native_file_write() {
+    pin_file_writes_to_ask();
     let backend = LyraAgentBackend;
     let temp = tempfile::tempdir().expect("tempdir");
     let denied_path = temp.path().join("denied.txt");

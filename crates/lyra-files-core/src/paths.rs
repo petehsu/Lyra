@@ -157,11 +157,32 @@ pub fn seconds_since_epoch(value: SystemTime) -> Option<String> {
         .map(|duration| duration.as_secs().to_string())
 }
 
+#[cfg(target_os = "macos")]
+fn path_case_sensitive(path: &Path) -> bool {
+    // zed probes the volume instead of assuming: APFS is case-insensitive by
+    // default but can be formatted case-sensitive, and pathconf reports which.
+    // Errors default to insensitive (the APFS/HFS+ default).
+    use std::os::unix::ffi::OsStrExt;
+    let Ok(c_path) = std::ffi::CString::new(path.as_os_str().as_bytes()) else {
+        return false;
+    };
+    // SAFETY: _PC_CASE_SENSITIVE only reads the path; nothing is freed.
+    unsafe { libc::pathconf(c_path.as_ptr(), libc::_PC_CASE_SENSITIVE) == 1 }
+}
+
 pub fn location_path_key(path: &Path) -> String {
     let normalized = path_to_string(path).replace('\\', "/");
-    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    #[cfg(target_os = "windows")]
     {
         normalized.to_lowercase()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if path_case_sensitive(path) {
+            normalized
+        } else {
+            normalized.to_lowercase()
+        }
     }
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
@@ -173,9 +194,17 @@ pub(crate) fn directory_key(path: &Path) -> String {
     let normalized = lexical_normalize_path(path)
         .to_string_lossy()
         .replace('\\', "/");
-    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    #[cfg(target_os = "windows")]
     {
         normalized.to_lowercase()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        if path_case_sensitive(path) {
+            normalized
+        } else {
+            normalized.to_lowercase()
+        }
     }
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {

@@ -175,6 +175,14 @@ pub(crate) fn permission_risk(display_name: &str, action: &str, input: &Value) -
     ) {
         return None;
     }
+    // File mutations must raise a permission request exactly like the tool-fs
+    // catalog's "file" risk class: write-path tools are never auto-allowed.
+    if matches!(
+        (display_name, action),
+        ("file", "write" | "edit" | "strict_edit" | "multiedit" | "apply_patch")
+    ) {
+        return Some("file".to_string());
+    }
     if matches!(
         (display_name, action),
         ("software", "invoke_capability")

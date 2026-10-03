@@ -170,6 +170,12 @@ fn expected_provider_tool_names() -> Vec<String> {
         WRITE_FILE_MODEL_TOOL.to_string(),
         "web_search".to_string(),
         "web_fetch".to_string(),
+        "design_reference".to_string(),
+        "design_extract_reference".to_string(),
+        "design_quality".to_string(),
+        "browser_navigate".to_string(),
+        "browser_read".to_string(),
+        "browser_map".to_string(),
         TOOL_SEARCH_TOOL_NAME.to_string(),
         LYRA_SESSION_READ_MESSAGE_TOOL.to_string(),
     ]
@@ -375,7 +381,18 @@ fn wait_for_pending_permission(session_id: &str) -> String {
         }
         thread::sleep(Duration::from_millis(10));
     }
-    panic!("pending permission not observed")
+    let debug = state().lock().ok().map(|s| {
+        s.sessions.get(session_id).map(|session| {
+            json!({
+                "pending": s.pending_permissions.len(),
+                "turnStatus": session.snapshot.get("turnStatus").cloned(),
+                "events": session.snapshot.get("events").cloned().map(|e| e.to_string()).map(|s| s.chars().rev().take(1500).collect::<String>().chars().rev().collect::<String>()),
+            })
+        })
+    });
+    panic!(
+        "pending permission not observed: {debug:?}"
+    )
 }
 
 fn wait_for_pending_clarification(session_id: &str) -> String {

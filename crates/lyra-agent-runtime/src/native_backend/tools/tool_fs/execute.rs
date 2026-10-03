@@ -558,7 +558,7 @@ pub(super) async fn execute_tool_fs_run(
             "permissionMode": operation_envelope.permission_mode,
         }),
     );
-    let policy_decision = match policy_mode_gate(&manifest, &operation_envelope.permission_mode) {
+    let mut policy_decision = match policy_mode_gate(&manifest, &operation_envelope.permission_mode) {
         Ok(decision) => decision,
         Err(failure) => {
             push_trace(
@@ -623,6 +623,92 @@ pub(super) async fn execute_tool_fs_run(
             trace,
             operation_duration_ms(started_at),
         );
+    }
+    // Mutating Tool-FS operations in the default runtime_policy mode raise a
+    // user permission request before dispatching (opencode's ask-by-default;
+    // full_access and explicit deny/read_only decisions skip this raise).
+    eprintln!(
+        "DEBUG_CAP raise-check domain={} mode={} decision_none={} mutating={}",
+        manifest.domain,
+        operation_envelope.permission_mode,
+        policy_decision.is_none(),
+        risk_level_mutates(&manifest)
+    );
+    if policy_decision.is_none()
+        && manifest.domain == "software"
+        && normalized_permission_mode(&operation_envelope.permission_mode) != "full_access"
+    {
+        let mut request_input = operation_envelope.args.clone();
+        request_input["permissionRequired"] = json!(true);
+        request_input["permissionRisk"] = json!("dangerous");
+        if let Some(permission) = crate::native_backend::permissions::permission_request_for_tool(
+            session_id,
+            turn_id,
+            &call.id,
+            "software",
+            "invoke_capability",
+            &request_input,
+        ) {
+            push_trace(
+                &mut trace,
+                &operation_envelope,
+                "permission_requested",
+                "ok",
+                None,
+                json!({
+                    "permissionId": permission.id,
+                    "toolPath": manifest.path,
+                    "riskLevel": manifest.risk_level,
+                }),
+            );
+            let decision =
+                wait_for_permission_with_cancellation_async(permission, cancellation).await;
+            let approved = match decision {
+                Ok(true) => true,
+                Ok(false) => false,
+                Err(error) => {
+                    let failure = NativeToolFailure::new(
+                        "permission_request_failed",
+                        &format!("Permission request failed: {error}"),
+                        "Stop this tool call and wait for user input before retrying.",
+                    );
+                    return target_failure_envelope(
+                        Some(&manifest),
+                        failure,
+                        &operation_envelope,
+                        trace,
+                        operation_duration_ms(started_at),
+                    );
+                }
+            };
+            if !approved {
+                let failure = NativeToolFailure::new(
+                    "permission_denied",
+                    "The user denied this software capability invocation.",
+                    "Do not execute this tool call. Explain the limitation or choose a safer alternative.",
+                )
+                .with_detail(json!({
+                    "toolPath": manifest.path,
+                    "permissionMode": operation_envelope.permission_mode,
+                }));
+                return target_failure_envelope(
+                    Some(&manifest),
+                    failure,
+                    &operation_envelope,
+                    trace,
+                    operation_duration_ms(started_at),
+                );
+            }
+            policy_decision = Some(json!({
+                "recordType": "policy_decision",
+                "mode": operation_envelope.permission_mode,
+                "outcome": "approved",
+                "risk": manifest.risk_level,
+                "action": manifest.operation,
+                "summary": format!("{} {}", manifest.domain, manifest.path),
+                "recordedAt": now(),
+            }));
+        }
     }
     push_trace(
         &mut trace,

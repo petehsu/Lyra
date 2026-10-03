@@ -435,8 +435,10 @@ pub(crate) async fn execute_native_tool_adapter_with_runtime(
         );
         return output;
     }
+    eprintln!("DEBUG_PATCH reached policy decision: {display_name}/{action}");
     let native_permission_policy_decision =
         native_permission_policy_decision_for_tool(session_id, display_name, action, &input);
+    eprintln!("DEBUG_PATCH policy decision done");
     if let Some((risk, PermissionPolicyDecision::Deny)) = &native_permission_policy_decision {
         let output = attach_policy_decision_to_output(
             tool_failure_output(
@@ -465,14 +467,27 @@ pub(crate) async fn execute_native_tool_adapter_with_runtime(
         return output;
     }
     apply_native_permission_policy_auto_grant(&mut input, &native_permission_policy_decision);
-    if let Some(permission) = native_permission_request_for_tool(
+    eprintln!("DEBUG_PATCH before permission request");
+    let permission_opt = native_permission_request_for_tool(
         session_id,
         turn_id,
         tool_call_id,
         display_name,
         action,
         &input,
-    ) {
+    );
+    let debug_risk = permission_risk(display_name, action, &input);
+    let debug_policy = evaluate_permission_policy(
+        display_name,
+        action,
+        debug_risk.as_deref(),
+        &input,
+    );
+    eprintln!(
+        "DEBUG_PATCH request raised: {} risk={debug_risk:?} policy={debug_policy:?}",
+        permission_opt.is_some()
+    );
+    if let Some(permission) = permission_opt {
         let permission_record = permission.clone();
         match wait_for_permission_with_cancellation_async(permission, cancellation).await {
             Ok(true) => {
@@ -840,8 +855,10 @@ pub(crate) fn native_permission_request_for_tool(
     action: &str,
     input: &Value,
 ) -> Option<PermissionRequest> {
+    eprintln!("DEBUG_PATCH inside request_for_tool");
     let permission_input =
         native_permission_input_for_tool(session_id, display_name, action, input)?;
+    eprintln!("DEBUG_PATCH permission_input resolved");
     permission_request_for_tool(
         session_id,
         turn_id,

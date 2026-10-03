@@ -1574,6 +1574,12 @@ fn provider_visible_tool_schema_snapshot_is_curated_runtime_surface() {
                         || name == TODO_FINISH_MODEL_TOOL
                         || name == "web_search"
                         || name == "web_fetch"
+                        || name == "design_reference"
+                        || name == "design_extract_reference"
+                        || name == "design_quality"
+                        || name == "browser_navigate"
+                        || name == "browser_read"
+                        || name == "browser_map"
                 })
         }));
         assert!(!names.iter().any(|name| name == UPDATE_PLAN_MODEL_TOOL));
