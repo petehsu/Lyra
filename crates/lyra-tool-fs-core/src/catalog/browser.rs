@@ -15,7 +15,7 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "browser",
             "dialog",
             "Handle pending native browser dialog",
-            "Accept or dismiss a pending native alert/confirm/prompt using its dialogId. Read the returned message first. Accept must retain the triggering action's effect. Never replay the original click.",
+            "Accept or dismiss a pending native alert/confirm/prompt using its dialogId. Read the returned message first. Accept must retain the triggering action's effect. Never replay the original click. Never invent dialogId or treat a DOM lookalike panel as a native dialog.",
             Some("browser_dialog"),
         ),
         super::s(
@@ -39,7 +39,7 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "browser",
             "map",
             "Map browser page",
-            "Read a short map backed by the complete observed control index. Focused regions and forms appear first. Retrieve omitted controls using query/region/cursor; no link is excluded for seeming unimportant.",
+            "Read a short map backed by the complete observed control index. Focused regions and forms appear first. Retrieve omitted controls using query/region/cursor; no link is excluded for seeming unimportant. Control lines collapse label and icon into one actionable targetRef, plus read-only dialog/error/status/focus context. Refs stay valid while controls persist and a layout shift re-locates at click time; 'no longer mapped' means covered or hidden, not deleted — detached-node events identify real removal. DOM ancestors identify rows, overlap does not; unknown state is not off and class names are not confirmed state.",
             Some("browser_map"),
         ),
         super::s(
@@ -71,7 +71,7 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "browser",
             "act",
             "Act in browser",
-            "Click, hover, or select a mapped target. Use modifiers/button/holdMs for real pointer gestures; position is a fraction within the target. Native selects without a choice return a bounded option list (optionQuery/optionOffset); no OS popup. To choose, supply exact optionLabel, selectValue or selectValues; ambiguous options are rejected. interaction=click is the gesture; effect is its consequence, never click. Specify interaction explicitly; hover+observe inspects without clicking. Example: {targetRef: 'lumen:…', interaction: 'click', effect: 'editDraft'} opens a local menu. Sending uses communicate or submitExternal; deleting uses delete. Off-screen refs scroll into view.",
+            "Click, hover, or select a mapped target. Use modifiers/button/holdMs for real pointer gestures; position is a fraction within the target. Native selects without a choice return a bounded option list (optionQuery/optionOffset); no OS popup. To choose, supply exact optionLabel, selectValue or selectValues; ambiguous options are rejected. interaction=click is the gesture; effect is its consequence, never click. Specify interaction explicitly; hover+observe inspects without clicking. Example: {targetRef: 'lumen:…', interaction: 'click', effect: 'editDraft'} opens a local menu. Sending uses communicate or submitExternal; deleting uses delete. Off-screen refs scroll into view. The receipt names the acted control with resulting controls and context; updated control lines replace earlier facts including cleared errors. surfaceChange covers the whole surface, elementDiff only the acted node — an unchanged clicked node does not contradict a newly opened menu.",
             Some("browser_act"),
         ),
         super::s(
@@ -87,7 +87,7 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "browser",
             "type",
             "Type in browser",
-            "Type at the current caret/selection, or fill several fields. Use clear=true to replace the whole field; omission preserves existing content. When input and submit targets are already known, use thenClick to fill and submit once in this call; when the task needs a reply, set awaitResponse=true to receive it without another model round trip; declare the submit effect (communicate, submitExternal, etc.); editDraft is invalid for submission. Use a separate act for a local UI click. Without thenClick use effect=editDraft. A split row of boxes takes one string.",
+            "Type at the current caret/selection, or fill several fields. Use clear=true to replace the whole field; omission preserves existing content. When input and submit targets are already known, use thenClick to fill and submit once in this call; when the task needs a reply, set awaitResponse=true to receive it without another model round trip; declare the submit effect (communicate, submitExternal, etc.); editDraft is invalid for submission. Use a separate act for a local UI click. Without thenClick use effect=editDraft. A split row of boxes takes one string. The receipt reports inputValuePreview and inputEvidence for the live value and verification — a missing observed input event alone does not mean text was rejected. Live dispatch revalidates known refs without rebuilding the map, so reuse input and submit refs for repeated messages.",
             Some("browser_type"),
         ),
         super::s(
@@ -111,7 +111,7 @@ pub(super) fn manifests() -> Vec<ToolManifest> {
             "browser",
             "wait",
             "Wait browser",
-            "Wait for a specific page condition and return text plus matched/completion status. For a tracked send use responseComplete; observation began at the send and survives model round trips. Map after navigation; never guess or translate the page's expected labels. Prefer an observed stop control becoming hidden or a ready control becoming enabled. Quiet text alone does not prove completion. Reuse returned text.",
+            "Wait for a specific page condition and return text, reading coverage, control states, a paged map, matched/completion and stopReason; matched=false means the condition was not established, and stopReason=navigationChanged returns the superseded ready destination instead of the guessed text. The text fingerprint covers the full scanned document, so a viewport or budgeted scan cannot prove stability. For a tracked send use responseComplete; observation began at the send and survives model round trips. Map after navigation; never guess or translate the page's expected labels. Prefer an observed stop control becoming hidden or a ready control becoming enabled. Quiet text alone does not prove completion. Reuse returned text.",
             None,
         ),
         super::s(

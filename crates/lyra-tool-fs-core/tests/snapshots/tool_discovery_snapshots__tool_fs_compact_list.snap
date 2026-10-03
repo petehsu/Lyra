@@ -20,7 +20,7 @@ expression: pretty(&snapshot)
         "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
         "riskLevel": "read",
         "runHint": "tool_fs_run with toolHandle: browser_map; operation: map; provide args matching miniSchema.",
-        "summary": "Read a short map backed by the complete observed control index. Focused regions and forms appear first. Retrieve omitted controls using query/region/cursor; no link is excluded for seeming unimportant.",
+        "summary": "Read a short map backed by the complete observed control index. Focused regions and forms appear first. Retrieve omitted controls using query/region/cursor; no link is excluded for seeming unimportant. Control lines collapse label and icon into one actionable targetRef, plus read-only dialog/error/status/focus context. Refs stay valid while controls persist and a layout shift re-locates at click time; 'no longer mapped' means covered or hidden, not deleted — detached-node events identify real removal. DOM ancestors identify rows, overlap does not; unknown state is not off and class names are not confirmed state.",
         "title": "Map browser page"
       },
       {
@@ -32,7 +32,7 @@ expression: pretty(&snapshot)
         "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
         "riskLevel": "read",
         "runHint": "tool_fs_run with toolHandle: browser_read; operation: read; provide args matching miniSchema.",
-        "summary": "Read page text, search displayed text with query (Ctrl+F), or return a JSON schema hint. query does not retrieve a field by its name; use browser_map(query) for named controls.",
+        "summary": "Read rendered page text or search it with query (Ctrl+F). instruction/schema are interpretation hints only: this tool does not execute them, extract arbitrary HTML attributes, or apply a JSON schema. query does not retrieve a field by its name; use browser_map(query) for named controls.",
         "title": "Read browser page"
       },
       {
@@ -44,7 +44,7 @@ expression: pretty(&snapshot)
         "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
         "riskLevel": "browser",
         "runHint": "tool_fs_run with toolHandle: browser_type; operation: type; provide args matching miniSchema.",
-        "summary": "Type at the current caret/selection, or fill several fields. Use clear=true to replace the whole field; omission preserves existing content. When input and submit targets are already known, use thenClick to fill and submit once in this call; when the task needs a reply, set awaitResponse=true to receive it without another model round trip; declare the submit effect (communicate, submitExternal, etc.); editDraft is invalid for submission. Use a separate act for a local UI click. Without thenClick use effect=editDraft. A split row of boxes takes one string.",
+        "summary": "Type at the current caret/selection, or fill several fields. Use clear=true to replace the whole field; omission preserves existing content. When input and submit targets are already known, use thenClick to fill and submit once in this call; when the task needs a reply, set awaitResponse=true to receive it without another model round trip; declare the submit effect (communicate, submitExternal, etc.); editDraft is invalid for submission. Use a separate act for a local UI click. Without thenClick use effect=editDraft. A split row of boxes takes one string. The receipt reports inputValuePreview and inputEvidence for the live value and verification — a missing observed input event alone does not mean text was rejected. Live dispatch revalidates known refs without rebuilding the map, so reuse input and submit refs for repeated messages.",
         "title": "Type in browser"
       },
       {
@@ -56,7 +56,7 @@ expression: pretty(&snapshot)
         "recommendedNextAction": "Call tool_fs_run when this compact entry is enough; call tool_fs_inspect for the full input schema, examples, aliases, or long description.",
         "riskLevel": "browser",
         "runHint": "tool_fs_run with toolHandle: browser_act; operation: act; provide args matching miniSchema.",
-        "summary": "Click, hover, or select a mapped target. Use modifiers/button/holdMs for real pointer gestures; position is a fraction within the target. Native selects without a choice return a bounded option list (optionQuery/optionOffset); no OS popup. To choose, supply exact optionLabel, selectValue or selectValues; ambiguous options are rejected. interaction=click is the gesture; effect is its consequence, never click. Specify interaction explicitly; hover+observe inspects without clicking. Example: {targetRef: 'lumen:…', interaction: 'click', effect: 'editDraft'} opens a local menu. Sending uses communicate or submitExternal; deleting uses delete. Off-screen refs scroll into view.",
+        "summary": "Click, hover, or select a mapped target. Use modifiers/button/holdMs for real pointer gestures; position is a fraction within the target. Native selects without a choice return a bounded option list (optionQuery/optionOffset); no OS popup. To choose, supply exact optionLabel, selectValue or selectValues; ambiguous options are rejected. interaction=click is the gesture; effect is its consequence, never click. Specify interaction explicitly; hover+observe inspects without clicking. Example: {targetRef: 'lumen:…', interaction: 'click', effect: 'editDraft'} opens a local menu. Sending uses communicate or submitExternal; deleting uses delete. Off-screen refs scroll into view. The receipt names the acted control with resulting controls and context; updated control lines replace earlier facts including cleared errors. surfaceChange covers the whole surface, elementDiff only the acted node — an unchanged clicked node does not contradict a newly opened menu.",
         "title": "Act in browser"
       },
       {

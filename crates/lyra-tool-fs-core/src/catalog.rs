@@ -955,7 +955,7 @@ fn input_schema_for(path: &str, domain: &str, operation: &str) -> Value {
                 ("elementId", json!({ "type": ["integer", "string"] })),
                 (
                     "interaction",
-                    json!({ "type": "string", "enum": ["click", "hover", "doubleClick", "rightClick", "select"], "description": "Explicit gesture, independent of effect. Use hover+observe for inspection; click+editDraft opens local UI. observe cannot activate." }),
+                    json!({ "type": "string", "enum": ["click", "hover", "doubleClick", "rightClick", "select"], "description": "Explicit gesture, independent of effect. Use hover+observe for inspection; click+editDraft opens local UI. observe cannot activate. An observe request without a gesture is rejected, never silently converted to hover." }),
                 ),
                 (
                     "modifiers",
