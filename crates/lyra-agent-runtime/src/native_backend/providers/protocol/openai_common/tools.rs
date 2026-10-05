@@ -40,6 +40,11 @@ pub(crate) fn parse_tool_call(
     allowed_tool_names: &HashSet<String>,
     index: usize,
 ) -> Option<ModelToolCall> {
+    // No tools advertised means the model should not be calling tools at all;
+    // a stray tool call in that state is ignored (prompt-injection defense).
+    if allowed_tool_names.is_empty() {
+        return None;
+    }
     let function = value.get("function")?;
     let name = function
         .get("name")

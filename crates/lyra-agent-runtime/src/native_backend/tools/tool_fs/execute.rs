@@ -398,8 +398,12 @@ pub(super) async fn execute_tool_fs_run(
         }),
     );
     let validation_result = operation_envelope.validate(&registry);
+    eprintln!("DEBUG_RUN validated");
     let manifest = match validation_result {
-        Ok(Some(manifest)) => manifest,
+        Ok(Some(manifest)) => {
+            eprintln!("DEBUG_RUN manifest domain={} path={} risk={}", manifest.domain, manifest.path, manifest.risk_level);
+            manifest
+        }
         Ok(None) => {
             let error = NativeToolFailure::new(
                 "tool_target_required",
@@ -512,6 +516,7 @@ pub(super) async fn execute_tool_fs_run(
     if let Err(failure) =
         validate_runtime_target_availability(&manifest, &target, dispatcher.as_ref())
     {
+        eprintln!("DEBUG_RUN failed: target availability: {}", failure.message);
         push_trace(
             &mut trace,
             &operation_envelope,
@@ -529,6 +534,7 @@ pub(super) async fn execute_tool_fs_run(
         );
     }
     if let Err(failure) = validate_workspace_scope_for_manifest(session_id, &manifest) {
+        eprintln!("DEBUG_RUN failed: workspace scope: {}", failure.message);
         push_trace(
             &mut trace,
             &operation_envelope,
@@ -627,15 +633,12 @@ pub(super) async fn execute_tool_fs_run(
     // Mutating Tool-FS operations in the default runtime_policy mode raise a
     // user permission request before dispatching (opencode's ask-by-default;
     // full_access and explicit deny/read_only decisions skip this raise).
-    eprintln!(
-        "DEBUG_CAP raise-check domain={} mode={} decision_none={} mutating={}",
-        manifest.domain,
-        operation_envelope.permission_mode,
-        policy_decision.is_none(),
-        risk_level_mutates(&manifest)
-    );
+    // Domains with their own permission path (browser/terminal/filesystem via
+    // the native executor) never reach this raise; only dynamic capability
+    // domains (software/mcp/skills) rely on it.
     if policy_decision.is_none()
-        && manifest.domain == "software"
+        && matches!(manifest.domain.as_str(), "software" | "mcp" | "skills")
+        && risk_level_mutates(&manifest)
         && normalized_permission_mode(&operation_envelope.permission_mode) != "full_access"
     {
         let mut request_input = operation_envelope.args.clone();

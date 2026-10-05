@@ -11,9 +11,31 @@ pub(crate) enum PermissionPolicyDecision {
     Deny,
 }
 
+/// Test-only session-scoped policy overrides: parallel tests must not share
+/// the global policy file (a pinned ask policy would leak into unrelated
+/// file-writing tests running in the same process).
+#[cfg(test)]
+fn session_policy_overrides() -> &'static std::sync::Mutex<std::collections::HashMap<String, PermissionPolicyConfig>> {
+    use std::sync::OnceLock;
+    static OVERRIDES: OnceLock<std::sync::Mutex<std::collections::HashMap<String, PermissionPolicyConfig>>> =
+        OnceLock::new();
+    OVERRIDES.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+#[cfg(test)]
+pub(crate) fn set_session_policy_override_for_tests(
+    session_id: &str,
+    config: PermissionPolicyConfig,
+) {
+    session_policy_overrides()
+        .lock()
+        .expect("session policy override lock")
+        .insert(session_id.to_string(), config);
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-struct PermissionPolicyRule {
+pub(crate) struct PermissionPolicyRule {
     #[serde(skip_serializing_if = "Option::is_none")]
     tool: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -27,7 +49,7 @@ struct PermissionPolicyRule {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct PermissionPolicyConfig {
+pub(crate) struct PermissionPolicyConfig {
     version: u64,
     mode: String,
     rules: Vec<PermissionPolicyRule>,
@@ -174,28 +196,36 @@ fn read_policy_config() -> AgentRuntimeResult<(PermissionPolicyConfig, bool, Opt
 }
 
 #[cfg(test)]
-pub(crate) fn write_ask_for_file_policy_for_tests() -> AgentRuntimeResult<()> {
-    write_policy_config(&PermissionPolicyConfig {
-        version: PERMISSION_POLICY_VERSION,
-        mode: "approval".to_string(),
-        rules: vec![
-            PermissionPolicyRule {
-                tool: None,
-                action: None,
-                risk: Some("file".to_string()),
-                pattern: None,
-                decision: "ask".to_string(),
-            },
-            PermissionPolicyRule {
-                tool: None,
-                action: None,
-                risk: None,
-                pattern: None,
-                decision: "ask".to_string(),
-            },
-        ],
-        elevation_credential_ref: None,
-    })
+pub(crate) fn pin_full_auto_policy_for_session(session_id: &str) {
+    set_session_policy_override_for_tests(session_id, full_auto_preset(None));
+}
+
+#[cfg(test)]
+pub(crate) fn pin_ask_for_file_policy_for_session(session_id: &str) {
+    set_session_policy_override_for_tests(
+        session_id,
+        PermissionPolicyConfig {
+            version: PERMISSION_POLICY_VERSION,
+            mode: "approval".to_string(),
+            rules: vec![
+                PermissionPolicyRule {
+                    tool: None,
+                    action: None,
+                    risk: Some("file".to_string()),
+                    pattern: None,
+                    decision: "ask".to_string(),
+                },
+                PermissionPolicyRule {
+                    tool: None,
+                    action: None,
+                    risk: None,
+                    pattern: None,
+                    decision: "ask".to_string(),
+                },
+            ],
+            elevation_credential_ref: None,
+        },
+    );
 }
 
 pub(crate) fn write_policy_config(config: &PermissionPolicyConfig) -> AgentRuntimeResult<()> {
@@ -351,9 +381,47 @@ pub(crate) fn evaluate_permission_policy(
     risk: Option<&str>,
     input: &Value,
 ) -> PermissionPolicyDecision {
-    let Ok((config, _, warning)) = read_policy_config() else {
+    let Ok((config, warning)) = effective_policy_config(None) else {
         return PermissionPolicyDecision::Ask;
     };
+    evaluate_policy_config(&config, warning, display_name, action, risk, input)
+}
+
+pub(crate) fn evaluate_permission_policy_for_session(
+    session_id: &str,
+    display_name: &str,
+    action: &str,
+    risk: Option<&str>,
+    input: &Value,
+) -> PermissionPolicyDecision {
+    let Ok((config, warning)) = effective_policy_config(Some(session_id)) else {
+        return PermissionPolicyDecision::Ask;
+    };
+    evaluate_policy_config(&config, warning, display_name, action, risk, input)
+}
+
+fn effective_policy_config(session_id: Option<&str>) -> AgentRuntimeResult<(PermissionPolicyConfig, Option<String>)> {
+    #[cfg(test)]
+    if let Some(session_id) = session_id
+        && let Some(config) = session_policy_overrides()
+            .lock()
+            .ok()
+            .and_then(|overrides| overrides.get(session_id).cloned())
+    {
+        return Ok((config, None));
+    }
+    let (config, _, warning) = read_policy_config()?;
+    Ok((config, warning))
+}
+
+fn evaluate_policy_config(
+    config: &PermissionPolicyConfig,
+    warning: Option<String>,
+    display_name: &str,
+    action: &str,
+    risk: Option<&str>,
+    input: &Value,
+) -> PermissionPolicyDecision {
     if warning.is_some() {
         return PermissionPolicyDecision::Ask;
     }

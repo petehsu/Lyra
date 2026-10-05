@@ -445,7 +445,7 @@ async fn execute_deferred_named_tool(
         args = json!({ "arguments": args });
     }
     let Some(manifest) = &deferred.manifest else {
-        return schema_not_sent_hint(&call.name);
+            return schema_not_sent_hint(&call.name);
     };
     let mut run_arguments = json!({
         "args": args,

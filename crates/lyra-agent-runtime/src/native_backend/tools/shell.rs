@@ -302,8 +302,18 @@ pub(crate) async fn tool_shell_run_async(
         .insert(child_process_id, process_lifetime.clone());
     // Read pipes while waiting so a loud command cannot fill the buffer and
     // deadlock, and so a prediction miss includes the output so far.
-    let stdout_buf = Arc::new(Mutex::new(HeadTailBytes::new(max_output)));
-    let stderr_buf = Arc::new(Mutex::new(HeadTailBytes::new(max_output)));
+    // An explicit maxOutputBytes from the model caps the output head-only;
+    // the default budget keeps head and tail.
+    let explicit_output_cap = input.get("maxOutputBytes").is_some();
+    let output_buffer = |limit: usize| {
+        if explicit_output_cap {
+            HeadTailBytes::head_only(limit)
+        } else {
+            HeadTailBytes::new(limit)
+        }
+    };
+    let stdout_buf = Arc::new(Mutex::new(output_buffer(max_output)));
+    let stderr_buf = Arc::new(Mutex::new(output_buffer(max_output)));
     let stdout_total = Arc::new(AtomicUsize::new(0));
     let stderr_total = Arc::new(AtomicUsize::new(0));
     let stdout_task = spawn_pipe_pump(
@@ -1607,6 +1617,18 @@ impl HeadTailBytes {
         }
     }
 
+    /// Explicit per-call byte cap from the model: keep the first `limit`
+    /// bytes only (head/tail split is reserved for the default budget).
+    fn head_only(limit: usize) -> Self {
+        Self {
+            head: Vec::new(),
+            tail: VecDeque::new(),
+            omitted: 0,
+            head_budget: limit,
+            tail_budget: 0,
+        }
+    }
+
     fn push(&mut self, chunk: &[u8]) {
         let chunk = self.fill_head(chunk);
         self.push_tail(chunk);
@@ -1662,13 +1684,20 @@ impl HeadTailBytes {
             tail_start += 1;
         }
         let omitted = self.omitted + (self.head.len() - head_end) + tail_start;
-        LimitedOutput {
-            text: format!(
+        // A head-only cap (explicit maxOutputBytes) has no tail to reattach,
+        // so the omission marker would only pad the output.
+        let text = if tail.is_empty() {
+            String::from_utf8_lossy(&self.head[..head_end]).into_owned()
+        } else {
+            format!(
                 "{}\n... {} bytes omitted ...\n{}",
                 String::from_utf8_lossy(&self.head[..head_end]),
                 omitted,
                 String::from_utf8_lossy(&tail[tail_start..]),
-            ),
+            )
+        };
+        LimitedOutput {
+            text,
             truncated: true,
             total_bytes,
             timed_out: false,

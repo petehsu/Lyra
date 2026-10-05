@@ -3,10 +3,10 @@ use super::*;
 /// Pin the permission policy to an explicit ask-for-file-writes config so the
 /// request/response protocol runs under a controlled contract instead of the
 /// host's real policy (the default approval preset auto-allows workspace file
-/// edits, matching codex/zed/vscode).
-fn pin_file_writes_to_ask() {
-    crate::native_backend::permission_policy::write_ask_for_file_policy_for_tests()
-        .expect("write ask-for-file policy");
+/// edits, matching codex/zed/vscode). Session-scoped: parallel tests are
+/// unaffected.
+fn pin_file_writes_to_ask(session_id: &str) {
+    crate::native_backend::permission_policy::pin_ask_for_file_policy_for_session(session_id);
 }
 
 #[test]
@@ -144,7 +144,6 @@ fn direct_file_read_requests_outside_workspace_permission() {
 
 #[test]
 fn permission_request_denies_and_allows_native_file_write() {
-    pin_file_writes_to_ask();
     let backend = LyraAgentBackend;
     let temp = tempfile::tempdir().expect("tempdir");
     let denied_path = temp.path().join("denied.txt");
@@ -156,6 +155,7 @@ fn permission_request_denies_and_allows_native_file_write() {
         )
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
+    pin_file_writes_to_ask(&session_id);
     let denied_turn_id = start_test_runtime_turn(&session_id);
     record_test_investigation(&session_id, &denied_turn_id, "investigate-denied-file");
     let denied_session_id = session_id.clone();

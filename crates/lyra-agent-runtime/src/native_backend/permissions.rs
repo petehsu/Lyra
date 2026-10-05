@@ -28,7 +28,7 @@ pub(crate) fn permission_request_for_tool(
         return None;
     }
     let risk = permission_risk(display_name, action, input)?;
-    match evaluate_permission_policy(display_name, action, Some(&risk), input) {
+    match evaluate_permission_policy_for_session(session_id, display_name, action, Some(&risk), input) {
         PermissionPolicyDecision::Allow => return None,
         PermissionPolicyDecision::Ask => {}
         PermissionPolicyDecision::Deny => {}

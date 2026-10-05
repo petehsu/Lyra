@@ -38,11 +38,6 @@ fn direct_read_file_rejects_directories_with_glob_diagnostic() {
 
 #[test]
 fn codex_direct_tool_chain_runs_core_code_tools() {
-    // The permission request/response protocol under test requires an
-    // explicit ask-for-file-writes policy; the default approval preset
-    // auto-allows workspace file edits (codex/zed/vscode semantics).
-    crate::native_backend::permission_policy::write_ask_for_file_policy_for_tests()
-        .expect("write ask-for-file policy");
     let backend = LyraAgentBackend;
     let temp = tempfile::tempdir().expect("tempdir");
     let root = temp.path();
@@ -82,6 +77,10 @@ fn codex_direct_tool_chain_runs_core_code_tools() {
         )
         .expect("create session");
     let session_id = created["id"].as_str().expect("session id").to_string();
+    // The permission request/response protocol under test requires an
+    // explicit ask-for-file-writes policy; session-scoped so parallel tests
+    // keep the default allow semantics.
+    crate::native_backend::permission_policy::pin_ask_for_file_policy_for_session(&session_id);
     let turn_id = start_test_runtime_turn(&session_id);
     let cancellation = CancellationToken::new();
     let read_handle = execute_model_tool_sync(
